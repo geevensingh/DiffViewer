@@ -1,0 +1,61 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout (with full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Stamp version + publish
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          Write-Host "Publishing version: $version"
+          dotnet publish DiffViewer\DiffViewer.csproj `
+            -c Release `
+            -o publish `
+            -p:Version=$version `
+            -p:FileVersion=$($version -replace '-.*$', '') `
+            -p:InformationalVersion=$version
+          if (-not (Test-Path 'publish\DiffViewer.exe')) {
+            Write-Error 'publish\DiffViewer.exe not found after publish'
+            exit 1
+          }
+
+      - name: Read tag annotation
+        shell: pwsh
+        run: |
+          git fetch --tags --force
+          $msg = git for-each-ref "refs/tags/$env:GITHUB_REF_NAME" --format='%(contents)'
+          if ([string]::IsNullOrWhiteSpace($msg)) { $msg = "Release $env:GITHUB_REF_NAME" }
+          Write-Host "Tag message length: $($msg.Length)"
+          "TAG_MSG<<EOF`n$msg`nEOF" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/DiffViewer.exe
+          body: ${{ env.TAG_MSG }}
+          fail_on_unmatched_files: true
