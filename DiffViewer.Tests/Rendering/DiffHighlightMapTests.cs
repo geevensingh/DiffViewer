@@ -176,7 +176,7 @@ public class DiffHighlightMapTests
         // boundary leaked into the highlight.
         rightSpans!.Min(s => s.StartColumn).Should().BeGreaterThanOrEqualTo(oldLine.Length);
         // And the highlight must extend to the very end of the new line.
-        rightSpans.Max(s => s.EndColumn).Should().Be(newLine.Length);
+        rightSpans!.Max(s => s.EndColumn).Should().Be(newLine.Length);
 
         // Old side has nothing actually deleted.
         map.LeftLines[1].IntraLineSpans.Should().NotBeNull();

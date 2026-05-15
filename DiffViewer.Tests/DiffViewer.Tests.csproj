@@ -9,6 +9,11 @@
     <RootNamespace>DiffViewer.Tests</RootNamespace>
     <AssemblyName>DiffViewer.Tests</AssemblyName>
     <UseWPF>true</UseWPF>
+    <!-- Match DiffViewer.csproj's Release RID so the referenced
+         DiffViewer.dll (AMD64) matches the test assembly's
+         architecture. Avoids MSB3270 in Release builds. The app is
+         Windows-x64-only, so the tests inherently are too. -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
   </PropertyGroup>
 
   <ItemGroup>

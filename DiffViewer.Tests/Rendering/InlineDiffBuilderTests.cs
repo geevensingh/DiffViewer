@@ -222,10 +222,10 @@ public class InlineDiffBuilderTests
         // raw line text.
         deleted.IntraLineSpans.Should().ContainSingle()
             .Which.StartColumn.Should().Be(4);
-        deleted.IntraLineSpans.Single().EndColumn.Should().Be(7);
+        deleted.IntraLineSpans!.Single().EndColumn.Should().Be(7);
         inserted.IntraLineSpans.Should().ContainSingle()
             .Which.StartColumn.Should().Be(4);
-        inserted.IntraLineSpans.Single().EndColumn.Should().Be(7);
+        inserted.IntraLineSpans!.Single().EndColumn.Should().Be(7);
     }
 
     [Fact]
