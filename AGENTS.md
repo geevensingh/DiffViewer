@@ -5,8 +5,11 @@ making changes.
 
 ## What this repo is
 
-A single WPF desktop application: a 3-way left/right Git diff viewer. The
-repo contains two projects at the root:
+A single WPF desktop application: a side-by-side Git diff viewer. (A
+3-way view for merge-conflicted files is stubbed in
+`DiffPaneViewModel.ResolvePlaceholderForShape` but not yet implemented —
+conflicted files currently render a placeholder message.) The repo
+contains two projects at the root:
 
 - `DiffViewer/` — the WPF app (`DiffViewer.csproj`). `net8.0-windows`, WPF,
   `Nullable` enabled, `ImplicitUsings` enabled, `LangVersion` set inline in
