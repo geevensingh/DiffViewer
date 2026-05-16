@@ -15,7 +15,7 @@ public class DiffHighlightMapTests
     {
         var map = DiffHighlightMap.FromHunks(
             Array.Empty<DiffHunk>(),
-            diffService: null,
+            _diff,
             enableIntraLine: false,
             ignoreWhitespace: false);
 
@@ -89,6 +89,13 @@ public class DiffHighlightMapTests
     [Fact]
     public void FromHunks_UnequalDeletesAndInserts_PairsThenSpills()
     {
+        // Deliberately uses enableIntraLine: false to isolate the
+        // pairing-then-spill walk in FromHunks. Under enableIntraLine: true
+        // the 'a' / 'e' pair would fail the IsPairingViable similarity
+        // check (zero overlap on single-token sides) and demote to
+        // Deleted / Inserted instead of staying Modified — that demote
+        // path is covered by the LowSimilarityWithUnpairedDeleteSpill test
+        // below.
         var hunks = _diff.ComputeDiff("a\nb\nc\nd", "e\nd", new DiffOptions()).Hunks;
 
         var map = DiffHighlightMap.FromHunks(hunks, _diff, enableIntraLine: false, ignoreWhitespace: false);
@@ -116,24 +123,172 @@ public class DiffHighlightMapTests
     }
 
     [Fact]
-    public void FromHunks_IntraLineEnabled_LowSimilarityPair_SuppressesSpans()
+    public void FromHunks_IntraLineEnabled_LowSimilarityPair_DemotesToUnpairedDeleteAndInsert()
     {
         // Two paired lines that share only whitespace and a handful of
-        // delimiters ("//", parens, "the"/"so") should NOT get noisy
-        // intra-line spans — the line-level red/yellow background is the
-        // honest signal for "these lines are unrelated".
+        // delimiters ("//", parens, "the"/"so") fail the pairing-viability
+        // policy. FromHunks demotes both sides to unpaired Deleted /
+        // Inserted so the rendered red/green signal matches the
+        // algorithm's "these lines aren't really paired" conclusion —
+        // instead of yellow-on-both-sides with no character-level signal,
+        // which is the bug this fix addresses.
         const string oldLine = "// rect(s) are present so the user can find the marker the";
         const string newLine = "// (left rect + ribbon + right rect) as a single polygon so it";
         var hunks = _diff.ComputeDiff(oldLine, newLine, new DiffOptions()).Hunks;
 
         var map = DiffHighlightMap.FromHunks(hunks, _diff, enableIntraLine: true, ignoreWhitespace: false);
 
-        // Lines are still marked Modified at the line level…
+        // Demoted to unpaired Deleted (left) / Inserted (right) — no yellow.
+        map.LeftLines[1].Kind.Should().Be(DiffLineKind.Deleted);
+        map.RightLines[1].Kind.Should().Be(DiffLineKind.Inserted);
+        // Demote path uses null spans (IntraLineColorizer treats null and
+        // empty equivalently).
+        map.LeftLines[1].IntraLineSpans.Should().BeNull();
+        map.RightLines[1].IntraLineSpans.Should().BeNull();
+    }
+
+    [Fact]
+    public void FromHunks_IntraLineDisabled_LowSimilarityPair_StaysModified()
+    {
+        // The demote fix is scoped to the intra-line-enabled path. With
+        // intra-line off the user has explicitly opted out of word-level
+        // analysis, so FromHunks never computes the similarity ratio and
+        // both sides of the positional pair stay Modified.
+        const string oldLine = "// rect(s) are present so the user can find the marker the";
+        const string newLine = "// (left rect + ribbon + right rect) as a single polygon so it";
+        var hunks = _diff.ComputeDiff(oldLine, newLine, new DiffOptions()).Hunks;
+
+        var map = DiffHighlightMap.FromHunks(hunks, _diff, enableIntraLine: false, ignoreWhitespace: false);
+
         map.LeftLines[1].Kind.Should().Be(DiffLineKind.Modified);
         map.RightLines[1].Kind.Should().Be(DiffLineKind.Modified);
-        // …but the intra-line spans are suppressed.
-        map.LeftLines[1].IntraLineSpans.Should().NotBeNull().And.BeEmpty();
-        map.RightLines[1].IntraLineSpans.Should().NotBeNull().And.BeEmpty();
+    }
+
+    [Fact]
+    public void FromHunks_IntraLineEnabled_LowSimilarityWithUnpairedDeleteSpill_DemotesPairedAndKeepsSpill()
+    {
+        // Synthesized hunk with D=3, I=1 so we control the pairing exactly.
+        // The single insert pairs positionally with the first delete, that
+        // pair fails the similarity check and demotes to Deleted/Inserted,
+        // and the remaining two deletes spill as Deleted unchanged.
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 3,
+            NewStartLine: 1, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted,  OldLineNumber: 1, NewLineNumber: null, Text: "alpha original"),
+                new DiffLine(DiffLineKind.Deleted,  OldLineNumber: 2, NewLineNumber: null, Text: "beta original"),
+                new DiffLine(DiffLineKind.Deleted,  OldLineNumber: 3, NewLineNumber: null, Text: "gamma original"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "completely different new line"),
+            },
+            FunctionContext: null);
+
+        var map = DiffHighlightMap.FromHunks(new[] { hunk }, _diff, enableIntraLine: true, ignoreWhitespace: false);
+
+        // Pair (line 1 left, line 1 right) demoted.
+        map.LeftLines[1].Kind.Should().Be(DiffLineKind.Deleted);
+        map.LeftLines[1].IntraLineSpans.Should().BeNull();
+        map.RightLines[1].Kind.Should().Be(DiffLineKind.Inserted);
+        map.RightLines[1].IntraLineSpans.Should().BeNull();
+        // Spill: lines 2 and 3 on the left stay Deleted unchanged.
+        map.LeftLines[2].Kind.Should().Be(DiffLineKind.Deleted);
+        map.LeftLines[3].Kind.Should().Be(DiffLineKind.Deleted);
+    }
+
+    [Fact]
+    public void FromHunks_IntraLineEnabled_LowSimilarityWithUnpairedInsertSpill_DemotesPairedAndKeepsSpill()
+    {
+        // Mirror of the delete-spill case: D=1, I=3. The single delete
+        // pairs positionally with the first insert, that pair demotes,
+        // and the remaining two inserts spill as Inserted unchanged.
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 1,
+            NewStartLine: 1, NewLineCount: 3,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted,  OldLineNumber: 1, NewLineNumber: null, Text: "alpha original"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "completely different new line"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 2, Text: "second new line"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 3, Text: "third new line"),
+            },
+            FunctionContext: null);
+
+        var map = DiffHighlightMap.FromHunks(new[] { hunk }, _diff, enableIntraLine: true, ignoreWhitespace: false);
+
+        // Pair (line 1 left, line 1 right) demoted.
+        map.LeftLines[1].Kind.Should().Be(DiffLineKind.Deleted);
+        map.LeftLines[1].IntraLineSpans.Should().BeNull();
+        map.RightLines[1].Kind.Should().Be(DiffLineKind.Inserted);
+        map.RightLines[1].IntraLineSpans.Should().BeNull();
+        // Spill: lines 2 and 3 on the right stay Inserted unchanged.
+        map.RightLines[2].Kind.Should().Be(DiffLineKind.Inserted);
+        map.RightLines[3].Kind.Should().Be(DiffLineKind.Inserted);
+    }
+
+    [Fact]
+    public void FromHunks_IntraLineEnabled_MultiPairBlockWithMixedSimilarity_DemotesOnlyFailingPairs()
+    {
+        // Synthesized D=3 / I=3 block. Pair 0 (line 1) and pair 2 (line 3)
+        // share most of their content and pass the similarity check; pair 1
+        // (line 2) shares no real content and fails. The fix demotes ONLY
+        // the failing pair — not the whole block — so passing pairs keep
+        // their Modified stamp + intra-line spans. This pins the per-pair
+        // (not per-block) demote behavior.
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 3,
+            NewStartLine: 1, NewLineCount: 3,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted,  OldLineNumber: 1, NewLineNumber: null, Text: "foo bar baz"),
+                new DiffLine(DiffLineKind.Deleted,  OldLineNumber: 2, NewLineNumber: null, Text: "port = 8080"),
+                new DiffLine(DiffLineKind.Deleted,  OldLineNumber: 3, NewLineNumber: null, Text: "alpha beta gamma"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "foo XYZ baz"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 2, Text: "// removed port config entirely"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 3, Text: "alpha beta delta"),
+            },
+            FunctionContext: null);
+
+        var map = DiffHighlightMap.FromHunks(new[] { hunk }, _diff, enableIntraLine: true, ignoreWhitespace: false);
+
+        // Pair 0 (lines 1) — high similarity, stays Modified with spans.
+        map.LeftLines[1].Kind.Should().Be(DiffLineKind.Modified);
+        map.LeftLines[1].IntraLineSpans.Should().NotBeNull().And.NotBeEmpty();
+        map.RightLines[1].Kind.Should().Be(DiffLineKind.Modified);
+        map.RightLines[1].IntraLineSpans.Should().NotBeNull().And.NotBeEmpty();
+
+        // Pair 1 (lines 2) — low similarity, demoted.
+        map.LeftLines[2].Kind.Should().Be(DiffLineKind.Deleted);
+        map.LeftLines[2].IntraLineSpans.Should().BeNull();
+        map.RightLines[2].Kind.Should().Be(DiffLineKind.Inserted);
+        map.RightLines[2].IntraLineSpans.Should().BeNull();
+
+        // Pair 2 (lines 3) — high similarity, stays Modified with spans.
+        map.LeftLines[3].Kind.Should().Be(DiffLineKind.Modified);
+        map.LeftLines[3].IntraLineSpans.Should().NotBeNull().And.NotBeEmpty();
+        map.RightLines[3].Kind.Should().Be(DiffLineKind.Modified);
+        map.RightLines[3].IntraLineSpans.Should().NotBeNull().And.NotBeEmpty();
+    }
+
+    [Fact]
+    public void FromHunks_IntraLineEnabled_SingleTokenCaseChange_DemotesToUnpairedDeleteAndInsert()
+    {
+        // Per the design principle (show the differences honestly, don't
+        // pass judgment about which differences deserve attention), short
+        // single-token edits with zero token overlap demote uniformly. The
+        // case-only edit "beta" -> "BETA" produces matched=0, oldTokens=1,
+        // newTokens=1, ratio=0 — the fix demotes rather than holding
+        // ground for short tokens. A future case-insensitive comparison
+        // option would change `beta` ≡ `BETA` upstream of the similarity
+        // check; that's the right place to address it, not a downstream
+        // paternalism gate here.
+        var hunks = _diff.ComputeDiff("beta", "BETA", new DiffOptions()).Hunks;
+
+        var map = DiffHighlightMap.FromHunks(hunks, _diff, enableIntraLine: true, ignoreWhitespace: false);
+
+        map.LeftLines[1].Kind.Should().Be(DiffLineKind.Deleted);
+        map.LeftLines[1].IntraLineSpans.Should().BeNull();
+        map.RightLines[1].Kind.Should().Be(DiffLineKind.Inserted);
+        map.RightLines[1].IntraLineSpans.Should().BeNull();
     }
 
     [Fact]

@@ -329,8 +329,16 @@ public static class InlineDiffBuilder
     /// (keyed by Old/NewLineNumber) and pack them with the line's kind into a
     /// <see cref="LineHighlight"/>. The kind on the returned highlight stays
     /// Deleted / Inserted (not Modified, which is what the map stamps for
-    /// paired lines) so the inline background renderer keeps tinting red/green
-    /// rather than the side-by-side modified yellow.
+    /// high-similarity paired lines) so the inline background renderer keeps
+    /// tinting red/green rather than the side-by-side modified yellow.
+    ///
+    /// <para>After the demote fix in
+    /// <see cref="DiffHighlightMap.FromHunks"/>, low-similarity pairs already
+    /// arrive on the map side as <see cref="DiffLineKind.Deleted"/> /
+    /// <see cref="DiffLineKind.Inserted"/>; this override only matters for
+    /// high-similarity pairs (which the map stamps as
+    /// <see cref="DiffLineKind.Modified"/>). Removing the override would
+    /// silently re-introduce yellow on inline mode for those pairs.</para>
     ///
     /// <para>Spans are returned unchanged: <see cref="BuildFullFile"/> emits
     /// each line verbatim with no prefix character, so the colorizer's

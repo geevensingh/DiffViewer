@@ -242,13 +242,15 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     }
 
     // One-line human summary of a hunk for the "Revert hunk?" prompt.
-    // DiffService never emits DiffLineKind.Modified today (every change is
-    // expressed as a Deleted+Inserted pair), so additions/removals fully
-    // describe what the revert will undo. The reported line number is the
-    // first actually-changed line - not hunk.NewStartLine, which includes
-    // DiffService's leading context lines and would point a line or two
-    // above where the user's change really sits. Function context comes
-    // from the unified-diff "@@ ... @@" trailer when available.
+    // DiffService never emits DiffLineKind.Modified on raw DiffLines today
+    // (every change is expressed as a Deleted+Inserted pair — see the
+    // canonical doc on DiffLineKind.Modified for the contract), so
+    // additions/removals fully describe what the revert will undo. The
+    // reported line number is the first actually-changed line - not
+    // hunk.NewStartLine, which includes DiffService's leading context lines
+    // and would point a line or two above where the user's change really
+    // sits. Function context comes from the unified-diff "@@ ... @@"
+    // trailer when available.
     private static string DescribeHunk(DiffHunk hunk)
     {
         var added = hunk.Lines.Count(l => l.Kind == DiffLineKind.Inserted);

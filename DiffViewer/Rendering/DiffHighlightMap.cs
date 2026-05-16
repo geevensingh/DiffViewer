@@ -31,14 +31,18 @@ public sealed class DiffHighlightMap
 
     /// <summary>
     /// Walk a hunk model and produce highlight maps for both sides. When
-    /// <paramref name="diffService"/> is non-null and
     /// <paramref name="enableIntraLine"/> is true, blocks with both deletes
-    /// and inserts get word-level spans paired up <c>min(D, I)</c> lines
-    /// at a time.
+    /// and inserts get word-level spans paired up <c>min(D, I)</c> lines at
+    /// a time. If the pairing-viability policy
+    /// (<see cref="IsPairingViable"/>) rejects a positional pair, both sides
+    /// are demoted to unpaired <see cref="DiffLineKind.Deleted"/> /
+    /// <see cref="DiffLineKind.Inserted"/> so the rendered signal matches
+    /// the algorithm's "these lines aren't really paired" conclusion. See
+    /// the canonical doc on <see cref="DiffLineKind.Modified"/>.
     /// </summary>
     public static DiffHighlightMap FromHunks(
         IReadOnlyList<DiffHunk> hunks,
-        IDiffService? diffService,
+        IDiffService diffService,
         bool enableIntraLine,
         bool ignoreWhitespace)
     {
@@ -71,7 +75,9 @@ public sealed class DiffHighlightMap
                 int insertedCount = insertedEnd - deletedEnd;
                 int paired = Math.Min(deletedCount, insertedCount);
 
-                // Paired lines: emit Modified with intra-line spans.
+                // Paired lines: try intra-line spans, demote pairs the
+                // similarity policy rejects to unpaired Deleted / Inserted.
+                // See the canonical doc on DiffLineKind.Modified.
                 for (int k = 0; k < paired; k++)
                 {
                     var del = hunk.Lines[blockStart + k];
@@ -79,10 +85,28 @@ public sealed class DiffHighlightMap
 
                     IReadOnlyList<IntraLineSpan>? leftSpans = null;
                     IReadOnlyList<IntraLineSpan>? rightSpans = null;
-                    if (enableIntraLine && diffService is not null)
+                    if (enableIntraLine)
                     {
-                        (leftSpans, rightSpans) = ComputeIntraLineSpans(
-                            diffService, del.Text, ins.Text, ignoreWhitespace);
+                        if (!TryPairWithIntraLineSpans(
+                                diffService, del.Text, ins.Text, ignoreWhitespace,
+                                out var ls, out var rs))
+                        {
+                            // Pairing-viability policy rejected the pair:
+                            // demote both sides to unpaired Deleted /
+                            // Inserted so the rendered signal matches the
+                            // algorithm's conclusion.
+                            if (del.OldLineNumber is int oldLnD)
+                            {
+                                left[oldLnD] = new LineHighlight(DiffLineKind.Deleted, null);
+                            }
+                            if (ins.NewLineNumber is int newLnD)
+                            {
+                                right[newLnD] = new LineHighlight(DiffLineKind.Inserted, null);
+                            }
+                            continue;
+                        }
+                        leftSpans = ls;
+                        rightSpans = rs;
                     }
 
                     if (del.OldLineNumber is int oldLn)
@@ -121,29 +145,46 @@ public sealed class DiffHighlightMap
     }
 
     /// <summary>
-    /// Run the intra-line word diff and bucket the resulting pieces into
-    /// (oldSpans, newSpans) by walking the old and new lines independently.
+    /// Try to compute intra-line span highlights for a positionally paired
+    /// (delete, insert) line pair, gated by the pairing-viability policy in
+    /// <see cref="IsPairingViable"/>.
     ///
     /// <para>Suppresses spans for low-similarity line pairs: when two paired
     /// lines share only whitespace and a handful of stray delimiters, the
     /// token diff "matches" those incidentally and the result is a noisy
     /// near-total highlight of both sides. We compute a similarity ratio
     /// over non-whitespace tokens and bail out below
-    /// <see cref="IntraLineSimilarityThreshold"/>, leaving the line-level
-    /// red/yellow background as the only signal.</para>
+    /// <see cref="MinPairingSimilarity"/>.</para>
     /// </summary>
-    private static (IReadOnlyList<IntraLineSpan> Left, IReadOnlyList<IntraLineSpan> Right)
-        ComputeIntraLineSpans(IDiffService diffService, string oldLine, string newLine, bool ignoreWhitespace)
+    /// <returns>
+    /// <c>true</c> if the pair is viable; <paramref name="leftSpans"/> and
+    /// <paramref name="rightSpans"/> are populated with the intra-line
+    /// highlights to draw on a <see cref="DiffLineKind.Modified"/>-stamped
+    /// row. <c>false</c> if the similarity policy rejected the pairing;
+    /// caller should demote both sides to unpaired
+    /// <see cref="DiffLineKind.Deleted"/> / <see cref="DiffLineKind.Inserted"/>.
+    /// Throws if the underlying <paramref name="diffService"/> throws
+    /// (failure mode is policy, not exception).
+    /// </returns>
+    private static bool TryPairWithIntraLineSpans(
+        IDiffService diffService,
+        string oldLine,
+        string newLine,
+        bool ignoreWhitespace,
+        out IReadOnlyList<IntraLineSpan> leftSpans,
+        out IReadOnlyList<IntraLineSpan> rightSpans)
     {
         var pieces = diffService.ComputeIntraLineDiff(oldLine, newLine, ignoreWhitespace);
 
-        if (!IsSimilarEnoughForIntraLineDiff(pieces))
+        if (!IsPairingViable(pieces))
         {
-            return (Array.Empty<IntraLineSpan>(), Array.Empty<IntraLineSpan>());
+            leftSpans = Array.Empty<IntraLineSpan>();
+            rightSpans = Array.Empty<IntraLineSpan>();
+            return false;
         }
 
-        var leftSpans = new List<IntraLineSpan>();
-        var rightSpans = new List<IntraLineSpan>();
+        var leftList = new List<IntraLineSpan>();
+        var rightList = new List<IntraLineSpan>();
 
         int leftCol = 0;
         int rightCol = 0;
@@ -160,31 +201,43 @@ public sealed class DiffHighlightMap
                 case IntraLinePieceKind.Deleted:
                     if (len > 0)
                     {
-                        leftSpans.Add(new IntraLineSpan(leftCol, leftCol + len, IntraLineSpanKind.Deleted));
+                        leftList.Add(new IntraLineSpan(leftCol, leftCol + len, IntraLineSpanKind.Deleted));
                     }
                     leftCol += len;
                     break;
                 case IntraLinePieceKind.Inserted:
                     if (len > 0)
                     {
-                        rightSpans.Add(new IntraLineSpan(rightCol, rightCol + len, IntraLineSpanKind.Inserted));
+                        rightList.Add(new IntraLineSpan(rightCol, rightCol + len, IntraLineSpanKind.Inserted));
                     }
                     rightCol += len;
                     break;
             }
         }
 
-        return (leftSpans, rightSpans);
+        leftSpans = leftList;
+        rightSpans = rightList;
+        return true;
     }
 
     /// <summary>
     /// Below this ratio of matched tokens to the smaller-or-equal side's
-    /// non-whitespace tokens, the two lines are treated as unrelated and
-    /// intra-line spans are suppressed.
+    /// non-whitespace tokens, the two paired lines are treated as unrelated.
+    /// <see cref="FromHunks"/> demotes such pairs to unpaired Deleted /
+    /// Inserted; the predicate's <c>false</c> return is a pairing-viability
+    /// gate, not just a cosmetic span-suppression knob.
     /// </summary>
-    private const double IntraLineSimilarityThreshold = 0.5;
+    private const double MinPairingSimilarity = 0.5;
 
-    private static bool IsSimilarEnoughForIntraLineDiff(IReadOnlyList<IntraLinePiece> pieces)
+    /// <summary>
+    /// Decides whether a positionally paired (delete, insert) pair is
+    /// viable based on token-level overlap from the intra-line diff.
+    /// Returning <c>false</c> tells <see cref="FromHunks"/> to demote both
+    /// sides of the pair to unpaired Deleted / Inserted; returning
+    /// <c>true</c> keeps the <see cref="DiffLineKind.Modified"/> stamp and
+    /// surfaces the intra-line spans.
+    /// </summary>
+    private static bool IsPairingViable(IReadOnlyList<IntraLinePiece> pieces)
     {
         // Count non-whitespace tokens per side and the number of matched
         // ones. Whitespace-only tokens shouldn't imply semantic similarity —
@@ -220,6 +273,6 @@ public sealed class DiffHighlightMap
         // wants to see highlighted.
         double oldRatio = oldTokens == 0 ? 1.0 : (double)matched / oldTokens;
         double newRatio = newTokens == 0 ? 1.0 : (double)matched / newTokens;
-        return Math.Max(oldRatio, newRatio) >= IntraLineSimilarityThreshold;
+        return Math.Max(oldRatio, newRatio) >= MinPairingSimilarity;
     }
 }
