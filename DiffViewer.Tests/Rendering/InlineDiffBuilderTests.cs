@@ -470,4 +470,211 @@ public class InlineDiffBuilderTests
         doc.LineToSourceLines[9].Should().Be(((int?)null, (int?)7));
         doc.LineToSourceLines[10].Should().Be(((int?)8, (int?)8));
     }
+
+    // ---------- DiffSideVisibility filtering ----------
+    //
+    // Inline mode supports three side-visibility modes (the same enum the
+    // side-by-side view uses to hide columns):
+    //   - Both     : full unified weave (the original behaviour).
+    //   - LeftOnly : emit the left file verbatim with deletions tinted;
+    //                insertions are suppressed.
+    //   - RightOnly: emit the right file verbatim with insertions tinted;
+    //                deletions are suppressed.
+    // The single-side modes produce output that equals the underlying
+    // source file in line order, so AvalonEdit's synthetic 1..N line
+    // numbers match the source line numbers the user expects.
+
+    [Fact]
+    public void BuildFullFile_LeftOnly_EmitsLeftFileVerbatim_DeletionsTinted()
+    {
+        // Left has 'c'; right has 'X' in its place.
+        var left = "a\nb\nc\nd\ne\n";
+        var right = "a\nb\nX\nd\ne\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 3, OldLineCount: 1,
+            NewStartLine: 3, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 3, NewLineNumber: null, Text: "c"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 3, Text: "X"),
+            },
+            FunctionContext: null);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, DiffHighlightMap.Empty,
+            DiffSideVisibility.LeftOnly);
+
+        // Output is the LEFT file verbatim — no 'X' line.
+        doc.Text.Should().Be("a\nb\nc\nd\ne\n");
+        // Line 3 ('c') is tinted Deleted; no insertion lines exist.
+        doc.LineHighlights.Should().ContainKey(3);
+        doc.LineHighlights[3].Kind.Should().Be(DiffLineKind.Deleted);
+        doc.LineHighlights.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void BuildFullFile_RightOnly_EmitsRightFileVerbatim_InsertionsTinted()
+    {
+        var left = "a\nb\nc\nd\ne\n";
+        var right = "a\nb\nX\nd\ne\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 3, OldLineCount: 1,
+            NewStartLine: 3, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 3, NewLineNumber: null, Text: "c"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 3, Text: "X"),
+            },
+            FunctionContext: null);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, DiffHighlightMap.Empty,
+            DiffSideVisibility.RightOnly);
+
+        // Output is the RIGHT file verbatim — no 'c' line.
+        doc.Text.Should().Be("a\nb\nX\nd\ne\n");
+        doc.LineHighlights.Should().ContainKey(3);
+        doc.LineHighlights[3].Kind.Should().Be(DiffLineKind.Inserted);
+        doc.LineHighlights.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void BuildFullFile_Both_IsDefault_BehavesAsLegacyUnifiedWeave()
+    {
+        // The new sideVisibility parameter defaults to Both and the Both
+        // dispatch hits the original BuildBoth logic. Explicit Both and the
+        // implicit default must produce byte-identical output to the legacy
+        // call site.
+        var left = "a\nb\n";
+        var right = "a\nB\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 2, OldLineCount: 1,
+            NewStartLine: 2, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 2, NewLineNumber: null, Text: "b"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 2, Text: "B"),
+            },
+            FunctionContext: null);
+
+        var defaulted = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, DiffHighlightMap.Empty);
+        var explicitBoth = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, DiffHighlightMap.Empty,
+            DiffSideVisibility.Both);
+
+        defaulted.Text.Should().Be("a\nb\nB\n");
+        explicitBoth.Text.Should().Be(defaulted.Text);
+        explicitBoth.LineHighlights.Should().BeEquivalentTo(defaulted.LineHighlights);
+    }
+
+    [Fact]
+    public void BuildFullFile_LeftOnly_NoHunks_EmitsLeftBlobVerbatim()
+    {
+        // When there are no hunks the two sides are byte-identical, but
+        // LeftOnly should still emit the LEFT blob (principled — the user
+        // asked to see the left file) and identity-map line numbers.
+        var doc = InlineDiffBuilder.BuildFullFile(
+            "a\nb\nc\n", "a\nb\nc\n", Array.Empty<DiffHunk>(), DiffHighlightMap.Empty,
+            DiffSideVisibility.LeftOnly);
+
+        doc.Text.Should().Be("a\nb\nc\n");
+        doc.LineHighlights.Should().BeEmpty();
+        doc.LineToSourceLines.Should().HaveCount(3);
+        doc.LineToSourceLines[0].Should().Be(((int?)1, (int?)1));
+    }
+
+    [Fact]
+    public void BuildFullFile_LeftOnly_MultipleHunks_PreservesLeftFileLineOrder()
+    {
+        // Two changes far enough apart for separate hunks. LeftOnly should
+        // produce the left file verbatim with deletions tinted, in source
+        // line order — synthetic 1..N output line numbers will equal left
+        // file line numbers, which is the user-facing promise of the mode.
+        var left = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
+        var right = "a\nB\nc\nd\ne\nf\ng\nh\nI\nj\n";
+
+        var h1 = new DiffHunk(
+            OldStartLine: 2, OldLineCount: 1,
+            NewStartLine: 2, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, 2, null, "b"),
+                new DiffLine(DiffLineKind.Inserted, null, 2, "B"),
+            },
+            FunctionContext: null);
+        var h2 = new DiffHunk(
+            OldStartLine: 9, OldLineCount: 1,
+            NewStartLine: 9, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, 9, null, "i"),
+                new DiffLine(DiffLineKind.Inserted, null, 9, "I"),
+            },
+            FunctionContext: null);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { h1, h2 }, DiffHighlightMap.Empty,
+            DiffSideVisibility.LeftOnly);
+
+        doc.Text.Should().Be(left);
+        doc.LineHighlights[2].Kind.Should().Be(DiffLineKind.Deleted);
+        doc.LineHighlights[9].Kind.Should().Be(DiffLineKind.Deleted);
+        doc.LineHighlights.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void BuildFullFile_RightOnly_PureDeletion_StillEmitsRightFile()
+    {
+        // Pure-deletion hunk (right has nothing in this slot). RightOnly
+        // should drop the deletion entirely and emit just the right file.
+        var left = "a\nb\nc\nd\n";
+        var right = "a\nd\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 2, OldLineCount: 2,
+            NewStartLine: 2, NewLineCount: 0,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, 2, null, "b"),
+                new DiffLine(DiffLineKind.Deleted, 3, null, "c"),
+            },
+            FunctionContext: null);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, DiffHighlightMap.Empty,
+            DiffSideVisibility.RightOnly);
+
+        doc.Text.Should().Be("a\nd\n");
+        doc.LineHighlights.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BuildFullFile_LeftOnly_PureInsertion_NoVisibleChange()
+    {
+        // Pure-insertion hunk (left has nothing in this slot). LeftOnly
+        // should drop the insertion entirely and emit just the left file.
+        var left = "a\nb\n";
+        var right = "X\nY\na\nb\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 0, OldLineCount: 0,
+            NewStartLine: 1, NewLineCount: 2,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Inserted, null, 1, "X"),
+                new DiffLine(DiffLineKind.Inserted, null, 2, "Y"),
+            },
+            FunctionContext: null);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, DiffHighlightMap.Empty,
+            DiffSideVisibility.LeftOnly);
+
+        doc.Text.Should().Be("a\nb\n");
+        doc.LineHighlights.Should().BeEmpty();
+    }
 }

@@ -101,6 +101,25 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showVisibleWhitespace;
 
     /// <summary>
+    /// Which sides of the side-by-side view are visible. Driven by the
+    /// toolbar's Left / Both / Right radio-style toggle group. Has no
+    /// effect in inline mode — the toolbar disables the toggles when
+    /// <see cref="IsSideBySide"/> is false. Persisted via
+    /// <see cref="AppSettings.SideVisibility"/>.
+    /// </summary>
+    [ObservableProperty] private DiffSideVisibility _sideVisibility = DiffSideVisibility.Both;
+
+    /// <summary>Whether the left editor column is visible in side-by-side mode.</summary>
+    public bool ShowLeftSide => SideVisibility != DiffSideVisibility.RightOnly;
+
+    /// <summary>Whether the right editor column is visible in side-by-side mode.</summary>
+    public bool ShowRightSide => SideVisibility != DiffSideVisibility.LeftOnly;
+
+    /// <summary>Whether the splitter between the two editors should be shown
+    /// (only when both sides are visible).</summary>
+    public bool ShowMiddleDivider => SideVisibility == DiffSideVisibility.Both;
+
+    /// <summary>
     /// User intent for live-updates. Greyed out via
     /// <see cref="IsLiveUpdatesAvailable"/> when both sides are commit-ish
     /// (the repo watcher is inactive in that mode anyway).
@@ -159,6 +178,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 IsSideBySide = s.IsSideBySide;
                 ShowVisibleWhitespace = s.ShowVisibleWhitespace;
                 LiveUpdates = s.LiveUpdates;
+                SideVisibility = s.SideVisibility;
                 FontSize = s.FontSize;
                 FontFamily = s.FontFamily;
                 TabWidth = s.TabWidth;
@@ -212,6 +232,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 ShowLineNumbers = e.Current.ShowLineNumbers;
             if (e.Previous.WordWrap != e.Current.WordWrap)
                 WordWrap = e.Current.WordWrap;
+            if (e.Previous.SideVisibility != e.Current.SideVisibility)
+                SideVisibility = e.Current.SideVisibility;
         }
         finally { _suppressSettingsWrite = false; }
     }
@@ -411,7 +433,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         // user can read the surrounding code, matching what side-by-side
         // already shows. Lines are emitted verbatim (no +/- prefix) and the
         // map drives per-line tints + intra-line span colorization.
-        var inline = InlineDiffBuilder.BuildFullFile(left, right, computation.Hunks, map);
+        var inline = InlineDiffBuilder.BuildFullFile(left, right, computation.Hunks, map, SideVisibility);
 
         bool whitespaceOnly = false;
         if (options.IgnoreWhitespace && computation.Hunks.Count == 0)
@@ -594,6 +616,19 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         PersistToolbarToSettings();
     }
 
+    partial void OnSideVisibilityChanged(DiffSideVisibility value)
+    {
+        OnPropertyChanged(nameof(ShowLeftSide));
+        OnPropertyChanged(nameof(ShowRightSide));
+        OnPropertyChanged(nameof(ShowMiddleDivider));
+        // Inline mode filters its document by SideVisibility (LeftOnly /
+        // RightOnly / Both), so toggling sides must rebuild the inline doc.
+        // Side-by-side mode just toggles editor visibility via bindings;
+        // the recompute is a no-op there but cheap enough not to special-case.
+        ScheduleOptionRefresh();
+        PersistToolbarToSettings();
+    }
+
     private void PersistToolbarToSettings()
     {
         if (_settingsService is null || _suppressSettingsWrite) return;
@@ -604,6 +639,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             IsSideBySide = IsSideBySide,
             ShowVisibleWhitespace = ShowVisibleWhitespace,
             LiveUpdates = LiveUpdates,
+            SideVisibility = SideVisibility,
         });
     }
 

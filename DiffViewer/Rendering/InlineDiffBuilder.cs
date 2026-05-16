@@ -51,19 +51,32 @@ public static class InlineDiffBuilder
     public static InlineDocument Empty => _empty;
 
     /// <summary>
-    /// Build an inline document showing the <em>full</em> right-side file with
-    /// hunks woven in. Every line — both inside and outside hunks — is
-    /// emitted <em>verbatim</em>, with no <c>+</c>/<c>-</c>/space prefix
-    /// character. The user sees the file as-is; added / removed / modified
-    /// lines are tinted via the inline background renderer (full-line
-    /// red / green / yellow) and word-level intra-line spans are overlaid by
-    /// the intra-line colorizer. Same channel as side-by-side mode — both
+    /// Build an inline document showing the <em>full</em> file with hunks
+    /// woven in. Every line — both inside and outside hunks — is emitted
+    /// <em>verbatim</em>, with no <c>+</c>/<c>-</c>/space prefix character.
+    /// The user sees the file as-is; added / removed / modified lines are
+    /// tinted via the inline background renderer (full-line red / green /
+    /// yellow) and word-level intra-line spans are overlaid by the
+    /// intra-line colorizer. Same channel as side-by-side mode — both
     /// views look like the file with diffs coloured rather than a unified-
     /// diff text dump.
     ///
-    /// <para>Removed lines are interleaved into the right-side flow (they're
-    /// not in the right blob); the user identifies them by their red tint,
-    /// not by a leading <c>-</c>.</para>
+    /// <para><paramref name="sideVisibility"/> controls which side(s) of
+    /// the diff appear in the rendered document:
+    /// <list type="bullet">
+    ///   <item><description><see cref="DiffSideVisibility.Both"/> — full
+    ///   unified weave (right-side file with deleted lines interleaved in
+    ///   red); the default and historically the only behaviour.</description></item>
+    ///   <item><description><see cref="DiffSideVisibility.LeftOnly"/> —
+    ///   left-side file emitted verbatim with deletions tinted red;
+    ///   insertions hidden.</description></item>
+    ///   <item><description><see cref="DiffSideVisibility.RightOnly"/> —
+    ///   right-side file emitted verbatim with insertions tinted green;
+    ///   deletions hidden.</description></item>
+    /// </list>
+    /// In the two single-side modes the output equals the underlying
+    /// source file in line order, so AvalonEdit's synthetic 1..N line
+    /// numbers line up with the source line numbers users expect.</para>
     ///
     /// <para><paramref name="map"/> supplies the per-line intra-line spans
     /// computed by <see cref="DiffHighlightMap.FromHunks"/>; pass
@@ -77,16 +90,26 @@ public static class InlineDiffBuilder
     /// shows the full blobs in two editors.</para>
     /// </summary>
     public static InlineDocument BuildFullFile(
+        string left, string right, IReadOnlyList<DiffHunk> hunks, DiffHighlightMap map,
+        DiffSideVisibility sideVisibility = DiffSideVisibility.Both)
+    {
+        return sideVisibility switch
+        {
+            DiffSideVisibility.LeftOnly => BuildLeftOnly(left, hunks, map),
+            DiffSideVisibility.RightOnly => BuildRightOnly(right, hunks, map),
+            _ => BuildBoth(left, right, hunks, map),
+        };
+    }
+
+    private static InlineDocument BuildBoth(
         string left, string right, IReadOnlyList<DiffHunk> hunks, DiffHighlightMap map)
     {
         var leftLines = SplitLines(left);
         var rightLines = SplitLines(right);
 
         // No diff at all: emit the right-side blob verbatim, no prefixes,
-        // no highlights. Matches the screenshot expectation when there are
-        // no changes (the user sees the raw file). With no hunks the two
-        // sides are byte-identical, so each output line maps to itself on
-        // both sides.
+        // no highlights. With no hunks the two sides are byte-identical,
+        // so each output line maps to itself on both sides.
         if (hunks.Count == 0)
         {
             var identity = new List<(int? OldLine, int? NewLine)>(rightLines.Count);
@@ -152,6 +175,145 @@ public static class InlineDiffBuilder
         }
 
         // Tail: emit any remaining unchanged lines after the last hunk.
+        for (int i = newCursor; i <= rightLines.Count; i++)
+        {
+            sb.Append(rightLines[i - 1]).Append('\n');
+            lineToSourceLines.Add((oldCursor + (i - newCursor), i));
+            currentOutputLine++;
+        }
+
+        return new InlineDocument(sb.ToString(), lineHighlights, lineToSourceLines);
+    }
+
+    /// <summary>
+    /// LeftOnly variant: emit the <em>left</em> file verbatim with deleted
+    /// lines tinted; inserted lines from the hunks are suppressed entirely.
+    /// Output line N corresponds to left-file line N, so the editor's
+    /// synthetic line numbers match the user's expectation of "looking at
+    /// the old file".
+    /// </summary>
+    private static InlineDocument BuildLeftOnly(
+        string left, IReadOnlyList<DiffHunk> hunks, DiffHighlightMap map)
+    {
+        var leftLines = SplitLines(left);
+
+        if (hunks.Count == 0)
+        {
+            var identity = new List<(int? OldLine, int? NewLine)>(leftLines.Count);
+            for (int i = 1; i <= leftLines.Count; i++)
+            {
+                identity.Add((i, i));
+            }
+            return new InlineDocument(left, new Dictionary<int, LineHighlight>(), identity);
+        }
+
+        var sb = new StringBuilder();
+        var lineHighlights = new Dictionary<int, LineHighlight>();
+        var lineToSourceLines = new List<(int? OldLine, int? NewLine)>();
+        int currentOutputLine = 1;
+        int oldCursor = 1;
+        int newCursor = 1;
+
+        for (int h = 0; h < hunks.Count; h++)
+        {
+            var hunk = hunks[h];
+
+            // Pre-hunk context: walk the LEFT file from oldCursor up to
+            // (but not including) hunk.OldStartLine. Outside hunks the two
+            // sides are identical, so we can recover the matching right-side
+            // line number from newCursor's offset.
+            int hunkOldStart = hunk.OldStartLine > 0 ? hunk.OldStartLine : oldCursor;
+            for (int i = oldCursor; i < hunkOldStart && i <= leftLines.Count; i++)
+            {
+                sb.Append(leftLines[i - 1]).Append('\n');
+                lineToSourceLines.Add((i, newCursor + (i - oldCursor)));
+                currentOutputLine++;
+            }
+
+            // Hunk body: keep Context + Deleted, drop Inserted. The kept
+            // lines (in hunk order) reconstruct the left file's slice for
+            // this hunk verbatim, so output stays in left-file line order.
+            foreach (var line in hunk.Lines)
+            {
+                if (line.Kind == DiffLineKind.Inserted) continue;
+                sb.Append(line.Text).Append('\n');
+                if (line.Kind != DiffLineKind.Context)
+                {
+                    lineHighlights[currentOutputLine] = BuildHighlight(line, map);
+                }
+                lineToSourceLines.Add((line.OldLineNumber, line.NewLineNumber));
+                currentOutputLine++;
+            }
+
+            oldCursor = hunkOldStart + hunk.OldLineCount;
+            newCursor = (hunk.NewStartLine > 0 ? hunk.NewStartLine : newCursor) + hunk.NewLineCount;
+        }
+
+        for (int i = oldCursor; i <= leftLines.Count; i++)
+        {
+            sb.Append(leftLines[i - 1]).Append('\n');
+            lineToSourceLines.Add((i, newCursor + (i - oldCursor)));
+            currentOutputLine++;
+        }
+
+        return new InlineDocument(sb.ToString(), lineHighlights, lineToSourceLines);
+    }
+
+    /// <summary>
+    /// RightOnly variant: emit the <em>right</em> file verbatim with
+    /// inserted lines tinted; deleted lines from the hunks are suppressed
+    /// entirely. Output line N corresponds to right-file line N.
+    /// </summary>
+    private static InlineDocument BuildRightOnly(
+        string right, IReadOnlyList<DiffHunk> hunks, DiffHighlightMap map)
+    {
+        var rightLines = SplitLines(right);
+
+        if (hunks.Count == 0)
+        {
+            var identity = new List<(int? OldLine, int? NewLine)>(rightLines.Count);
+            for (int i = 1; i <= rightLines.Count; i++)
+            {
+                identity.Add((i, i));
+            }
+            return new InlineDocument(right, new Dictionary<int, LineHighlight>(), identity);
+        }
+
+        var sb = new StringBuilder();
+        var lineHighlights = new Dictionary<int, LineHighlight>();
+        var lineToSourceLines = new List<(int? OldLine, int? NewLine)>();
+        int currentOutputLine = 1;
+        int oldCursor = 1;
+        int newCursor = 1;
+
+        for (int h = 0; h < hunks.Count; h++)
+        {
+            var hunk = hunks[h];
+
+            int hunkNewStart = hunk.NewStartLine > 0 ? hunk.NewStartLine : newCursor;
+            for (int i = newCursor; i < hunkNewStart && i <= rightLines.Count; i++)
+            {
+                sb.Append(rightLines[i - 1]).Append('\n');
+                lineToSourceLines.Add((oldCursor + (i - newCursor), i));
+                currentOutputLine++;
+            }
+
+            foreach (var line in hunk.Lines)
+            {
+                if (line.Kind == DiffLineKind.Deleted) continue;
+                sb.Append(line.Text).Append('\n');
+                if (line.Kind != DiffLineKind.Context)
+                {
+                    lineHighlights[currentOutputLine] = BuildHighlight(line, map);
+                }
+                lineToSourceLines.Add((line.OldLineNumber, line.NewLineNumber));
+                currentOutputLine++;
+            }
+
+            oldCursor = (hunk.OldStartLine > 0 ? hunk.OldStartLine : oldCursor) + hunk.OldLineCount;
+            newCursor = hunkNewStart + hunk.NewLineCount;
+        }
+
         for (int i = newCursor; i <= rightLines.Count; i++)
         {
             sb.Append(rightLines[i - 1]).Append('\n');

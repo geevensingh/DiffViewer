@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
 
 namespace DiffViewer.ViewModels;
@@ -16,4 +17,90 @@ public sealed class InverseBoolConverter : IValueConverter
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => value is bool b ? !b : value;
+}
+
+/// <summary>
+/// Maps a <see cref="bool"/> to a <see cref="GridLength"/>: <c>true</c>
+/// becomes the length parsed from <c>ConverterParameter</c> (XAML
+/// syntax — <c>"5"</c> → 5 pixels, <c>"5*"</c> → 5 star units,
+/// <c>"*"</c> or null → 1 star, <c>"Auto"</c> → auto), and
+/// <c>false</c> becomes <c>0</c>. Used to collapse side-by-side diff
+/// columns when the user hides one side via the toolbar's
+/// side-visibility toggle without pulling
+/// <see cref="System.Windows.GridLength"/> into the view-model.
+/// </summary>
+public sealed class BoolToGridLengthConverter : IValueConverter
+{
+    public static readonly BoolToGridLengthConverter Instance = new();
+    private static readonly GridLengthConverter GridLengthParser = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is not bool visible || !visible)
+            return new GridLength(0);
+
+        if (parameter is string s && !string.IsNullOrWhiteSpace(s))
+        {
+            try
+            {
+                var parsed = GridLengthParser.ConvertFromString(null!, CultureInfo.InvariantCulture, s);
+                if (parsed is GridLength gl) return gl;
+            }
+            catch (FormatException) { /* fall through to default */ }
+            catch (NotSupportedException) { /* fall through to default */ }
+        }
+
+        return new GridLength(1, GridUnitType.Star);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Two-way XAML helper for binding a <see cref="System.Windows.Controls.Primitives.ToggleButton"/>
+/// to one value of an enum. <c>Convert</c> returns <c>true</c> when the
+/// source enum equals <c>ConverterParameter</c>; <c>ConvertBack</c>
+/// returns the parameter value when <c>IsChecked</c> goes true and
+/// <see cref="Binding.DoNothing"/> otherwise. The "do nothing" branch
+/// is what makes a group of <see cref="ToggleButton"/>s behave as a
+/// radio group: unchecking the currently-checked button by itself
+/// would otherwise blow away the enum's value with a no-op.
+/// </summary>
+public sealed class EnumToBoolConverter : IValueConverter
+{
+    public static readonly EnumToBoolConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is null || parameter is null) return false;
+        var target = ResolveParameter(value.GetType(), parameter);
+        return target is not null && value.Equals(target);
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is true && parameter is not null)
+        {
+            var target = ResolveParameter(targetType, parameter);
+            if (target is not null) return target;
+        }
+        return Binding.DoNothing;
+    }
+
+    private static object? ResolveParameter(Type enumType, object parameter)
+    {
+        if (!enumType.IsEnum)
+        {
+            // Bindings on nullable enums hand us the underlying type.
+            var underlying = Nullable.GetUnderlyingType(enumType);
+            if (underlying is null || !underlying.IsEnum) return null;
+            enumType = underlying;
+        }
+
+        if (parameter.GetType() == enumType) return parameter;
+        if (parameter is string s && Enum.TryParse(enumType, s, ignoreCase: true, out var parsed))
+            return parsed;
+        return null;
+    }
 }

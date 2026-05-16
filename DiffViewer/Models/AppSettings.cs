@@ -26,6 +26,7 @@ public sealed record AppSettings
     public bool IsSideBySide { get; init; } = true;
     public bool ShowVisibleWhitespace { get; init; }
     public bool LiveUpdates { get; init; } = true;
+    public DiffSideVisibility SideVisibility { get; init; } = DiffSideVisibility.Both;
 
     // ---- File-list display mode ----
     public FileListDisplayMode DisplayMode { get; init; } = FileListDisplayMode.RepoRelative;

@@ -88,10 +88,10 @@
             <!-- Side-by-side view (visible when no placeholder AND IsSideBySide=true) -->
             <Grid Visibility="{Binding ShowSideBySide, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="{Binding ShowLeftSide, Converter={x:Static vm:BoolToGridLengthConverter.Instance}}"/>
+                    <ColumnDefinition Width="{Binding ShowMiddleDivider, Converter={x:Static vm:BoolToGridLengthConverter.Instance}, ConverterParameter=5}"/>
+                    <ColumnDefinition Width="{Binding ShowRightSide, Converter={x:Static vm:BoolToGridLengthConverter.Instance}}"/>
                     <ColumnDefinition Width="32"/>
-                    <ColumnDefinition Width="5"/>
-                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
@@ -101,6 +101,7 @@
 
                 <avalon:TextEditor x:Name="LeftEditor"
                                    Grid.Row="0" Grid.Column="0"
+                                   Visibility="{Binding ShowLeftSide, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"
                                    Document="{Binding LeftDocument, Mode=OneWay}"
                                    IsReadOnly="True"
                                    ShowLineNumbers="{Binding ShowLineNumbers, Mode=OneWay}"
@@ -114,16 +115,16 @@
                                    ContextMenuOpening="OnLeftEditorContextMenuOpening"
                                    Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"/>
 
-                <rendering:HunkOverviewBar Grid.Row="0" Grid.Column="1"/>
-
-                <GridSplitter Grid.Row="0" Grid.Column="2"
+                <GridSplitter Grid.Row="0" Grid.Column="1"
                               Width="5"
                               HorizontalAlignment="Stretch"
                               VerticalAlignment="Stretch"
+                              Visibility="{Binding ShowMiddleDivider, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"
                               Background="{StaticResource DividerBrush}"/>
 
                 <avalon:TextEditor x:Name="RightEditor"
-                                   Grid.Row="0" Grid.Column="3"
+                                   Grid.Row="0" Grid.Column="2"
+                                   Visibility="{Binding ShowRightSide, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"
                                    Document="{Binding RightDocument, Mode=OneWay}"
                                    IsReadOnly="True"
                                    ShowLineNumbers="{Binding ShowLineNumbers, Mode=OneWay}"
@@ -137,13 +138,20 @@
                                    ContextMenuOpening="OnRightEditorContextMenuOpening"
                                    Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"/>
 
+                <!-- HunkOverviewBar sits to the right of all editor content
+                     and to the left of the unified vertical scrollbar, so
+                     its position stays consistent regardless of which
+                     side(s) are visible. Matches the conventional
+                     "minimap on the right" placement (VS Code, etc.). -->
+                <rendering:HunkOverviewBar Grid.Row="0" Grid.Column="3"/>
+
                 <!-- Unified scrollbars: a single ScrollBar of each orientation
                      drives both editors in lock-step (via UnifiedScrollBarController). -->
                 <ScrollBar x:Name="SideBySideVScroll"
                            Grid.Row="0" Grid.Column="4"
                            Orientation="Vertical"/>
                 <ScrollBar x:Name="SideBySideHScroll"
-                           Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+                           Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
                            Orientation="Horizontal"/>
             </Grid>
 
@@ -160,7 +168,7 @@
                                    Grid.Column="1"
                                    Document="{Binding InlineDocument, Mode=OneWay}"
                                    IsReadOnly="True"
-                                   ShowLineNumbers="False"
+                                   ShowLineNumbers="{Binding ShowLineNumbers, Mode=OneWay}"
                                    FontFamily="{Binding FontFamily, Mode=OneWay}"
                                    FontSize="{Binding FontSize, Mode=OneWay}"
                                    WordWrap="{Binding WordWrap, Mode=OneWay}"

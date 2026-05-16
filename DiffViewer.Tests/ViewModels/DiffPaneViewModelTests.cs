@@ -284,6 +284,133 @@ public class DiffPaneViewModelTests
         updateCount.Should().Be(1, "the VM must not echo the settings change back to disk");
     }
 
+    [Fact]
+    public void SideVisibility_DefaultsToBoth_WhenNoSettingsService()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo);
+
+        vm.SideVisibility.Should().Be(DiffSideVisibility.Both);
+        vm.ShowLeftSide.Should().BeTrue();
+        vm.ShowRightSide.Should().BeTrue();
+        vm.ShowMiddleDivider.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(DiffSideVisibility.Both, true, true, true)]
+    [InlineData(DiffSideVisibility.LeftOnly, true, false, false)]
+    [InlineData(DiffSideVisibility.RightOnly, false, true, false)]
+    public void SideVisibility_DerivedFlags_MatchEnumValue(
+        DiffSideVisibility value, bool expectLeft, bool expectRight, bool expectDivider)
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo) { SideVisibility = value };
+
+        vm.ShowLeftSide.Should().Be(expectLeft);
+        vm.ShowRightSide.Should().Be(expectRight);
+        vm.ShowMiddleDivider.Should().Be(expectDivider);
+    }
+
+    [Fact]
+    public void SideVisibility_SeededFromSettingsOnConstruction()
+    {
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings
+        {
+            SideVisibility = DiffSideVisibility.LeftOnly,
+        });
+
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        vm.SideVisibility.Should().Be(DiffSideVisibility.LeftOnly);
+        vm.ShowLeftSide.Should().BeTrue();
+        vm.ShowRightSide.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SideVisibility_Change_PersistsToSettings()
+    {
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings());
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        vm.SideVisibility = DiffSideVisibility.RightOnly;
+
+        settings.Current.SideVisibility.Should().Be(DiffSideVisibility.RightOnly);
+    }
+
+    [Fact]
+    public void SideVisibility_ExternalSettingsChange_PushedToViewModel()
+    {
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings
+        {
+            SideVisibility = DiffSideVisibility.Both,
+        });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        settings.Update(s => s with { SideVisibility = DiffSideVisibility.LeftOnly });
+
+        vm.SideVisibility.Should().Be(DiffSideVisibility.LeftOnly);
+    }
+
+    [Fact]
+    public void SideVisibility_Change_RaisesDerivedFlagPropertyChanged()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo) { SideVisibility = DiffSideVisibility.Both };
+
+        var changed = new HashSet<string>();
+        vm.PropertyChanged += (_, e) => { if (e.PropertyName is not null) changed.Add(e.PropertyName); };
+
+        vm.SideVisibility = DiffSideVisibility.LeftOnly;
+
+        changed.Should().Contain(nameof(DiffPaneViewModel.SideVisibility));
+        changed.Should().Contain(nameof(DiffPaneViewModel.ShowLeftSide));
+        changed.Should().Contain(nameof(DiffPaneViewModel.ShowRightSide));
+        changed.Should().Contain(nameof(DiffPaneViewModel.ShowMiddleDivider));
+    }
+
+    [Fact]
+    public async Task SideVisibility_Change_RebuildsInlineDocument()
+    {
+        // OnSideVisibilityChanged must invalidate the inline doc — inline
+        // mode filters by SideVisibility (LeftOnly emits the left file,
+        // RightOnly the right). Without the rebuild, toggling the toolbar
+        // in inline mode would leave the user looking at stale content.
+        var repo = new FakeRepository
+        {
+            LeftText = "alpha\nbeta\n",
+            RightText = "alpha\nBETA\n",
+        };
+        var diff = new DiffService();
+
+        string? bothText = null;
+        string? leftOnlyText = null;
+        string? rightOnlyText = null;
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            bothText = vm.InlineDocument.Text;
+
+            vm.SideVisibility = DiffSideVisibility.LeftOnly;
+            leftOnlyText = vm.InlineDocument.Text;
+
+            vm.SideVisibility = DiffSideVisibility.RightOnly;
+            rightOnlyText = vm.InlineDocument.Text;
+        });
+
+        // Both: full unified weave — deletion and insertion both present.
+        bothText.Should().Contain("beta").And.Contain("BETA");
+        // LeftOnly: left file verbatim — has 'beta', no 'BETA'.
+        leftOnlyText.Should().Be("alpha\nbeta\n");
+        // RightOnly: right file verbatim — has 'BETA', no 'beta'.
+        rightOnlyText.Should().Be("alpha\nBETA\n");
+    }
+
     private sealed class InMemorySettingsServiceForPane : ISettingsService
     {
         private AppSettings _current;

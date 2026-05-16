@@ -45,6 +45,7 @@ public sealed class SettingsServiceTests : IDisposable
             IsSideBySide = false,
             ShowVisibleWhitespace = true,
             LiveUpdates = false,
+            SideVisibility = DiffSideVisibility.RightOnly,
             DisplayMode = FileListDisplayMode.GroupedByDirectory,
             LargeFileThresholdBytes = 7L * 1024 * 1024,
             FontFamily = "Cascadia Code",
@@ -165,6 +166,22 @@ public sealed class SettingsServiceTests : IDisposable
         svc.Current.TabWidth.Should().Be(7);
         svc.Current.FontFamily.Should().Be("Consolas"); // default
         svc.Current.LargeFileThresholdBytes.Should().Be(25L * 1024 * 1024); // default
+        svc.Current.SideVisibility.Should().Be(DiffSideVisibility.Both); // default
+    }
+
+    [Fact]
+    public void Load_GarbageSideVisibility_FallsBackToBoth()
+    {
+        var bad = new JsonObject
+        {
+            ["schemaVersion"] = AppSettings.CurrentSchemaVersion,
+            ["sideVisibility"] = "NotARealValue",
+        };
+        File.WriteAllText(_settingsPath, bad.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.Current.SideVisibility.Should().Be(DiffSideVisibility.Both);
     }
 
     [Fact]
