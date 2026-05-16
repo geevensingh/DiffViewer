@@ -302,6 +302,39 @@ public class RepositoryServiceTests
     }
 
     [Fact]
+    public void ReadSide_RightSideOfUnstaged_ReadsWorkdirEvenWhenRightBlobShaPointsAtMissingBlob()
+    {
+        // Repro for the phantom-deleted-file bug. LibGit2Sharp's
+        // Compare<TreeChanges> against DiffTargets.WorkingDirectory can
+        // stamp TreeEntryChanges.Oid with the clean-filter hash of the
+        // working tree file without ever persisting that blob to the
+        // object database (observed for some Unstaged entries on repos
+        // with core.autocrlf=true + text:auto). Routing those reads
+        // through Lookup<Blob> would return null and surface the file as
+        // entirely deleted in the diff pane. RepositoryService now treats
+        // the workdir as the source of truth for the right side of
+        // Unstaged/Untracked changes regardless of RightBlobSha — this
+        // test fabricates a non-existent SHA and asserts ReadSide still
+        // returns the on-disk content.
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "alpha\n");
+        t.InitialCommit("c1");
+        t.WriteFile("a.txt", "alpha CHANGED\n");
+
+        using var svc = new RepositoryService(t.Path);
+        var changes = svc.EnumerateChanges(new DiffSide.CommitIsh("HEAD"), new DiffSide.WorkingTree());
+        var real = changes.Single(c => c.Path == "a.txt" && c.Layer == WorkingTreeLayer.Unstaged);
+
+        // Use a syntactically-valid SHA-1 that won't exist in the object
+        // DB — simulates the LibGit2Sharp behaviour where Oid is
+        // populated but the blob was never persisted.
+        var faked = real with { RightBlobSha = "0123456789abcdef0123456789abcdef01234567" };
+
+        var right = svc.ReadSide(faked, ChangeSide.Right);
+        right.Text.Should().Be("alpha CHANGED\n");
+    }
+
+    [Fact]
     public void TryResolveCurrent_ReturnsNullWhenFileNoLongerInLayer()
     {
         using var t = new TempRepo();

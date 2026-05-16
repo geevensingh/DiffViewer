@@ -531,22 +531,31 @@ public sealed class RepositoryService : IRepositoryService
         //   - CommittedSinceCommit: left = leftCommit.Tree blob, right = HEAD blob.
 
         bool readLeft = side == ChangeSide.Left;
-        string? sha = readLeft ? change.LeftBlobSha : change.RightBlobSha;
 
-        // For Unstaged-right and Untracked-right, the SHA is null and the source is the working tree.
-        if (sha is null)
+        // For the right side of Unstaged/Untracked, the working tree IS the
+        // source of truth — read directly from disk regardless of
+        // RightBlobSha. LibGit2Sharp's Compare<TreeChanges> against
+        // DiffTargets.WorkingDirectory sometimes pre-computes the
+        // clean-filter hash of the workdir file and stamps it on
+        // TreeEntryChanges.Oid, but the blob it would refer to was never
+        // persisted to the object database. Honouring that SHA here would
+        // route us into Lookup<Blob>, get back null, and return Empty —
+        // showing the file as entirely deleted in the diff pane even
+        // though it exists on disk. ProbeMetadata already has this
+        // workdir fallback (see lines around `else if (layer ==
+        // WorkingTreeLayer.Unstaged)`); reading the workdir here keeps
+        // the read path consistent with its documented contract above.
+        if (!readLeft && (change.Layer == WorkingTreeLayer.Unstaged || change.Layer == WorkingTreeLayer.Untracked))
         {
-            if (!readLeft && (change.Layer == WorkingTreeLayer.Unstaged || change.Layer == WorkingTreeLayer.Untracked))
-            {
-                var workPath = WorkdirPath(change.Path);
-                if (!File.Exists(workPath)) return BlobContent.Empty;
+            var workPath = WorkdirPath(change.Path);
+            if (!File.Exists(workPath)) return BlobContent.Empty;
 
-                var bytes = File.ReadAllBytes(workPath);
-                return BuildBlobContent(bytes);
-            }
-
-            return BlobContent.Empty;
+            var bytes = File.ReadAllBytes(workPath);
+            return BuildBlobContent(bytes);
         }
+
+        string? sha = readLeft ? change.LeftBlobSha : change.RightBlobSha;
+        if (sha is null) return BlobContent.Empty;
 
         var blob = _repo.Lookup<Blob>(sha);
         if (blob is null) return BlobContent.Empty;
