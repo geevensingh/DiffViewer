@@ -44,18 +44,45 @@ jobs:
             exit 1
           }
 
-      - name: Read tag annotation
+      - name: Extract CHANGELOG section
         shell: pwsh
         run: |
-          git fetch --tags --force
-          $msg = git for-each-ref "refs/tags/$env:GITHUB_REF_NAME" --format='%(contents)'
-          if ([string]::IsNullOrWhiteSpace($msg)) { $msg = "Release $env:GITHUB_REF_NAME" }
-          Write-Host "Tag message length: $($msg.Length)"
-          "TAG_MSG<<EOF`n$msg`nEOF" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $changelog = 'CHANGELOG.md'
+          if (-not (Test-Path $changelog)) {
+            Write-Error "$changelog not found at repo root."
+            exit 1
+          }
+          $lines = Get-Content -LiteralPath $changelog
+          # Match the exact section header `## [<version>]` followed by EOL
+          # or ` -` (date). Anchor to start-of-line so we don't match e.g.
+          # `### Foo ## [0.2.0]` accidentally.
+          $headerPattern = '^## \[' + [regex]::Escape($version) + '\](\s|$)'
+          $start = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match $headerPattern) { $start = $i; break }
+          }
+          if ($start -lt 0) {
+            Write-Error "No '## [$version]' section in CHANGELOG.md. Add one before tagging."
+            exit 1
+          }
+          # Extract everything after the heading line up to the next `## [`
+          # (next release section) or EOF. Trim leading/trailing blank lines.
+          $end = $lines.Count
+          for ($j = $start + 1; $j -lt $lines.Count; $j++) {
+            if ($lines[$j] -match '^## \[') { $end = $j; break }
+          }
+          $section = ($lines[($start + 1)..($end - 1)] -join "`n").Trim()
+          if ([string]::IsNullOrWhiteSpace($section)) {
+            Write-Error "Section '## [$version]' in CHANGELOG.md is empty. Fill it in before tagging."
+            exit 1
+          }
+          Write-Host "Extracted $($section.Length) chars from '## [$version]'."
+          "RELEASE_BODY<<EOF`n$section`nEOF" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: publish/DiffViewer.exe
-          body: ${{ env.TAG_MSG }}
+          body: ${{ env.RELEASE_BODY }}
           fail_on_unmatched_files: true

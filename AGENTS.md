@@ -396,18 +396,44 @@ semantics and are out of scope until added explicitly.
 Tag-driven. Push an annotated tag matching `v[0-9]+.[0-9]+.[0-9]+`
 (optionally with a `-suffix` prerelease component, e.g., `v0.2.0-rc1`)
 to master. `.github/workflows/release.yml` builds, publishes a
-single-file `DiffViewer.exe`, and creates a GitHub Release with the tag
-annotation as the body. Don't fold a release into a normal feature
-commit — release tags should point at the commit that should ship.
+single-file `DiffViewer.exe`, and creates a GitHub Release with the
+matching section of `CHANGELOG.md` as the body. Don't fold a release
+into a normal feature commit — release tags should point at the commit
+that should ship.
 
 ```pwsh
-git tag -a v0.2.0 -m "Release notes go here"
+git tag -a v0.2.0 -m "Release v0.2.0"
 git push origin v0.2.0
 ```
 
 The CI build workflow (`.github/workflows/build.yml`) runs on every
 push to `master` and every PR (`dotnet build -c Release` +
 `dotnet test`).
+
+### Release notes live in `CHANGELOG.md`
+
+The release body shown on the GitHub Releases page comes from
+`CHANGELOG.md`, not from the tag annotation. `release.yml` extracts the
+section matching the pushed tag (e.g. `## [0.2.0]` for `v0.2.0` — no
+`v` prefix in the heading, matching [Keep a Changelog][kac]) and uses
+it verbatim as the release body. Missing or empty sections fail the
+workflow loudly — there is no silent fallback.
+
+The tag annotation can be terse (`Release v0.2.0`); it is not the
+source of release notes and does not need Markdown formatting.
+
+[kac]: https://keepachangelog.com/en/1.1.0/
+
+### PRs update `[Unreleased]`
+
+PRs that change user-visible behavior — features, bug fixes, install
+or compatibility changes — also update the `## [Unreleased]` section
+of `CHANGELOG.md` in the same PR. The release-time job becomes
+"promote `[Unreleased]` to `[<version>]` with today's date", not
+"reconstruct what shipped from `git log`".
+
+Doc-only, build-hygiene, test-only, and pure-refactor PRs do not need
+to touch `CHANGELOG.md`.
 
 ### When to release
 
