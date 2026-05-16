@@ -20,6 +20,15 @@ body. Keep section headings exact and write notes in Markdown.
   layer (untracked / unstaged / staged); destructive revert prompts
   with a "Don't ask me again" toggle.
 
+### Changed
+
+- **Toolbar buttons now show clear hover and press feedback in every
+  state**, including when a toggle is already "on". Previously the
+  "checked" highlight masked the hover highlight, so an active toggle
+  looked unresponsive to the cursor. Toggles, the side-visibility
+  radio group, and the plain Prev / Next / Settings buttons all share
+  the same hover / press chrome now.
+
 ## [0.2.0] - 2026-05-15
 
 ### Added
