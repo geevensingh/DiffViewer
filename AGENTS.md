@@ -275,6 +275,13 @@ DiffViewer.Tests/    # xUnit; mirrors DiffViewer namespace structure
 
 - Small, focused commits with imperative subject lines (e.g.,
   `Fix race in MainViewModel watcher suspend`).
+- **Default to committing directly to `master`.** This repo's
+  history is direct-to-master; open a pull request only when the
+  user explicitly asks ("open a PR", "send a PR for review", etc.).
+  PR workflow is opt-in, not the default. Section 11 rules that
+  reference PRs (CHANGELOG `[Unreleased]` updates, Session block in
+  PR descriptions, review-feedback handling) apply when a PR is
+  open; they do not imply that a PR must be opened.
 - **Stage files explicitly by path.** Never run `git add -A`,
   `git add .`, or `git add --all`. This prevents committing unrelated
   edits, generated files (`bin/`, `obj/`, `publish/`), or session-state
