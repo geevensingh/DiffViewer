@@ -1,5 +1,9 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
+using DiffViewer.Models;
+using DiffViewer.Services;
+using DiffViewer.Utility;
 using DiffViewer.ViewModels;
 using DiffViewer.Views;
 
@@ -7,10 +11,123 @@ namespace DiffViewer;
 
 public partial class MainWindow : Window
 {
-    public MainWindow()
+    /// <summary>
+    /// Default size used when no valid saved geometry is available.
+    /// Matches the historical XAML values before window-state
+    /// persistence was added.
+    /// </summary>
+    private const double DefaultWindowWidth = 1200;
+    private const double DefaultWindowHeight = 800;
+
+    private readonly ISettingsService? _settingsService;
+
+    /// <summary>
+    /// Parameterless ctor for XAML designer / preview tooling only. The
+    /// runtime always uses <see cref="MainWindow(ISettingsService)"/> so
+    /// saved window geometry can be restored and re-persisted.
+    /// </summary>
+    public MainWindow() : this(settingsService: null) { }
+
+    public MainWindow(ISettingsService? settingsService)
     {
         InitializeComponent();
+        _settingsService = settingsService;
+        ApplyInitialGeometry();
         DataContextChanged += OnDataContextChanged;
+        if (_settingsService is not null)
+        {
+            // Subscribe after applying initial geometry so the restore
+            // itself does not trigger a redundant save.
+            StateChanged += OnWindowStateChanged;
+            Closing += OnWindowClosing;
+        }
+    }
+
+    /// <summary>
+    /// Apply saved size/position/maximized state from settings, or fall
+    /// back to <see cref="DefaultWindowWidth"/>×<see cref="DefaultWindowHeight"/>
+    /// centered on the primary screen. Multi-monitor validation lives in
+    /// <see cref="WindowGeometryValidator"/>.
+    /// </summary>
+    private void ApplyInitialGeometry()
+    {
+        var saved = _settingsService?.Current.WindowState;
+        var resolved = WindowGeometryValidator.Resolve(
+            saved,
+            SystemParameters.VirtualScreenLeft,
+            SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth,
+            SystemParameters.VirtualScreenHeight);
+
+        if (resolved is null)
+        {
+            Width = DefaultWindowWidth;
+            Height = DefaultWindowHeight;
+            WindowStartupLocation = WindowStartupLocation.CenterScreen;
+            return;
+        }
+
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = resolved.Left;
+        Top = resolved.Top;
+        Width = resolved.Width;
+        Height = resolved.Height;
+        if (resolved.IsMaximized)
+        {
+            // Pre-Show() WindowState assignment is honored by WPF; the
+            // pre-maximize Left/Top/Width/Height become the
+            // RestoreBounds the user will un-maximize to.
+            WindowState = System.Windows.WindowState.Maximized;
+        }
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        // Persist on Normal <-> Maximized transitions. Skip Minimized
+        // (a) so a minimize-and-quit does not lose the maximized bit,
+        // and (b) because restoring to Minimized would be user-hostile.
+        if (WindowState == System.Windows.WindowState.Minimized) return;
+        SaveCurrentGeometry();
+    }
+
+    private void OnWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (WindowState == System.Windows.WindowState.Minimized) return;
+        SaveCurrentGeometry();
+    }
+
+    /// <summary>
+    /// Capture the *restore* bounds (so un-maximize returns to the right
+    /// place) plus the maximized bit, and persist via
+    /// <see cref="ISettingsService"/>. Any I/O failure is swallowed: a
+    /// best-effort persist must never crash the app on shutdown.
+    /// </summary>
+    private void SaveCurrentGeometry()
+    {
+        if (_settingsService is null) return;
+
+        bool isMaximized = WindowState == System.Windows.WindowState.Maximized;
+        Rect bounds = isMaximized
+            ? RestoreBounds
+            : new Rect(Left, Top, ActualWidth, ActualHeight);
+
+        if (bounds.IsEmpty ||
+            double.IsNaN(bounds.Width) || double.IsNaN(bounds.Height) ||
+            bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return;
+        }
+
+        var snapshot = new WindowStateSnapshot(
+            bounds.Left, bounds.Top, bounds.Width, bounds.Height, isMaximized);
+        try
+        {
+            _settingsService.Update(s => s with { WindowState = snapshot });
+        }
+        catch
+        {
+            // Best-effort persistence on a closing window — never crash.
+        }
     }
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)

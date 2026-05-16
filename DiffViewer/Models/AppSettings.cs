@@ -16,9 +16,20 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
+
+    // ---- Main-window geometry (added in v2) ----
+    /// <summary>
+    /// Saved <see cref="MainWindow"/> size, position, and maximized
+    /// state. <c>null</c> means "no saved state yet" — the window opens
+    /// at the built-in defaults. See
+    /// <see cref="DiffViewer.Utility.WindowGeometryValidator"/> for the
+    /// multi-monitor sanity check applied before this is honored at
+    /// launch.
+    /// </summary>
+    public WindowStateSnapshot? WindowState { get; init; }
 
     // ---- Toolbar toggles (persisted across launches per the plan) ----
     public bool IgnoreWhitespace { get; init; }

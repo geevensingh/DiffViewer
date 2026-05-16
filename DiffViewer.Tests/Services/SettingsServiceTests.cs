@@ -58,6 +58,7 @@ public sealed class SettingsServiceTests : IDisposable
             ExternalEditorLineArgFormat = "--goto {path}:{line}",
             SuppressRevertHunkConfirmation = true,
             SuppressDeleteFileConfirmation = true,
+            WindowState = new WindowStateSnapshot(-50, 75, 1400, 900, IsMaximized: true),
         };
         svc.Save(modified);
 
@@ -149,6 +150,46 @@ public sealed class SettingsServiceTests : IDisposable
         svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
         svc.Current.IgnoreWhitespace.Should().BeTrue();
         svc.Current.FontSize.Should().Be(13);
+    }
+
+    [Fact]
+    public void Load_V1File_MigratesToV2_WindowStateDefaultsToNull()
+    {
+        // v1 schema (current minus 1) had no windowState field at all.
+        // After v1->v2 migration the field should be null and other
+        // fields preserved.
+        var v1 = new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["fontSize"] = 17,
+            ["tabWidth"] = 3,
+        };
+        File.WriteAllText(_settingsPath, v1.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
+        svc.Current.FontSize.Should().Be(17);
+        svc.Current.TabWidth.Should().Be(3);
+        svc.Current.WindowState.Should().BeNull();
+    }
+
+    [Fact]
+    public void WindowState_RoundTrips_Through_Save_And_Reload()
+    {
+        var svc = new SettingsService(_settingsPath);
+        var snapshot = new WindowStateSnapshot(-200.5, 100, 1280, 720, IsMaximized: true);
+        svc.Save(svc.Current with { WindowState = snapshot });
+
+        var reloaded = new SettingsService(_settingsPath);
+        reloaded.Current.WindowState.Should().Be(snapshot);
+    }
+
+    [Fact]
+    public void WindowState_NullByDefault_OnFreshLoad()
+    {
+        var svc = new SettingsService(_settingsPath);
+        svc.Current.WindowState.Should().BeNull();
     }
 
     [Fact]

@@ -49,6 +49,7 @@ internal static class SettingsJsonSerializer
             ["externalEditorLineArgFormat"] = s.ExternalEditorLineArgFormat,
             ["suppressRevertHunkConfirmation"] = s.SuppressRevertHunkConfirmation,
             ["suppressDeleteFileConfirmation"] = s.SuppressDeleteFileConfirmation,
+            ["windowState"] = SerializeWindowState(s.WindowState),
         };
         return obj.ToJsonString(WriteOptions);
     }
@@ -77,7 +78,33 @@ internal static class SettingsJsonSerializer
             ExternalEditorLineArgFormat = TryString(obj, "externalEditorLineArgFormat"),
             SuppressRevertHunkConfirmation = TryBool(obj, "suppressRevertHunkConfirmation") ?? defaults.SuppressRevertHunkConfirmation,
             SuppressDeleteFileConfirmation = TryBool(obj, "suppressDeleteFileConfirmation") ?? defaults.SuppressDeleteFileConfirmation,
+            WindowState = DeserializeWindowState(obj["windowState"]),
         };
+    }
+
+    private static JsonNode? SerializeWindowState(WindowStateSnapshot? snapshot)
+    {
+        if (snapshot is null) return null;
+        return new JsonObject
+        {
+            ["left"] = snapshot.Left,
+            ["top"] = snapshot.Top,
+            ["width"] = snapshot.Width,
+            ["height"] = snapshot.Height,
+            ["isMaximized"] = snapshot.IsMaximized,
+        };
+    }
+
+    private static WindowStateSnapshot? DeserializeWindowState(JsonNode? node)
+    {
+        if (node is not JsonObject obj) return null;
+        var left = TryDouble(obj, "left");
+        var top = TryDouble(obj, "top");
+        var width = TryDouble(obj, "width");
+        var height = TryDouble(obj, "height");
+        if (left is null || top is null || width is null || height is null) return null;
+        var isMaximized = TryBool(obj, "isMaximized") ?? false;
+        return new WindowStateSnapshot(left.Value, top.Value, width.Value, height.Value, isMaximized);
     }
 
     private static JsonObject SerializeColorScheme(ColorSchemeChoice choice) => choice switch

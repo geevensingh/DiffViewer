@@ -7,9 +7,10 @@ namespace DiffViewer.Services;
 /// <see cref="JsonObject"/> shaped for version N and returns one shaped
 /// for N+1. <see cref="MigrateUpTo"/> chains them.
 ///
-/// <para>v1 is the inaugural shape, so there are no migrations yet. The
-/// first time we change the shape we'll add a <c>MigrateV1ToV2</c> here
-/// + a fixture test asserting it round-trips.</para>
+/// <para>v2 introduced the optional <c>windowState</c> object for
+/// remembered main-window geometry. The migration is a no-op because
+/// the field is nullable — pre-v2 files simply load without a saved
+/// window state and the window opens at the built-in defaults.</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -26,6 +27,7 @@ internal static class SettingsMigrations
             Func<JsonObject, JsonObject> step = v switch
             {
                 0 => MigrateV0ToV1, // pre-versioned files - treat as v1's shape
+                1 => MigrateV1ToV2, // adds windowState (nullable)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -40,4 +42,12 @@ internal static class SettingsMigrations
     /// missing field.
     /// </summary>
     private static JsonObject MigrateV0ToV1(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v2 adds the optional <c>windowState</c> object. A missing field
+    /// means "no saved state" so the migration is a no-op; the
+    /// deserializer will default <c>WindowState</c> to <c>null</c> and
+    /// the window will open at the built-in defaults.
+    /// </summary>
+    private static JsonObject MigrateV1ToV2(JsonObject obj) => obj;
 }

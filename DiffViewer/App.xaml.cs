@@ -39,7 +39,7 @@ public partial class App : Application
         // can wire the dropdown to the coordinator.
         services.ContextSwitcher = _coordinator;
 
-        var window = new MainWindow();
+        var window = new MainWindow(settingsService);
         _coordinator.CurrentChanged += (_, _) => window.DataContext = _coordinator.Current;
         window.Closed += async (_, _) =>
         {
