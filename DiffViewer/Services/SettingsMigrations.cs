@@ -11,6 +11,11 @@ namespace DiffViewer.Services;
 /// remembered main-window geometry. The migration is a no-op because
 /// the field is nullable — pre-v2 files simply load without a saved
 /// window state and the window opens at the built-in defaults.</para>
+///
+/// <para>v3 introduced <c>suppressRevertFileConfirmation</c> for the
+/// whole-file Revert action. The migration is a no-op because the
+/// field is a bool with a <c>false</c> default — pre-v3 files
+/// deserialize with the prompt enabled (the safe default).</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -28,6 +33,7 @@ internal static class SettingsMigrations
             {
                 0 => MigrateV0ToV1, // pre-versioned files - treat as v1's shape
                 1 => MigrateV1ToV2, // adds windowState (nullable)
+                2 => MigrateV2ToV3, // adds suppressRevertFileConfirmation (bool, default false)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -50,4 +56,13 @@ internal static class SettingsMigrations
     /// the window will open at the built-in defaults.
     /// </summary>
     private static JsonObject MigrateV1ToV2(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v3 adds <c>suppressRevertFileConfirmation</c>. A missing field
+    /// means "prompt on Revert file…" (the safe default) so the
+    /// migration is a no-op; the deserializer fills in
+    /// <see cref="AppSettings.SuppressRevertFileConfirmation"/> as
+    /// <c>false</c>.
+    /// </summary>
+    private static JsonObject MigrateV2ToV3(JsonObject obj) => obj;
 }

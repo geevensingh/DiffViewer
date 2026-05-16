@@ -59,13 +59,21 @@
 
             <Separator>
                 <Separator.Visibility>
-                    <Binding Path="IsUntracked" Converter="{x:Static vm:BoolToVisibilityConverter.Instance}"/>
+                    <Binding Path="HasFileWriteAction" Converter="{x:Static vm:BoolToVisibilityConverter.Instance}"/>
                 </Separator.Visibility>
             </Separator>
             <MenuItem Header="Stage file"
                       Command="{Binding PlacementTarget.Tag.StageFileCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding}"
-                      Visibility="{Binding IsUntracked, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"/>
+                      Visibility="{Binding CanStageWholeFile, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"/>
+            <MenuItem Header="Unstage file"
+                      Command="{Binding PlacementTarget.Tag.UnstageFileCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding}"
+                      Visibility="{Binding CanUnstageWholeFile, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"/>
+            <MenuItem Header="Revert file…"
+                      Command="{Binding PlacementTarget.Tag.RevertFileCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding}"
+                      Visibility="{Binding CanRevertWholeFile, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"/>
             <MenuItem Header="Delete file…"
                       Command="{Binding PlacementTarget.Tag.DeleteFileCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       CommandParameter="{Binding}"

@@ -16,7 +16,7 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -60,6 +60,7 @@ public sealed record AppSettings
 
     // ---- "Don't ask me again" flags for destructive ops ----
     public bool SuppressRevertHunkConfirmation { get; init; }
+    public bool SuppressRevertFileConfirmation { get; init; }
     public bool SuppressDeleteFileConfirmation { get; init; }
 }
 

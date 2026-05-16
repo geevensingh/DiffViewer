@@ -950,6 +950,7 @@ public class MainViewModelKeyboardShortcutTests
         public Task<GitWriteResult> RevertHunkAsync(string r, HunkPatchInputs i, CancellationToken ct = default) => Task.FromResult(GitWriteResult.Ok());
         public Task<GitWriteResult> StageFileAsync(string r, string p, CancellationToken ct = default) => Task.FromResult(GitWriteResult.Ok());
         public Task<GitWriteResult> UnstageFileAsync(string r, string p, CancellationToken ct = default) => Task.FromResult(GitWriteResult.Ok());
+        public Task<GitWriteResult> RevertFileAsync(string r, string p, CancellationToken ct = default) => Task.FromResult(GitWriteResult.Ok());
         public Task<GitWriteResult> AddToGitignoreAsync(string r, string p, CancellationToken ct = default) => Task.FromResult(GitWriteResult.Ok());
         public Task<GitWriteResult> DeleteToRecycleBinAsync(string r, string p, CancellationToken ct = default) => Task.FromResult(GitWriteResult.Ok());
     }

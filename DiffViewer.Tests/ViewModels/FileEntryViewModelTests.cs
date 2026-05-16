@@ -68,4 +68,74 @@ public class FileEntryViewModelTests
         e.HasVisibleDifferences = false;
         e.IsWhitespaceOnly.Should().BeTrue();
     }
+
+    // ---- Whole-file write-action eligibility ----
+    //
+    // Mirrors per-hunk eligibility on DiffPaneViewModel one level up:
+    //   * Stage:   Untracked or Unstaged (wider than per-hunk on purpose;
+    //              untracked files have no hunks to right-click in the diff
+    //              pane, so whole-file Stage is the only UI path to add them).
+    //   * Unstage: Staged only.
+    //   * Revert:  Unstaged only (destructive `git restore -- path`).
+
+    private static FileChange Row(WorkingTreeLayer layer, FileStatus status = Models.FileStatus.Modified) =>
+        new(
+            Path: "x.cs",
+            OldPath: null,
+            Status: status,
+            ConflictCode: null,
+            Layer: layer,
+            LeftBlobSha: null, RightBlobSha: null,
+            IsBinary: false,
+            LeftFileSizeBytes: null, RightFileSizeBytes: null,
+            IsLfsPointer: false, IsSparseNotCheckedOut: false,
+            OldMode: 0, NewMode: 0);
+
+    [Theory]
+    [InlineData(WorkingTreeLayer.Untracked, true)]
+    [InlineData(WorkingTreeLayer.Unstaged, true)]
+    [InlineData(WorkingTreeLayer.Staged, false)]
+    [InlineData(WorkingTreeLayer.Conflicted, false)]
+    [InlineData(WorkingTreeLayer.CommittedSinceCommit, false)]
+    [InlineData(WorkingTreeLayer.None, false)]
+    public void CanStageWholeFile_TrueFor_UnstagedAndUntracked_FalseOtherwise(WorkingTreeLayer layer, bool expected)
+    {
+        new FileEntryViewModel(Row(layer), @"C:\repo").CanStageWholeFile.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(WorkingTreeLayer.Staged, true)]
+    [InlineData(WorkingTreeLayer.Untracked, false)]
+    [InlineData(WorkingTreeLayer.Unstaged, false)]
+    [InlineData(WorkingTreeLayer.Conflicted, false)]
+    [InlineData(WorkingTreeLayer.CommittedSinceCommit, false)]
+    [InlineData(WorkingTreeLayer.None, false)]
+    public void CanUnstageWholeFile_TrueFor_StagedOnly_FalseOtherwise(WorkingTreeLayer layer, bool expected)
+    {
+        new FileEntryViewModel(Row(layer), @"C:\repo").CanUnstageWholeFile.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(WorkingTreeLayer.Unstaged, true)]
+    [InlineData(WorkingTreeLayer.Staged, false)]
+    [InlineData(WorkingTreeLayer.Untracked, false)]
+    [InlineData(WorkingTreeLayer.Conflicted, false)]
+    [InlineData(WorkingTreeLayer.CommittedSinceCommit, false)]
+    [InlineData(WorkingTreeLayer.None, false)]
+    public void CanRevertWholeFile_TrueFor_UnstagedOnly_FalseOtherwise(WorkingTreeLayer layer, bool expected)
+    {
+        new FileEntryViewModel(Row(layer), @"C:\repo").CanRevertWholeFile.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(WorkingTreeLayer.Untracked, true)]    // Stage
+    [InlineData(WorkingTreeLayer.Unstaged, true)]     // Stage + Revert
+    [InlineData(WorkingTreeLayer.Staged, true)]       // Unstage
+    [InlineData(WorkingTreeLayer.Conflicted, false)]
+    [InlineData(WorkingTreeLayer.CommittedSinceCommit, false)]
+    [InlineData(WorkingTreeLayer.None, false)]
+    public void HasFileWriteAction_TrueWhen_AnyOfTheThreeAreTrue(WorkingTreeLayer layer, bool expected)
+    {
+        new FileEntryViewModel(Row(layer), @"C:\repo").HasFileWriteAction.Should().Be(expected);
+    }
 }

@@ -12,6 +12,14 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Whole-file Stage / Unstage / Revert** from the file-list
+  right-click menu, mirroring the per-hunk stage / unstage / revert
+  actions in the diff pane. Eligibility tracks the working-tree
+  layer (untracked / unstaged / staged); destructive revert prompts
+  with a "Don't ask me again" toggle.
+
 ## [0.2.0] - 2026-05-15
 
 ### Added

@@ -91,6 +91,51 @@ public sealed partial class FileEntryViewModel : ObservableObject
     /// <summary>True for Untracked-layer rows - <c>git add</c> applies.</summary>
     public bool IsUntracked => Change.Layer == WorkingTreeLayer.Untracked;
 
+    // ---- Whole-file write-action eligibility (mirrors hunk-level Can*
+    // predicates on DiffPaneViewModel one level up). Drives the
+    // Stage/Unstage/Revert MenuItem visibility in the row's
+    // ContextMenu. These are pure functions of Change.Layer, and
+    // FileChange is set in the ctor and never mutated on a given
+    // FileEntryViewModel instance — layer changes always come via a
+    // brand-new instance during refresh — so no INotifyPropertyChanged
+    // ceremony is needed. ----
+
+    /// <summary>
+    /// True iff "Stage file" should appear. Untracked and Unstaged rows
+    /// both stage cleanly via <c>git add -- &lt;path&gt;</c>. Note: this
+    /// is wider than the per-hunk Stage eligibility, which excludes
+    /// Untracked because untracked files have no diff to show hunks
+    /// for; whole-file Stage is the only UI path to add them.
+    /// </summary>
+    public bool CanStageWholeFile =>
+        Change.Layer is WorkingTreeLayer.Untracked or WorkingTreeLayer.Unstaged;
+
+    /// <summary>
+    /// True iff "Unstage file" should appear. Only Staged rows have
+    /// something to remove via <c>git restore --staged -- &lt;path&gt;</c>.
+    /// <para>Known limitation: for staged renames the call only resets
+    /// the new path's index entry, leaving the staged delete of the
+    /// old path in place. See <see cref="DiffViewer.Services.IGitWriteService.RevertFileAsync"/>
+    /// docstring for the future multi-path overload that would fix this.</para>
+    /// </summary>
+    public bool CanUnstageWholeFile =>
+        Change.Layer == WorkingTreeLayer.Staged;
+
+    /// <summary>
+    /// True iff "Revert file…" should appear. Only Unstaged rows
+    /// have working-tree edits to discard via
+    /// <c>git restore -- &lt;path&gt;</c>. Destructive.
+    /// </summary>
+    public bool CanRevertWholeFile =>
+        Change.Layer == WorkingTreeLayer.Unstaged;
+
+    /// <summary>
+    /// True iff any of the three whole-file write actions is visible.
+    /// Drives the Separator preceding them in the context menu.
+    /// </summary>
+    public bool HasFileWriteAction =>
+        CanStageWholeFile || CanUnstageWholeFile || CanRevertWholeFile;
+
     /// <summary>True when <em>Copy diff (unified)</em> is meaningful.</summary>
     public bool CanCopyDiffAsUnified => !Change.IsBinary && !Change.IsLfsPointer;
 
