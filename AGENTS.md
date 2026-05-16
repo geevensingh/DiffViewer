@@ -286,6 +286,10 @@ DiffViewer.Tests/    # xUnit; mirrors DiffViewer namespace structure
 - Never commit secrets, `.env`, `bin/`, `obj/`, `publish/`, or editor
   files beyond what `.gitignore` already covers.
 - Do not rewrite or force-push shared branches.
+- **Never push a release tag on the agent's own judgment.** Tagging
+  ships a Windows `.exe` to users via the release workflow and
+  requires an unambiguous user command. See §12 "When to release"
+  for the cadence rules and the agent-tagging prohibition.
 
 ### Session attribution
 
@@ -404,6 +408,43 @@ git push origin v0.2.0
 The CI build workflow (`.github/workflows/build.yml`) runs on every
 push to `master` and every PR (`dotnet build -c Release` +
 `dotnet test`).
+
+### When to release
+
+Each release is a user-visible Windows `.exe` artifact downloaded from
+GitHub Releases. There is no auto-update channel and no nightly feed
+— releases *are* the distribution. Tag deliberately, not on a fixed
+cadence and not per commit.
+
+**Bump rules (pre-1.0 SemVer):**
+
+- User-facing feature added → **minor** bump (e.g., `v0.1.0` →
+  `v0.2.0`).
+- Bug-fix-only batch → **patch** bump (e.g., `v0.1.0` → `v0.1.1`).
+- Pre-1.0 breaking changes ride in minor bumps (standard SemVer
+  carve-out for `0.y.z`). Once the project hits `1.0.0`, breaking
+  changes require a major bump.
+
+**Skip releases for** doc-only commits, build hygiene, test-only
+changes, and pure refactors that don't change shipped behavior. These
+sit on `master` until they ride alongside a feature or bug-fix
+release.
+
+**Group commits into coherent ships.** Don't let user-facing work
+languish unreleased — but don't tag a release for every individual
+feature commit either. When a meaningful delta has accumulated,
+batch it into one release with notes that describe the user-visible
+changes (not the per-commit refactor history).
+
+**Agent rule: a Copilot CLI session must not push a release tag on
+its own judgment.** Tagging is a shipping decision and is owned by a
+human. The §4 "unambiguous, scoped command" exception applies: if
+the user says "cut v0.2.0" or "ship a release", that is the plan and
+the approval. A general directive like "tidy things up", "finish the
+release work", or "do the obvious cleanup" is **not** authorization
+to tag. Recommending a release in conversation is fine and
+encouraged when a meaningful delta has accumulated; pushing the tag
+without an explicit command is not.
 
 ## 13. Origin
 
