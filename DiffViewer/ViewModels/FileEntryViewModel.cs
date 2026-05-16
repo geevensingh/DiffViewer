@@ -26,6 +26,16 @@ public sealed partial class FileEntryViewModel : ObservableObject
     [ObservableProperty]
     private string _displayPath = string.Empty;
 
+    /// <summary>
+    /// Per-entry selection flag bound TwoWay to <c>TreeViewItem.IsSelected</c>
+    /// in grouped-by-directory mode. <see cref="FileListViewModel"/> mirrors
+    /// this with <c>SelectedEntry</c> in both directions so the TreeView's
+    /// per-tree selection (read-only <c>TreeView.SelectedItem</c>) doesn't
+    /// matter -- the VM owns the truth. Defaults to <c>false</c>.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isSelected;
+
     public FileEntryViewModel(FileChange change, string repoRoot)
     {
         Change = change ?? throw new ArgumentNullException(nameof(change));

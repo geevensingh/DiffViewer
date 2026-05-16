@@ -222,4 +222,329 @@ public class FileListViewModelTests
         vm.IsGroupedByDirectoryMode = true;
         vm.DisplayMode.Should().Be(FileListDisplayMode.GroupedByDirectory);
     }
+
+    // ---- FlatGroupedView (single grouped ListBox) regression coverage ----
+
+    [Fact]
+    public void FlatGroupedView_GroupsByLayer_InCanonicalOrder()
+    {
+        var vm = new FileListViewModel();
+        var changes = new[]
+        {
+            MakeChange("u.txt", Models.FileStatus.Untracked, WorkingTreeLayer.Untracked),
+            MakeChange("s.cs", layer: WorkingTreeLayer.Staged),
+            MakeChange("c.cs", Models.FileStatus.Conflicted, WorkingTreeLayer.Conflicted),
+            MakeChange("w.cs", layer: WorkingTreeLayer.Unstaged),
+            MakeChange("h.cs", layer: WorkingTreeLayer.CommittedSinceCommit),
+        };
+
+        vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: false);
+
+        var groups = vm.FlatGroupedView.Groups!
+            .Cast<System.Windows.Data.CollectionViewGroup>()
+            .Select(g => ((FileListSectionHeader)g.Name).Layer)
+            .ToArray();
+
+        groups.Should().Equal(
+            WorkingTreeLayer.Conflicted,
+            WorkingTreeLayer.CommittedSinceCommit,
+            WorkingTreeLayer.Staged,
+            WorkingTreeLayer.Unstaged,
+            WorkingTreeLayer.Untracked);
+    }
+
+    [Fact]
+    public void FlatGroupedView_SortsEntriesWithinLayer_ByRepoRelativePath()
+    {
+        var vm = new FileListViewModel();
+        var changes = new[]
+        {
+            MakeChange("src/zeta.cs", layer: WorkingTreeLayer.Unstaged),
+            MakeChange("src/alpha.cs", layer: WorkingTreeLayer.Unstaged),
+            MakeChange("src/mu.cs", layer: WorkingTreeLayer.Unstaged),
+        };
+
+        vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: false);
+
+        var paths = vm.FlatGroupedView.Cast<FileEntryViewModel>()
+            .Select(e => e.Change.Path)
+            .ToArray();
+        paths.Should().Equal("src/alpha.cs", "src/mu.cs", "src/zeta.cs");
+    }
+
+    [Fact]
+    public void FlatGroupedView_SuppressesGrouping_WhenCommitVsCommit()
+    {
+        var vm = new FileListViewModel();
+        var changes = new[]
+        {
+            MakeChange("a.cs", layer: WorkingTreeLayer.None),
+            MakeChange("b.cs", layer: WorkingTreeLayer.None),
+        };
+
+        vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: true);
+
+        var groups = vm.FlatGroupedView.Groups!
+            .Cast<System.Windows.Data.CollectionViewGroup>()
+            .ToArray();
+        groups.Should().HaveCount(1);
+        ((FileListSectionHeader)groups[0].Name).Header.Should().Be("Changes");
+    }
+
+    [Fact]
+    public void FlatGroupedView_SharesGroupKeyInstance_AcrossLoadFromChanges()
+    {
+        // Header identity survives a rebuild so the user's collapse state
+        // (held on FileListSectionHeader.IsExpanded) doesn't reset every
+        // time the file list is refreshed.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(new[] { MakeChange("a.cs") }, @"C:\repo", isCommitVsCommit: false);
+        var firstHeader = vm.FlatGroupedView.Groups!
+            .Cast<System.Windows.Data.CollectionViewGroup>()
+            .Single()
+            .Name;
+
+        vm.LoadFromChanges(new[] { MakeChange("a.cs"), MakeChange("b.cs") }, @"C:\repo", isCommitVsCommit: false);
+        var secondHeader = vm.FlatGroupedView.Groups!
+            .Cast<System.Windows.Data.CollectionViewGroup>()
+            .Single()
+            .Name;
+
+        secondHeader.Should().BeSameAs(firstHeader);
+    }
+
+    [Fact]
+    public void FlatGroupedView_PreservesSectionCollapseState_AcrossLoadFromChanges()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var header = (FileListSectionHeader)vm.FlatGroupedView.Groups!
+            .Cast<System.Windows.Data.CollectionViewGroup>()
+            .Single().Name;
+        header.IsExpanded = false;
+
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged), MakeChange("b.cs", layer: WorkingTreeLayer.Unstaged) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var reloaded = (FileListSectionHeader)vm.FlatGroupedView.Groups!
+            .Cast<System.Windows.Data.CollectionViewGroup>()
+            .Single().Name;
+        reloaded.IsExpanded.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SectionViewModel_SharesHeaderInstance_WithFlatGroupedView()
+    {
+        // The grouped-by-directory presentation reads its Expander state
+        // from SectionViewModel.SharedHeader. It must be the same header
+        // instance that backs the flat-mode group so collapsing in one
+        // presentation is reflected in the other.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var flatHeader = (FileListSectionHeader)vm.FlatGroupedView.Groups!
+            .Cast<System.Windows.Data.CollectionViewGroup>()
+            .Single().Name;
+        var sectionHeader = vm.Sections.Single().SharedHeader;
+
+        sectionHeader.Should().BeSameAs(flatHeader);
+    }
+
+    [Fact]
+    public void SelectedEntry_RoundTripsAcrossLayers_WithoutLosingState()
+    {
+        // Regression test for the multi-ListBox stale-state bug: clicking
+        // file A in section-1, then B in section-2, then A in section-1
+        // must end with SelectedEntry == A. Before the single-grouped-
+        // ListBox refactor each section had its own Selector and the
+        // last-clicked-in Selector held a stale SelectedItem, which made
+        // the third click a silent no-op.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged),
+                MakeChange("b.cs", layer: WorkingTreeLayer.Untracked),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var a = vm.FlatEntries.Single(e => e.Change.Path == "a.cs");
+        var b = vm.FlatEntries.Single(e => e.Change.Path == "b.cs");
+
+        vm.SelectedEntry = a;
+        vm.SelectedEntry.Should().BeSameAs(a);
+
+        vm.SelectedEntry = b;
+        vm.SelectedEntry.Should().BeSameAs(b);
+
+        vm.SelectedEntry = a;
+        vm.SelectedEntry.Should().BeSameAs(a);
+
+        vm.SelectedEntry = b;
+        vm.SelectedEntry.Should().BeSameAs(b);
+    }
+
+    // ---- Grouped-mode TreeView selection sync (FileEntryViewModel.IsSelected) ----
+
+    [Fact]
+    public void IsSelected_FlipToTrue_PromotesEntryToSelectedEntry()
+    {
+        // Simulates a click in the unified TreeView: the TreeViewItem's
+        // IsSelected TwoWay binding pushes true into the entry's
+        // IsSelected, and FileListViewModel must promote that to
+        // SelectedEntry so the diff pane swaps content.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var b = vm.FlatEntries.Single(e => e.Change.Path == "b.cs");
+        b.IsSelected = true;
+
+        vm.SelectedEntry.Should().BeSameAs(b);
+    }
+
+    [Fact]
+    public void SelectedEntry_Setter_FlipsIsSelectedOnNewEntry_AndClearsPrior()
+    {
+        // The other direction: programmatic SelectedEntry change (F7/F8,
+        // refresh-time restoration, etc.) must push IsSelected onto the
+        // chosen entry so the TreeView visually highlights and scrolls to
+        // it, while clearing the prior entry's IsSelected so the previous
+        // tree row is no longer selected.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var a = vm.FlatEntries.Single(e => e.Change.Path == "a.cs");
+        var b = vm.FlatEntries.Single(e => e.Change.Path == "b.cs");
+
+        vm.SelectedEntry = a;
+        a.IsSelected.Should().BeTrue();
+        b.IsSelected.Should().BeFalse();
+
+        vm.SelectedEntry = b;
+        a.IsSelected.Should().BeFalse();
+        b.IsSelected.Should().BeTrue();
+    }
+
+    [Fact]
+    public void SelectedEntry_Setter_ExpandsAncestorSection_AndDirectories()
+    {
+        // F7/F8 might land on a file inside a collapsed section or a
+        // collapsed directory. The selection must auto-expand its
+        // ancestors, otherwise WPF's TreeViewItem auto-scroll lands inside
+        // a collapsed branch and the user sees nothing change.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("src/deep/nested/x.cs", layer: WorkingTreeLayer.Unstaged),
+                MakeChange("src/deep/nested/y.cs", layer: WorkingTreeLayer.Unstaged),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var section = vm.Sections.Single();
+        section.SharedHeader.IsExpanded = false;
+        CollapseRecursive(section.RootDirectories);
+
+        var y = vm.FlatEntries.Single(e => e.Change.Path == "src/deep/nested/y.cs");
+        vm.SelectedEntry = y;
+
+        section.SharedHeader.IsExpanded.Should().BeTrue();
+        AllAncestorsExpanded(section.RootDirectories, y).Should().BeTrue(
+            "every directory on the path from the section root down to the selected file must be expanded");
+
+        static void CollapseRecursive(IEnumerable<DirectoryNodeViewModel> nodes)
+        {
+            foreach (var n in nodes)
+            {
+                n.IsExpanded = false;
+                CollapseRecursive(n.Children);
+            }
+        }
+
+        static bool AllAncestorsExpanded(IEnumerable<DirectoryNodeViewModel> nodes, FileEntryViewModel target)
+        {
+            foreach (var node in nodes)
+            {
+                if (node.Files.Contains(target))
+                {
+                    return node.IsExpanded;
+                }
+                if (AllAncestorsExpanded(node.Children, target))
+                {
+                    return node.IsExpanded;
+                }
+            }
+            return false;
+        }
+    }
+
+    [Fact]
+    public void LoadFromChanges_UnsubscribesFromOldEntries_NoHandlerLeak()
+    {
+        // Orphan-handler test: if LoadFromChanges leaks per-entry
+        // PropertyChanged subscriptions, an entry from a stale list could
+        // still drive SelectedEntry after a refresh — both a memory leak
+        // and a correctness hazard. Setting IsSelected=true on an orphaned
+        // entry must NOT mutate SelectedEntry.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var orphan = vm.FlatEntries.Single(e => e.Change.Path == "b.cs");
+
+        vm.LoadFromChanges(
+            new[] { MakeChange("c.cs"), MakeChange("d.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.SelectedEntry.Should().BeNull();
+        orphan.IsSelected = true;
+
+        vm.SelectedEntry.Should().BeNull("the orphaned entry's PropertyChanged subscription was disposed during rebuild");
+    }
+
+    [Fact]
+    public void IsSelected_RoundTripsAcrossLayers_ViaSimulatedTreeViewClicks()
+    {
+        // Grouped-mode equivalent of the flat-mode A→B→A→B regression
+        // test, but routed through the IsSelected=true path that mimics
+        // the TreeView TwoWay binding. Catches a regression in the
+        // entry-IsSelected → SelectedEntry forwarding logic.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged),
+                MakeChange("b.cs", layer: WorkingTreeLayer.Untracked),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var a = vm.FlatEntries.Single(e => e.Change.Path == "a.cs");
+        var b = vm.FlatEntries.Single(e => e.Change.Path == "b.cs");
+
+        a.IsSelected = true;
+        vm.SelectedEntry.Should().BeSameAs(a);
+
+        b.IsSelected = true;
+        vm.SelectedEntry.Should().BeSameAs(b);
+        a.IsSelected.Should().BeFalse();
+
+        a.IsSelected = true;
+        vm.SelectedEntry.Should().BeSameAs(a);
+        b.IsSelected.Should().BeFalse();
+
+        b.IsSelected = true;
+        vm.SelectedEntry.Should().BeSameAs(b);
+        a.IsSelected.Should().BeFalse();
+    }
 }
