@@ -59,6 +59,26 @@ public interface IGitWriteService
     Task<GitWriteResult> UnstageFileAsync(string repoPath, string filePath, CancellationToken ct = default);
 
     /// <summary>
+    /// <c>git -C &lt;repo&gt; restore -- &lt;path&gt;</c>. Restores the
+    /// working-tree file from the index, discarding all unstaged edits
+    /// (and recreating the file if it was deleted unstaged). The path
+    /// is repo-relative with forward slashes — the same shape
+    /// <see cref="DiffViewer.Models.FileChange.Path"/> uses.
+    /// <b>Destructive.</b>
+    ///
+    /// <para>Known limitation: for staged renames (one DiffViewer row
+    /// with <see cref="DiffViewer.Models.FileChange.IsRenameOrCopy"/>
+    /// true under <see cref="DiffViewer.Models.WorkingTreeLayer.Staged"/>),
+    /// the caller's analog <c>UnstageFile</c> path only resets the new
+    /// path's index entry — the staged delete of the old path is
+    /// left in place. The eligibility predicate for Revert is
+    /// <see cref="DiffViewer.Models.WorkingTreeLayer.Unstaged"/> only,
+    /// where unstaged renames don't occur in practice, so this method
+    /// itself is unaffected.</para>
+    /// </summary>
+    Task<GitWriteResult> RevertFileAsync(string repoPath, string filePath, CancellationToken ct = default);
+
+    /// <summary>
     /// Append the <paramref name="repoRelativePath"/> to the repo's root
     /// <c>.gitignore</c> (creating it if needed). Path is normalised to
     /// forward slashes, gitignore-significant characters are escaped, and
@@ -123,6 +143,7 @@ public enum GitWriteOperationKind
     RevertHunk,
     StageFile,
     UnstageFile,
+    RevertFile,
     AddToGitignore,
     DeleteToRecycleBin,
 }

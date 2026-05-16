@@ -92,6 +92,10 @@ public sealed class GitWriteService : IGitWriteService
         => RunGitAsync(repoPath, GitWriteOperationKind.UnstageFile, filePath,
             new[] { "restore", "--staged", "--", filePath }, ct);
 
+    public Task<GitWriteResult> RevertFileAsync(string repoPath, string filePath, CancellationToken ct = default)
+        => RunGitAsync(repoPath, GitWriteOperationKind.RevertFile, filePath,
+            new[] { "restore", "--", filePath }, ct);
+
     // ---------------- .gitignore append ----------------
 
     public Task<GitWriteResult> AddToGitignoreAsync(string repoPath, string repoRelativePath, CancellationToken ct = default)

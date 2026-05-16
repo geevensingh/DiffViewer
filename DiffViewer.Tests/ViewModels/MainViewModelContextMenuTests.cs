@@ -76,6 +76,20 @@ public class MainViewModelContextMenuTests : IDisposable
             OldMode: 33188 /* 0o100644 */, NewMode: 33188 /* 0o100644 */),
         _repoRoot);
 
+    private FileEntryViewModel StagedRow(string path) => new(
+        new FileChange(
+            Path: path,
+            OldPath: null,
+            Status: FileStatus.Modified,
+            ConflictCode: null,
+            Layer: WorkingTreeLayer.Staged,
+            LeftBlobSha: "feedbabe", RightBlobSha: "deadbeef",
+            IsBinary: false,
+            LeftFileSizeBytes: 12, RightFileSizeBytes: 24,
+            IsLfsPointer: false, IsSparseNotCheckedOut: false,
+            OldMode: 33188, NewMode: 33188),
+        _repoRoot);
+
     [Fact]
     public void StageFile_Untracked_ForwardsRepoRootAndPath()
     {
@@ -85,6 +99,94 @@ public class MainViewModelContextMenuTests : IDisposable
 
         _git.Calls.Should().ContainSingle();
         _git.Calls[0].Should().Be(("StageFile", _repoRoot, "src/new.cs"));
+    }
+
+    [Fact]
+    public void StageFile_Unstaged_ForwardsRepoRootAndPath()
+    {
+        // Stage-file visibility was widened from Untracked-only to
+        // include Unstaged rows so the user can stage a whole modified
+        // file in one click (vs. staging every hunk).
+        var entry = ModifiedRow("src/edited.cs");
+
+        _vm.StageFileCommand.Execute(entry);
+
+        _git.Calls.Should().ContainSingle();
+        _git.Calls[0].Should().Be(("StageFile", _repoRoot, "src/edited.cs"));
+    }
+
+    [Fact]
+    public void UnstageFile_Staged_ForwardsRepoRootAndPath()
+    {
+        var entry = StagedRow("src/staged.cs");
+
+        _vm.UnstageFileCommand.Execute(entry);
+
+        _git.Calls.Should().ContainSingle();
+        _git.Calls[0].Should().Be(("UnstageFile", _repoRoot, "src/staged.cs"));
+    }
+
+    [Fact]
+    public void RevertFile_WhenSuppressionOff_PromptsAndAborts_OnCancel()
+    {
+        var entry = ModifiedRow("src/edited.cs");
+        _vm.ConfirmHandler = _ => ConfirmationResult.Cancel();
+
+        _vm.RevertFileCommand.Execute(entry);
+
+        _git.Calls.Should().BeEmpty("user cancelled the revert prompt");
+    }
+
+    [Fact]
+    public void RevertFile_WhenSuppressionOff_RunsAndPersistsPreference_OnConfirmWithDontAskAgain()
+    {
+        var entry = ModifiedRow("src/edited.cs");
+        ConfirmationRequest? seen = null;
+        _vm.ConfirmHandler = req =>
+        {
+            seen = req;
+            return ConfirmationResult.Yes(dontAskAgain: true);
+        };
+
+        _vm.RevertFileCommand.Execute(entry);
+
+        seen.Should().NotBeNull();
+        seen!.ConfirmText.Should().Be("Revert");
+        seen.ShowDontAskAgain.Should().BeTrue();
+        seen.Message.Should().Contain(entry.RepoRelativePath,
+            "the prompt should pin the destructive action to the specific file");
+
+        _git.Calls.Should().ContainSingle();
+        _git.Calls[0].Should().Be(("RevertFile", _repoRoot, "src/edited.cs"));
+        _settings.Current.SuppressRevertFileConfirmation.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RevertFile_WhenSuppressionOn_SkipsPrompt()
+    {
+        _settings.Update(s => s with { SuppressRevertFileConfirmation = true });
+        var entry = ModifiedRow("src/edited.cs");
+        _vm.ConfirmHandler = _ => throw new Xunit.Sdk.XunitException("Should not prompt when suppressed.");
+
+        _vm.RevertFileCommand.Execute(entry);
+
+        _git.Calls.Should().ContainSingle();
+        _git.Calls[0].Should().Be(("RevertFile", _repoRoot, "src/edited.cs"));
+    }
+
+    [Fact]
+    public void RevertFile_GitFailure_SurfacedToToastHandler()
+    {
+        var toasts = new List<string>();
+        _vm.ToastHandler = toasts.Add;
+        _settings.Update(s => s with { SuppressRevertFileConfirmation = true });
+        _git.NextResult = GitWriteResult.Fail(1, "error: pathspec");
+        var entry = ModifiedRow("src/edited.cs");
+
+        _vm.RevertFileCommand.Execute(entry);
+
+        toasts.Should().ContainSingle()
+            .Which.Should().Contain("Revert failed").And.Contain("error: pathspec");
     }
 
     [Fact]
@@ -206,6 +308,8 @@ public class MainViewModelContextMenuTests : IDisposable
     public void Commands_NoOp_OnNullEntry()
     {
         _vm.StageFileCommand.Execute(null);
+        _vm.UnstageFileCommand.Execute(null);
+        _vm.RevertFileCommand.Execute(null);
         _vm.DeleteFileCommand.Execute(null);
         _vm.OpenInExternalEditorCommand.Execute(null);
 
@@ -601,6 +705,9 @@ public class MainViewModelContextMenuTests : IDisposable
 
         public Task<GitWriteResult> UnstageFileAsync(string repoPath, string filePath, CancellationToken ct = default) =>
             Task.FromResult(Run(GitWriteOperationKind.UnstageFile, repoPath, filePath));
+
+        public Task<GitWriteResult> RevertFileAsync(string repoPath, string filePath, CancellationToken ct = default) =>
+            Task.FromResult(Run(GitWriteOperationKind.RevertFile, repoPath, filePath));
 
         public Task<GitWriteResult> StageHunkAsync(string repoPath, HunkPatchInputs inputs, CancellationToken ct = default) =>
             Task.FromResult(Run(GitWriteOperationKind.StageHunk, repoPath, inputs.FilePath));

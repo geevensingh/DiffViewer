@@ -73,6 +73,43 @@ public sealed class GitWriteServiceTests
         result.StdErr.Should().NotBeNullOrWhiteSpace();
     }
 
+    [Fact]
+    public async Task RevertFile_RestoresWorkingTreeFromIndex()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "committed\n");
+        t.InitialCommit();
+
+        // Modify the working tree; index still holds the committed content.
+        t.WriteFile("a.txt", "scratch\n");
+
+        var svc = new GitWriteService();
+        var result = await svc.RevertFileAsync(t.Path, "a.txt");
+
+        result.Success.Should().BeTrue(result.StdErr);
+        File.ReadAllText(Path.Combine(t.Path, "a.txt"))
+            .Should().Be("committed\n", "working tree should be restored to the index blob");
+    }
+
+    [Fact]
+    public async Task RevertFile_RecreatesDeletedFile()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "committed\n");
+        t.InitialCommit();
+
+        // Delete from the working tree without staging the deletion.
+        t.DeleteWorkingFile("a.txt");
+        File.Exists(Path.Combine(t.Path, "a.txt")).Should().BeFalse();
+
+        var svc = new GitWriteService();
+        var result = await svc.RevertFileAsync(t.Path, "a.txt");
+
+        result.Success.Should().BeTrue(result.StdErr);
+        File.Exists(Path.Combine(t.Path, "a.txt")).Should().BeTrue("git restore should recreate the file from the index");
+        File.ReadAllText(Path.Combine(t.Path, "a.txt")).Should().Be("committed\n");
+    }
+
     // ---------------- Hunk round-trip ----------------
 
     [Fact]
@@ -262,5 +299,25 @@ public sealed class GitWriteServiceTests
         events.Should().Equal(
             "before:StageFile:new.txt",
             "after:StageFile:new.txt:True");
+    }
+
+    [Fact]
+    public async Task BeforeAndAfterOperation_FireInOrderAroundRevertFile()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "committed\n");
+        t.InitialCommit();
+        t.WriteFile("a.txt", "scratch\n");
+
+        var svc = new GitWriteService();
+        var events = new System.Collections.Generic.List<string>();
+        svc.BeforeOperation += (_, e) => events.Add($"before:{e.Kind}:{e.FilePath}");
+        svc.AfterOperation += (_, e) => events.Add($"after:{e.Kind}:{e.FilePath}:{e.Result?.Success}");
+
+        await svc.RevertFileAsync(t.Path, "a.txt");
+
+        events.Should().Equal(
+            "before:RevertFile:a.txt",
+            "after:RevertFile:a.txt:True");
     }
 }

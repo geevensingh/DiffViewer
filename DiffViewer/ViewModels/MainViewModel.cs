@@ -135,6 +135,43 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     }
 
     [RelayCommand]
+    private async Task UnstageFile(FileEntryViewModel? entry)
+    {
+        if (entry is null || _gitWriteService is null) return;
+        var r = await _gitWriteService.UnstageFileAsync(_repository.Shape.RepoRoot, entry.Change.Path).ConfigureAwait(false);
+        if (!r.Success) ToastHandler?.Invoke($"Unstage failed: {r.StdErr}");
+    }
+
+    [RelayCommand]
+    private async Task RevertFile(FileEntryViewModel? entry)
+    {
+        if (entry is null || _gitWriteService is null) return;
+
+        var suppress = _settingsService?.Current.SuppressRevertFileConfirmation ?? false;
+        if (!suppress)
+        {
+            var resp = ConfirmHandler?.Invoke(new ConfirmationRequest(
+                Title: "Revert file?",
+                Message: $"Discard all unstaged changes to '{entry.RepoRelativePath}'?\n\n"
+                       + "This restores the working-tree copy from the index. "
+                       + "It cannot be undone via git.",
+                ConfirmText: "Revert",
+                CancelText: "Cancel",
+                ShowDontAskAgain: true));
+
+            if (resp is null) return;
+            if (!resp.Confirmed) return;
+            if (resp.DontAskAgain && _settingsService is not null)
+            {
+                _settingsService.Update(s => s with { SuppressRevertFileConfirmation = true });
+            }
+        }
+
+        var r = await _gitWriteService.RevertFileAsync(_repository.Shape.RepoRoot, entry.Change.Path).ConfigureAwait(false);
+        if (!r.Success) ToastHandler?.Invoke($"Revert failed: {r.StdErr}");
+    }
+
+    [RelayCommand]
     private async Task DeleteFile(FileEntryViewModel? entry)
     {
         if (entry is null || _gitWriteService is null) return;
