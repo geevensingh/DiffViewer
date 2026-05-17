@@ -26,6 +26,25 @@ namespace DiffViewer.Services;
 /// </summary>
 public sealed class CommandLineParser : ICommandLineParser
 {
+    /// <inheritdoc />
+    public CommandLineLaunchPlan ParseLaunch(IReadOnlyList<string> args, ICommandLineEnvironment env)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        ArgumentNullException.ThrowIfNull(env);
+
+        // PR-URL launches: a single argument that parses as a GitHub PR URL
+        // is routed to the PR resolver, not through ParsedCommandLine.
+        if (args.Count == 1 && PullRequestRef.TryParse(args[0], out var pr, out _))
+        {
+            return CommandLineLaunchPlan.FromPullRequest(pr);
+        }
+
+        var local = Parse(args, env);
+        return local.IsSuccess
+            ? CommandLineLaunchPlan.FromLocal(local.Parsed!)
+            : CommandLineLaunchPlan.Failure(local.Error!.Kind, local.Error.Message);
+    }
+
     public CommandLineParseResult Parse(IReadOnlyList<string> args, ICommandLineEnvironment env)
     {
         ArgumentNullException.ThrowIfNull(args);

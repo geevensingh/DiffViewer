@@ -12,6 +12,16 @@ namespace DiffViewer.Services;
 public interface ICommandLineParser
 {
     CommandLineParseResult Parse(IReadOnlyList<string> args, ICommandLineEnvironment env);
+
+    /// <summary>
+    /// Launch-aware parse. Returns a three-variant <see cref="CommandLineLaunchPlan"/>:
+    /// a local <see cref="ParsedCommandLine"/>, an unresolved
+    /// <see cref="PullRequestRef"/> for PR-URL launches, or a structured error.
+    /// The PR variant is detected when the single argument is a recognized
+    /// GitHub PR URL (see <see cref="PullRequestRef.TryParse"/>); all other
+    /// inputs flow through the same disambiguation as <see cref="Parse"/>.
+    /// </summary>
+    CommandLineLaunchPlan ParseLaunch(IReadOnlyList<string> args, ICommandLineEnvironment env);
 }
 
 /// <summary>
