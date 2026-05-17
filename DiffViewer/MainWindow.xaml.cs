@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using DiffViewer.Models;
 using DiffViewer.Services;
@@ -20,6 +22,17 @@ public partial class MainWindow : Window
     private const double DefaultWindowHeight = 800;
 
     private readonly ISettingsService? _settingsService;
+
+    /// <summary>
+    /// Cached reference to the file-list pane's <see cref="ColumnDefinition"/>
+    /// inside the <see cref="MainViewModel"/> DataTemplate. Captured when
+    /// the template loads and used by
+    /// <see cref="OnFileListSplitterDragCompleted"/> to read the current
+    /// pixel width after a drag. <c>null</c> when no MainViewModel is the
+    /// active DataContext (e.g. the empty-context template is showing
+    /// instead).
+    /// </summary>
+    private ColumnDefinition? _fileListColumn;
 
     /// <summary>
     /// Parameterless ctor for XAML designer / preview tooling only. The
@@ -127,6 +140,50 @@ public partial class MainWindow : Window
         catch
         {
             // Best-effort persistence on a closing window — never crash.
+        }
+    }
+
+    /// <summary>
+    /// Fires when the <see cref="MainViewModel"/> DataTemplate's root Grid
+    /// is loaded. The file-list ColumnDefinition lives inside that
+    /// template, so it isn't a code-behind field on the Window — we
+    /// reach it via the Grid's <see cref="Grid.ColumnDefinitions"/>.
+    /// Applies the persisted width from
+    /// <see cref="AppSettings.FileListPaneWidthPixels"/> (clamped via
+    /// <see cref="FileListLayout.ClampWidth"/>) so the user opens
+    /// looking at the split they left at.
+    /// </summary>
+    private void OnMainLayoutGridLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Grid grid || grid.ColumnDefinitions.Count == 0) return;
+
+        _fileListColumn = grid.ColumnDefinitions[0];
+
+        double saved = _settingsService?.Current.FileListPaneWidthPixels
+                       ?? FileListLayout.DefaultFileListPaneWidthPixels;
+        _fileListColumn.Width = new GridLength(FileListLayout.ClampWidth(saved));
+    }
+
+    /// <summary>
+    /// Fires once at the end of each splitter drag. Persists the new
+    /// column width via <see cref="ISettingsService"/>. We persist on
+    /// DragCompleted rather than on window <c>Closing</c> so a
+    /// crash-mid-session never loses the user's most recent drag.
+    /// Best-effort: any I/O failure is swallowed so a transient
+    /// permission glitch can't bubble out of a UI event handler.
+    /// </summary>
+    private void OnFileListSplitterDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (_settingsService is null || _fileListColumn is null) return;
+
+        double width = FileListLayout.ClampWidth(_fileListColumn.ActualWidth);
+        try
+        {
+            _settingsService.Update(s => s with { FileListPaneWidthPixels = width });
+        }
+        catch
+        {
+            // Best-effort persistence on a UI event — never crash the app.
         }
     }
 

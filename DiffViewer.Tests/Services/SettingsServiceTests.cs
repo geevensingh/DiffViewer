@@ -59,6 +59,7 @@ public sealed class SettingsServiceTests : IDisposable
             SuppressRevertHunkConfirmation = true,
             SuppressDeleteFileConfirmation = true,
             WindowState = new WindowStateSnapshot(-50, 75, 1400, 900, IsMaximized: true),
+            FileListPaneWidthPixels = 480.0,
         };
         svc.Save(modified);
 
@@ -301,5 +302,48 @@ public sealed class SettingsServiceTests : IDisposable
         svc.Save(svc.Current with { TabWidth = 6 });
 
         File.Exists(deep).Should().BeTrue();
+    }
+
+    [Fact]
+    public void FileListPaneWidthPixels_DefaultsTo320OnFreshLoad()
+    {
+        var svc = new SettingsService(_settingsPath);
+
+        // The 320 default matches the historical hardcoded XAML value
+        // before persistence existed, so first-launch users see the
+        // same split they always have.
+        svc.Current.FileListPaneWidthPixels.Should().Be(320.0);
+    }
+
+    [Fact]
+    public void FileListPaneWidthPixels_RoundTrips_Through_Save_And_Reload()
+    {
+        var svc = new SettingsService(_settingsPath);
+        svc.Save(svc.Current with { FileListPaneWidthPixels = 555.5 });
+
+        var reloaded = new SettingsService(_settingsPath);
+        reloaded.Current.FileListPaneWidthPixels.Should().Be(555.5);
+    }
+
+    [Fact]
+    public void Load_V3File_MigratesToV4_FileListPaneWidthDefaultsTo320()
+    {
+        // v3 schema (current minus 1) had no fileListPaneWidthPixels
+        // field. After v3->v4 migration the field should be the
+        // built-in default (320) and other fields preserved.
+        var v3 = new JsonObject
+        {
+            ["schemaVersion"] = 3,
+            ["fontSize"] = 17,
+            ["tabWidth"] = 3,
+        };
+        File.WriteAllText(_settingsPath, v3.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
+        svc.Current.FontSize.Should().Be(17);
+        svc.Current.TabWidth.Should().Be(3);
+        svc.Current.FileListPaneWidthPixels.Should().Be(320.0);
     }
 }

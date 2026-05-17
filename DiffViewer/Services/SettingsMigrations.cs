@@ -16,6 +16,13 @@ namespace DiffViewer.Services;
 /// whole-file Revert action. The migration is a no-op because the
 /// field is a bool with a <c>false</c> default — pre-v3 files
 /// deserialize with the prompt enabled (the safe default).</para>
+///
+/// <para>v4 introduced <c>fileListPaneWidthPixels</c> for the
+/// persisted file-list / diff-pane splitter position. The migration
+/// is a no-op because the field has a sensible default (320 px,
+/// matching the historical hardcoded XAML value) — pre-v4 files
+/// deserialize to that default and the window opens with the same
+/// split users had before persistence existed.</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -34,6 +41,7 @@ internal static class SettingsMigrations
                 0 => MigrateV0ToV1, // pre-versioned files - treat as v1's shape
                 1 => MigrateV1ToV2, // adds windowState (nullable)
                 2 => MigrateV2ToV3, // adds suppressRevertFileConfirmation (bool, default false)
+                3 => MigrateV3ToV4, // adds fileListPaneWidthPixels (double, default 320)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -65,4 +73,13 @@ internal static class SettingsMigrations
     /// <c>false</c>.
     /// </summary>
     private static JsonObject MigrateV2ToV3(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v4 adds <c>fileListPaneWidthPixels</c>. A missing field means
+    /// "open with the historical default 320-px split" so the migration
+    /// is a no-op; the deserializer fills in
+    /// <see cref="AppSettings.FileListPaneWidthPixels"/> from
+    /// <see cref="AppSettings"/>' built-in default.
+    /// </summary>
+    private static JsonObject MigrateV3ToV4(JsonObject obj) => obj;
 }

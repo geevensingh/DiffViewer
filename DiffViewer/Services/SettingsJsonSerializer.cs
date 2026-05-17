@@ -50,6 +50,7 @@ internal static class SettingsJsonSerializer
             ["suppressRevertHunkConfirmation"] = s.SuppressRevertHunkConfirmation,
             ["suppressDeleteFileConfirmation"] = s.SuppressDeleteFileConfirmation,
             ["windowState"] = SerializeWindowState(s.WindowState),
+            ["fileListPaneWidthPixels"] = s.FileListPaneWidthPixels,
         };
         return obj.ToJsonString(WriteOptions);
     }
@@ -79,6 +80,7 @@ internal static class SettingsJsonSerializer
             SuppressRevertHunkConfirmation = TryBool(obj, "suppressRevertHunkConfirmation") ?? defaults.SuppressRevertHunkConfirmation,
             SuppressDeleteFileConfirmation = TryBool(obj, "suppressDeleteFileConfirmation") ?? defaults.SuppressDeleteFileConfirmation,
             WindowState = DeserializeWindowState(obj["windowState"]),
+            FileListPaneWidthPixels = TryDouble(obj, "fileListPaneWidthPixels") ?? defaults.FileListPaneWidthPixels,
         };
     }
 

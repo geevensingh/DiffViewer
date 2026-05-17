@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:DiffViewer.ViewModels"
         xmlns:views="clr-namespace:DiffViewer.Views"
+        xmlns:utility="clr-namespace:DiffViewer.Utility"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
@@ -63,9 +64,10 @@
     <Grid>
         <Grid.Resources>
             <DataTemplate DataType="{x:Type vm:MainViewModel}">
-                <Grid>
+                <Grid Loaded="OnMainLayoutGridLoaded">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="320" MinWidth="200"/>
+                        <ColumnDefinition x:Name="FileListColumn"
+                                          MinWidth="{x:Static utility:FileListLayout.MinFileListPaneWidthPixels}"/>
                         <ColumnDefinition Width="5"/>
                         <ColumnDefinition Width="*" MinWidth="300"/>
                     </Grid.ColumnDefinitions>
@@ -86,7 +88,8 @@
                                   Width="5"
                                   HorizontalAlignment="Stretch"
                                   VerticalAlignment="Stretch"
-                                  Background="#DDDDDD"/>
+                                  Background="#DDDDDD"
+                                  DragCompleted="OnFileListSplitterDragCompleted"/>
 
                     <Border Grid.Column="2"
                             Background="White">

@@ -16,7 +16,7 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -30,6 +30,17 @@ public sealed record AppSettings
     /// launch.
     /// </summary>
     public WindowStateSnapshot? WindowState { get; init; }
+
+    // ---- Pane split (added in v4) ----
+    /// <summary>
+    /// Width, in device-independent pixels, of the left pane that holds
+    /// the recents bar and the file list. The diff pane fills the
+    /// remainder. Clamped to <see cref="DiffViewer.Utility.FileListLayout"/>'s
+    /// min/max at both load and save time so a tampered or
+    /// cross-monitor settings file can never produce an unusable
+    /// layout (e.g. a file list wider than the window).
+    /// </summary>
+    public double FileListPaneWidthPixels { get; init; } = 320.0;
 
     // ---- Toolbar toggles (persisted across launches per the plan) ----
     public bool IgnoreWhitespace { get; init; }
