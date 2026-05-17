@@ -342,10 +342,10 @@ public class FileListViewModelTests
         vm.DisplayMode.Should().Be(FileListDisplayMode.GroupedByDirectory);
     }
 
-    // ---- FlatGroupedView (single grouped ListBox) regression coverage ----
+    // ---- Section layering + identity (formerly FlatGroupedView coverage) ----
 
     [Fact]
-    public void FlatGroupedView_GroupsByLayer_InCanonicalOrder()
+    public void Sections_AreOrderedByCanonicalLayerOrder()
     {
         var vm = new FileListViewModel();
         var changes = new[]
@@ -359,12 +359,7 @@ public class FileListViewModelTests
 
         vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: false);
 
-        var groups = vm.FlatGroupedView.Groups!
-            .Cast<System.Windows.Data.CollectionViewGroup>()
-            .Select(g => ((FileListSectionHeader)g.Name).Layer)
-            .ToArray();
-
-        groups.Should().Equal(
+        vm.Sections.Select(s => s.Layer).Should().Equal(
             WorkingTreeLayer.Conflicted,
             WorkingTreeLayer.CommittedSinceCommit,
             WorkingTreeLayer.Staged,
@@ -373,7 +368,7 @@ public class FileListViewModelTests
     }
 
     [Fact]
-    public void FlatGroupedView_SortsEntriesWithinLayer_ByRepoRelativePath()
+    public void Sections_EntriesWithinSection_AreSortedByRepoRelativePath()
     {
         var vm = new FileListViewModel();
         var changes = new[]
@@ -385,14 +380,13 @@ public class FileListViewModelTests
 
         vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: false);
 
-        var paths = vm.FlatGroupedView.Cast<FileEntryViewModel>()
-            .Select(e => e.Change.Path)
-            .ToArray();
-        paths.Should().Equal("src/alpha.cs", "src/mu.cs", "src/zeta.cs");
+        var unstaged = vm.Sections.Single(s => s.Layer == WorkingTreeLayer.Unstaged);
+        unstaged.Entries.Select(e => e.Change.Path).Should().Equal(
+            "src/alpha.cs", "src/mu.cs", "src/zeta.cs");
     }
 
     [Fact]
-    public void FlatGroupedView_SuppressesGrouping_WhenCommitVsCommit()
+    public void Sections_SuppressGrouping_WhenCommitVsCommit()
     {
         var vm = new FileListViewModel();
         var changes = new[]
@@ -403,76 +397,101 @@ public class FileListViewModelTests
 
         vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: true);
 
-        var groups = vm.FlatGroupedView.Groups!
-            .Cast<System.Windows.Data.CollectionViewGroup>()
-            .ToArray();
-        groups.Should().HaveCount(1);
-        ((FileListSectionHeader)groups[0].Name).Header.Should().Be("Changes");
+        vm.Sections.Should().HaveCount(1);
+        vm.Sections[0].Header.Should().Be("Changes");
     }
 
     [Fact]
-    public void FlatGroupedView_SharesGroupKeyInstance_AcrossLoadFromChanges()
+    public void Sections_SharedHeader_PersistsAcrossLoadFromChanges()
     {
         // Header identity survives a rebuild so the user's collapse state
         // (held on FileListSectionHeader.IsExpanded) doesn't reset every
         // time the file list is refreshed.
         var vm = new FileListViewModel();
         vm.LoadFromChanges(new[] { MakeChange("a.cs") }, @"C:\repo", isCommitVsCommit: false);
-        var firstHeader = vm.FlatGroupedView.Groups!
-            .Cast<System.Windows.Data.CollectionViewGroup>()
-            .Single()
-            .Name;
+        var firstHeader = vm.Sections.Single().SharedHeader;
 
         vm.LoadFromChanges(new[] { MakeChange("a.cs"), MakeChange("b.cs") }, @"C:\repo", isCommitVsCommit: false);
-        var secondHeader = vm.FlatGroupedView.Groups!
-            .Cast<System.Windows.Data.CollectionViewGroup>()
-            .Single()
-            .Name;
+        var secondHeader = vm.Sections.Single().SharedHeader;
 
         secondHeader.Should().BeSameAs(firstHeader);
     }
 
     [Fact]
-    public void FlatGroupedView_PreservesSectionCollapseState_AcrossLoadFromChanges()
+    public void Sections_PreserveCollapseState_AcrossLoadFromChanges()
     {
         var vm = new FileListViewModel();
         vm.LoadFromChanges(
             new[] { MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged) },
             @"C:\repo", isCommitVsCommit: false);
 
-        var header = (FileListSectionHeader)vm.FlatGroupedView.Groups!
-            .Cast<System.Windows.Data.CollectionViewGroup>()
-            .Single().Name;
-        header.IsExpanded = false;
+        vm.Sections.Single().SharedHeader.IsExpanded = false;
 
         vm.LoadFromChanges(
             new[] { MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged), MakeChange("b.cs", layer: WorkingTreeLayer.Unstaged) },
             @"C:\repo", isCommitVsCommit: false);
 
-        var reloaded = (FileListSectionHeader)vm.FlatGroupedView.Groups!
-            .Cast<System.Windows.Data.CollectionViewGroup>()
-            .Single().Name;
-        reloaded.IsExpanded.Should().BeFalse();
+        vm.Sections.Single().SharedHeader.IsExpanded.Should().BeFalse();
+    }
+
+    // ---- Children projection (drives the unified TreeView) ----
+
+    [Fact]
+    public void Children_AreFileEntries_WhenDisplayModeIsFlat()
+    {
+        var vm = new FileListViewModel { DisplayMode = FileListDisplayMode.RepoRelative };
+        var changes = new[]
+        {
+            MakeChange("src/a.cs", layer: WorkingTreeLayer.Unstaged),
+            MakeChange("src/b.cs", layer: WorkingTreeLayer.Unstaged),
+        };
+
+        vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: false);
+
+        var section = vm.Sections.Single();
+        section.Children.Should().AllBeOfType<FileEntryViewModel>();
+        section.Children.Cast<FileEntryViewModel>()
+            .Select(e => e.Change.Path)
+            .Should().Equal("src/a.cs", "src/b.cs");
     }
 
     [Fact]
-    public void SectionViewModel_SharesHeaderInstance_WithFlatGroupedView()
+    public void Children_AreDirectoryRoots_WhenDisplayModeIsGroupedByDirectory()
     {
-        // The grouped-by-directory presentation reads its Expander state
-        // from SectionViewModel.SharedHeader. It must be the same header
-        // instance that backs the flat-mode group so collapsing in one
-        // presentation is reflected in the other.
-        var vm = new FileListViewModel();
+        var vm = new FileListViewModel { DisplayMode = FileListDisplayMode.GroupedByDirectory };
+        var changes = new[]
+        {
+            MakeChange("src/a.cs", layer: WorkingTreeLayer.Unstaged),
+            MakeChange("tests/b.cs", layer: WorkingTreeLayer.Unstaged),
+        };
+
+        vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: false);
+
+        var section = vm.Sections.Single();
+        section.Children.Should().AllBeOfType<DirectoryNodeViewModel>();
+        section.Children.Should().HaveSameCount(section.RootDirectories);
+    }
+
+    [Fact]
+    public void Children_RebuildOnDisplayModeChange()
+    {
+        var vm = new FileListViewModel { DisplayMode = FileListDisplayMode.RepoRelative };
         vm.LoadFromChanges(
-            new[] { MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged) },
+            new[]
+            {
+                MakeChange("src/a.cs", layer: WorkingTreeLayer.Unstaged),
+                MakeChange("tests/b.cs", layer: WorkingTreeLayer.Unstaged),
+            },
             @"C:\repo", isCommitVsCommit: false);
 
-        var flatHeader = (FileListSectionHeader)vm.FlatGroupedView.Groups!
-            .Cast<System.Windows.Data.CollectionViewGroup>()
-            .Single().Name;
-        var sectionHeader = vm.Sections.Single().SharedHeader;
+        var section = vm.Sections.Single();
+        section.Children.Should().AllBeOfType<FileEntryViewModel>();
 
-        sectionHeader.Should().BeSameAs(flatHeader);
+        vm.DisplayMode = FileListDisplayMode.GroupedByDirectory;
+        section.Children.Should().AllBeOfType<DirectoryNodeViewModel>();
+
+        vm.DisplayMode = FileListDisplayMode.FullPath;
+        section.Children.Should().AllBeOfType<FileEntryViewModel>();
     }
 
     [Fact]

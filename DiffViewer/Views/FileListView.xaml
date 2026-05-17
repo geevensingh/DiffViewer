@@ -15,20 +15,12 @@
         <SolidColorBrush x:Key="DimFgBrush"     Color="#909090"/>
         <SolidColorBrush x:Key="BadgeBgBrush"   Color="#E8E8E8"/>
 
-        <!-- Style applied to ListBoxItem rows so virtualisation isn't broken
-             by per-item content alignment overrides. -->
-        <Style x:Key="EntryRowStyle" TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="2"/>
-            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-        </Style>
-
         <!-- Right-click context menu shared by every file row. The menu's
              DataContext is the FileEntryViewModel (because the row is the
              PlacementTarget). Commands live on MainViewModel - we walk up
              through the Window's DataContext via PlacementTarget.Tag, which
-             we set to the row's ListBoxItem so the visual tree is rooted
-             at a known anchor regardless of which presentation (flat or
-             tree) the user is in. -->
+             we set on the row's container so the visual tree is rooted at
+             a known anchor regardless of which display mode the user is in. -->
         <ContextMenu x:Key="FileEntryContextMenu"
                      d:DataContext="{d:DesignInstance Type=vm:FileEntryViewModel}">
             <MenuItem Header="Show in Explorer"
@@ -110,7 +102,8 @@
                       InputGestureText="F5"/>
         </ContextMenu>
 
-        <!-- Row template - shared by both the flat ListBox and the directory tree. -->
+        <!-- Row template - shared by every file row in the unified TreeView,
+             regardless of display mode. -->
         <DataTemplate x:Key="EntryTemplate" DataType="{x:Type vm:FileEntryViewModel}">
             <Grid ContextMenu="{StaticResource FileEntryContextMenu}"
                   Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
@@ -182,117 +175,84 @@
             </StackPanel>
         </Border>
 
-        <!-- Two presentations stacked. Visibility flips based on display mode. -->
-        <Grid>
-
-            <!-- Flat-list mode: ONE virtualised ListBox whose items are
-                 grouped by FileListSectionHeader. Using a single Selector
-                 (rather than one ListBox per section) keeps selection state
-                 in one place, so re-clicking a file in a different section
-                 always fires SelectionChanged. -->
-            <ListBox ItemsSource="{Binding FlatGroupedView}"
-                     SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
-                     BorderThickness="0"
-                     ItemTemplate="{StaticResource EntryTemplate}"
-                     ItemContainerStyle="{StaticResource EntryRowStyle}"
-                     VirtualizingPanel.IsVirtualizing="True"
-                     VirtualizingPanel.VirtualizationMode="Recycling"
-                     VirtualizingPanel.IsVirtualizingWhenGrouping="True"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     Visibility="{Binding IsFlatMode, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
-                <ListBox.GroupStyle>
-                    <GroupStyle>
-                        <GroupStyle.ContainerStyle>
-                            <Style TargetType="GroupItem">
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="GroupItem">
-                                            <Expander IsExpanded="{Binding Name.IsExpanded, Mode=TwoWay}"
-                                                      Margin="0,0,0,2">
-                                                <Expander.Header>
-                                                    <TextBlock>
-                                                        <Run Text="{Binding Name.Header, Mode=OneWay}"
-                                                             FontWeight="Bold"
-                                                             Foreground="{StaticResource HeaderFgBrush}"/>
-                                                        <Run Text=" ("/>
-                                                        <Run Text="{Binding ItemCount, Mode=OneWay}"/>
-                                                        <Run Text=")"/>
-                                                    </TextBlock>
-                                                </Expander.Header>
-                                                <ItemsPresenter/>
-                                            </Expander>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
+        <!-- Unified TreeView. Top-level branches are the per-layer
+             sections; their children are either the section's files
+             directly (flat modes) or the section's RootDirectories
+             (grouped-by-directory mode), projected via
+             FileListSectionViewModel.Children. One Selector means
+             selection state lives in exactly one place, so cross-section
+             click-throughs don't go stale. ItemContainerStyleSelector
+             applies per-tier styles because each VM type binds different
+             state (sections use SharedHeader.IsExpanded, directories use
+             their own IsExpanded, files use IsSelected). -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Auto">
+            <TreeView ItemsSource="{Binding Sections}"
+                      BorderThickness="0"
+                      VirtualizingStackPanel.IsVirtualizing="True"
+                      VirtualizingStackPanel.VirtualizationMode="Recycling">
+                <TreeView.Resources>
+                    <HierarchicalDataTemplate DataType="{x:Type vm:FileListSectionViewModel}"
+                                              ItemsSource="{Binding Children}">
+                        <TextBlock>
+                            <Run Text="{Binding Header, Mode=OneWay}"
+                                 FontWeight="Bold"
+                                 Foreground="{StaticResource HeaderFgBrush}"/>
+                            <Run Text=" ("/>
+                            <Run Text="{Binding Entries.Count, Mode=OneWay}"/>
+                            <Run Text=")"/>
+                        </TextBlock>
+                    </HierarchicalDataTemplate>
+                    <HierarchicalDataTemplate DataType="{x:Type vm:DirectoryNodeViewModel}"
+                                              ItemsSource="{Binding ChildrenAndFiles}">
+                        <TextBlock Text="{Binding Label}"
+                                   Foreground="{StaticResource HeaderFgBrush}"
+                                   FontWeight="SemiBold"/>
+                    </HierarchicalDataTemplate>
+                    <DataTemplate DataType="{x:Type vm:FileEntryViewModel}">
+                        <ContentPresenter Content="{Binding}"
+                                          ContentTemplate="{StaticResource EntryTemplate}"/>
+                    </DataTemplate>
+                </TreeView.Resources>
+                <TreeView.ItemContainerStyleSelector>
+                    <views:FileListItemContainerStyleSelector>
+                        <!-- Section and directory styles wire MouseLeftButtonUp
+                             so clicking the header (not the chevron) toggles
+                             expand, mirroring the affordance the old flat-mode
+                             Expander had. PreviewMouseRightButtonDown is
+                             suppressed because no context menu is wired here
+                             and a right-click selection highlight on an inert
+                             row reads as misleading feedback. The toggle
+                             handler walks the visual tree from
+                             e.OriginalSource so a click that originated inside
+                             the chevron ToggleButton is left alone (its own
+                             ToggleButton handler will toggle once). -->
+                        <views:FileListItemContainerStyleSelector.SectionStyle>
+                            <Style TargetType="TreeViewItem">
+                                <Setter Property="IsExpanded" Value="{Binding SharedHeader.IsExpanded, Mode=TwoWay}"/>
+                                <EventSetter Event="MouseLeftButtonUp"
+                                             Handler="OnHeaderLeftMouseUp"/>
+                                <EventSetter Event="PreviewMouseRightButtonDown"
+                                             Handler="OnHeaderRightMouseDown"/>
                             </Style>
-                        </GroupStyle.ContainerStyle>
-                    </GroupStyle>
-                </ListBox.GroupStyle>
-            </ListBox>
-
-            <!-- Grouped-by-directory mode: ONE unified TreeView whose
-                 top-level branches are the per-layer sections, nested
-                 directories below, and FileEntryViewModel leaves at the
-                 bottom. A single Selector means selection state lives in
-                 exactly one place — same architectural rule as the flat
-                 mode above — so cross-section click-throughs don't go
-                 stale. ItemContainerStyleSelector applies per-tier styles
-                 because the three VM types bind different state (sections
-                 use SharedHeader.IsExpanded, directories use their own
-                 IsExpanded, files use IsSelected). -->
-            <ScrollViewer VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Auto"
-                          Visibility="{Binding IsGroupedMode, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
-                <TreeView ItemsSource="{Binding Sections}"
-                          BorderThickness="0"
-                          VirtualizingStackPanel.IsVirtualizing="True"
-                          VirtualizingStackPanel.VirtualizationMode="Recycling">
-                    <TreeView.Resources>
-                        <HierarchicalDataTemplate DataType="{x:Type vm:FileListSectionViewModel}"
-                                                  ItemsSource="{Binding RootDirectories}">
-                            <TextBlock>
-                                <Run Text="{Binding Header, Mode=OneWay}"
-                                     FontWeight="Bold"
-                                     Foreground="{StaticResource HeaderFgBrush}"/>
-                                <Run Text=" ("/>
-                                <Run Text="{Binding Entries.Count, Mode=OneWay}"/>
-                                <Run Text=")"/>
-                            </TextBlock>
-                        </HierarchicalDataTemplate>
-                        <HierarchicalDataTemplate DataType="{x:Type vm:DirectoryNodeViewModel}"
-                                                  ItemsSource="{Binding ChildrenAndFiles}">
-                            <TextBlock Text="{Binding Label}"
-                                       Foreground="{StaticResource HeaderFgBrush}"
-                                       FontWeight="SemiBold"/>
-                        </HierarchicalDataTemplate>
-                        <DataTemplate DataType="{x:Type vm:FileEntryViewModel}">
-                            <ContentPresenter Content="{Binding}"
-                                              ContentTemplate="{StaticResource EntryTemplate}"/>
-                        </DataTemplate>
-                    </TreeView.Resources>
-                    <TreeView.ItemContainerStyleSelector>
-                        <views:FileListItemContainerStyleSelector>
-                            <views:FileListItemContainerStyleSelector.SectionStyle>
-                                <Style TargetType="TreeViewItem">
-                                    <Setter Property="IsExpanded" Value="{Binding SharedHeader.IsExpanded, Mode=TwoWay}"/>
-                                </Style>
-                            </views:FileListItemContainerStyleSelector.SectionStyle>
-                            <views:FileListItemContainerStyleSelector.DirectoryStyle>
-                                <Style TargetType="TreeViewItem">
-                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                                </Style>
-                            </views:FileListItemContainerStyleSelector.DirectoryStyle>
-                            <views:FileListItemContainerStyleSelector.FileStyle>
-                                <Style TargetType="TreeViewItem">
-                                    <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
-                                </Style>
-                            </views:FileListItemContainerStyleSelector.FileStyle>
-                        </views:FileListItemContainerStyleSelector>
-                    </TreeView.ItemContainerStyleSelector>
-                </TreeView>
-            </ScrollViewer>
-
-        </Grid>
+                        </views:FileListItemContainerStyleSelector.SectionStyle>
+                        <views:FileListItemContainerStyleSelector.DirectoryStyle>
+                            <Style TargetType="TreeViewItem">
+                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                <EventSetter Event="MouseLeftButtonUp"
+                                             Handler="OnHeaderLeftMouseUp"/>
+                                <EventSetter Event="PreviewMouseRightButtonDown"
+                                             Handler="OnHeaderRightMouseDown"/>
+                            </Style>
+                        </views:FileListItemContainerStyleSelector.DirectoryStyle>
+                        <views:FileListItemContainerStyleSelector.FileStyle>
+                            <Style TargetType="TreeViewItem">
+                                <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                            </Style>
+                        </views:FileListItemContainerStyleSelector.FileStyle>
+                    </views:FileListItemContainerStyleSelector>
+                </TreeView.ItemContainerStyleSelector>
+            </TreeView>
+        </ScrollViewer>
     </DockPanel>
 </UserControl>

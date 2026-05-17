@@ -28,6 +28,16 @@ body. Keep section headings exact and write notes in Markdown.
   looked unresponsive to the cursor. Toggles, the side-visibility
   radio group, and the plain Prev / Next / Settings buttons all share
   the same hover / press chrome now.
+- **File-list expand/collapse is now consistent across every display
+  mode.** All three modes (Full path, Repo-relative, Grouped by
+  directory) render in one unified tree, so section and directory
+  rows always use the same triangle chevron — no more mixed
+  chevron-vs-Expander chrome between flat and grouped views.
+  Clicking anywhere on a section or directory header now toggles
+  expand/collapse (matching the affordance the old `Expander` had);
+  right-clicking those rows is now a no-op instead of leaving a
+  misleading "selected" highlight on a row that doesn't drive any
+  state.
 
 ## [0.2.0] - 2026-05-15
 

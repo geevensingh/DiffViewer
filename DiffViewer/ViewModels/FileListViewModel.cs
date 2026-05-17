@@ -1,8 +1,5 @@
-using System.Collections;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Globalization;
-using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using DiffViewer.Models;
 
@@ -56,19 +53,12 @@ public sealed partial class FileListViewModel : ObservableObject
     /// Per-layer section header cache. Headers outlive any single
     /// <see cref="FileListSectionViewModel"/> instance so the user's
     /// collapse state survives <see cref="LoadFromChanges"/> rebuilds.
-    /// Also serves as the group key for <see cref="FlatGroupedView"/>: the
-    /// same header instance is returned for every entry in a given layer,
-    /// which is what causes them to land in the same grouped ListBox group.
     /// </summary>
     private readonly Dictionary<WorkingTreeLayer, FileListSectionHeader> _sectionHeaders = new();
-
-    private readonly LayerToHeaderConverter _layerConverter;
-    private ListCollectionView? _flatGroupedView;
 
     public FileListViewModel(Services.ISettingsService? settingsService = null)
     {
         _settingsService = settingsService;
-        _layerConverter = new LayerToHeaderConverter(this);
         if (_settingsService is not null)
         {
             _suppressSettingsWrite = true;
@@ -84,31 +74,6 @@ public sealed partial class FileListViewModel : ObservableObject
     /// (Shift+F7/F8) so navigation works regardless of display mode.
     /// </summary>
     public ObservableCollection<FileEntryViewModel> FlatEntries { get; } = new();
-
-    /// <summary>
-    /// Grouped view over <see cref="FlatEntries"/> used by the flat-mode
-    /// single ListBox. Grouping by <see cref="FileListSectionHeader"/>
-    /// keyed off <see cref="FileChange.Layer"/> means selection is owned
-    /// by exactly one Selector — preventing the multi-ListBox stale-state
-    /// bug where re-clicking a previously-selected file in a different
-    /// section would silently no-op.
-    /// </summary>
-    public ICollectionView FlatGroupedView
-    {
-        get
-        {
-            if (_flatGroupedView is null)
-            {
-                _flatGroupedView = new ListCollectionView(FlatEntries)
-                {
-                    CustomSort = SectionAndPathComparer.Instance,
-                };
-                _flatGroupedView.GroupDescriptions.Add(
-                    new PropertyGroupDescription("Change.Layer", _layerConverter));
-            }
-            return _flatGroupedView;
-        }
-    }
 
     [ObservableProperty]
     private FileListDisplayMode _displayMode = FileListDisplayMode.RepoRelative;
@@ -146,6 +111,7 @@ public sealed partial class FileListViewModel : ObservableObject
     partial void OnDisplayModeChanged(FileListDisplayMode value)
     {
         foreach (var entry in FlatEntries) entry.ApplyDisplayMode(value);
+        foreach (var section in Sections) section.ApplyDisplayMode(value);
         OnPropertyChanged(nameof(IsGroupedMode));
         OnPropertyChanged(nameof(IsFlatMode));
         OnPropertyChanged(nameof(IsFullPathMode));
@@ -312,9 +278,11 @@ public sealed partial class FileListViewModel : ObservableObject
             {
                 // No section grouping for commit-vs-commit - flat list under one synthetic section.
                 IsFlatLayout = true;
-                Sections.Add(new FileListSectionViewModel(
+                var section = new FileListSectionViewModel(
                     WorkingTreeLayer.None, "Changes", entries,
-                    _expansionStore, GetSectionHeader(WorkingTreeLayer.None)));
+                    _expansionStore, GetSectionHeader(WorkingTreeLayer.None));
+                section.ApplyDisplayMode(DisplayMode);
+                Sections.Add(section);
             }
             else
             {
@@ -373,16 +341,18 @@ public sealed partial class FileListViewModel : ObservableObject
                         .OrderBy(e => e.RepoRelativePath, StringComparer.OrdinalIgnoreCase)
                         .ToList();
         if (subset.Count == 0) return;
-        Sections.Add(new FileListSectionViewModel(
-            layer, header, subset, _expansionStore, GetSectionHeader(layer)));
+        var section = new FileListSectionViewModel(
+            layer, header, subset, _expansionStore, GetSectionHeader(layer));
+        section.ApplyDisplayMode(DisplayMode);
+        Sections.Add(section);
     }
 
     /// <summary>
     /// Return the cached section header for <paramref name="layer"/>,
-    /// creating it on first use. Both the grouped flat-mode ListBox and
-    /// the per-section <see cref="FileListSectionViewModel"/> share the
-    /// same instance so collapsing in one presentation is visible in the
-    /// other, and so collapse state survives rebuilds.
+    /// creating it on first use. The cache outlives section VMs so the
+    /// user's collapse state survives <see cref="LoadFromChanges"/>
+    /// rebuilds — the new section instance gets handed the same
+    /// <see cref="FileListSectionHeader"/> via its constructor.
     /// </summary>
     internal FileListSectionHeader GetSectionHeader(WorkingTreeLayer layer)
     {
@@ -404,54 +374,4 @@ public sealed partial class FileListViewModel : ObservableObject
         WorkingTreeLayer.None => "Changes",
         _ => layer.ToString(),
     };
-
-    private static int LayerSortOrder(WorkingTreeLayer layer) => layer switch
-    {
-        WorkingTreeLayer.Conflicted => 0,
-        WorkingTreeLayer.CommittedSinceCommit => 1,
-        WorkingTreeLayer.Staged => 2,
-        WorkingTreeLayer.Unstaged => 3,
-        WorkingTreeLayer.Untracked => 4,
-        WorkingTreeLayer.None => 5,
-        _ => 99,
-    };
-
-    /// <summary>
-    /// Maps the <see cref="FileChange.Layer"/> property of each entry to
-    /// the cached <see cref="FileListSectionHeader"/> used as the group
-    /// key. Same-layer entries get the same instance, which is how
-    /// <see cref="ICollectionView"/> grouping coalesces them.
-    /// </summary>
-    private sealed class LayerToHeaderConverter : IValueConverter
-    {
-        private readonly FileListViewModel _owner;
-
-        public LayerToHeaderConverter(FileListViewModel owner) => _owner = owner;
-
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-            _owner.GetSectionHeader((WorkingTreeLayer)value);
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
-            Binding.DoNothing;
-    }
-
-    /// <summary>
-    /// Orders entries by canonical layer order first, then by repo-relative
-    /// path within a layer. Matches the per-section ordering produced by
-    /// <see cref="AddIfNonEmpty"/> so the grouped flat-mode ListBox shows
-    /// rows in the same order as the per-section tree-mode presentation.
-    /// </summary>
-    private sealed class SectionAndPathComparer : IComparer
-    {
-        public static readonly SectionAndPathComparer Instance = new();
-
-        public int Compare(object? x, object? y)
-        {
-            if (x is not FileEntryViewModel a || y is not FileEntryViewModel b) return 0;
-            int la = LayerSortOrder(a.Change.Layer);
-            int lb = LayerSortOrder(b.Change.Layer);
-            if (la != lb) return la - lb;
-            return StringComparer.OrdinalIgnoreCase.Compare(a.RepoRelativePath, b.RepoRelativePath);
-        }
-    }
 }
