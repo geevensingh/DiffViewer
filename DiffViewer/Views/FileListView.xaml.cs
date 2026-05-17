@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Media3D;
 
 namespace DiffViewer.Views;
 
@@ -63,10 +64,21 @@ public partial class FileListView : UserControl
 
     private static bool IsInsideToggleButton(DependencyObject? source)
     {
+        // The walk needs to handle both visual ancestors (the chevron's
+        // ToggleButton sits in the visual tree) and content-element
+        // ancestors. A click on header label text reports
+        // e.OriginalSource as a System.Windows.Documents.Run, which is a
+        // FrameworkContentElement, not a Visual; VisualTreeHelper.GetParent
+        // throws InvalidOperationException for non-Visual / non-Visual3D
+        // inputs, so we have to branch and use LogicalTreeHelper there.
+        // The loop terminates on null or a ToggleButton, or when we fall
+        // off both trees.
         while (source is not null)
         {
             if (source is ToggleButton) return true;
-            source = VisualTreeHelper.GetParent(source);
+            source = source is Visual or Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
         }
         return false;
     }

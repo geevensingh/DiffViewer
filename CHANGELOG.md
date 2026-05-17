@@ -39,6 +39,15 @@ body. Keep section headings exact and write notes in Markdown.
   misleading "selected" highlight on a row that doesn't drive any
   state.
 
+### Fixed
+
+- **Crash when clicking a section or directory header label.** The
+  expand-on-click handler walked the visual tree from the click's
+  original source; when the click landed on text inside the header
+  label, that source was a `Run` content element rather than a
+  `Visual`, which threw `InvalidOperationException` and tore down
+  the app. The walk now handles both visual and logical ancestors.
+
 ## [0.2.0] - 2026-05-15
 
 ### Added
