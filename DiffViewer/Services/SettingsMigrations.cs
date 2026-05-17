@@ -23,6 +23,14 @@ namespace DiffViewer.Services;
 /// matching the historical hardcoded XAML value) — pre-v4 files
 /// deserialize to that default and the window opens with the same
 /// split users had before persistence existed.</para>
+///
+/// <para>v5 introduced the three PR-review settings:
+/// <c>repoRoots</c>, <c>defaultCloneDestination</c>, and
+/// <c>repoUrlMappings</c>. The migration is a no-op because every
+/// field has a safe default — pre-v5 files deserialize to an empty
+/// repo-roots list, a <c>null</c> default clone destination, and an
+/// empty mappings dictionary, which exactly reflects the "no PR-review
+/// configuration yet" state.</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -42,6 +50,7 @@ internal static class SettingsMigrations
                 1 => MigrateV1ToV2, // adds windowState (nullable)
                 2 => MigrateV2ToV3, // adds suppressRevertFileConfirmation (bool, default false)
                 3 => MigrateV3ToV4, // adds fileListPaneWidthPixels (double, default 320)
+                4 => MigrateV4ToV5, // adds repoRoots, defaultCloneDestination, repoUrlMappings (all defaultable)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -82,4 +91,13 @@ internal static class SettingsMigrations
     /// <see cref="AppSettings"/>' built-in default.
     /// </summary>
     private static JsonObject MigrateV3ToV4(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v5 adds the three PR-review settings (<c>repoRoots</c>,
+    /// <c>defaultCloneDestination</c>, <c>repoUrlMappings</c>). All have
+    /// safe defaults that exactly reflect "no PR-review configuration",
+    /// so the migration is a no-op; the deserializer fills in an empty
+    /// list, a <c>null</c> destination, and an empty mappings dictionary.
+    /// </summary>
+    private static JsonObject MigrateV4ToV5(JsonObject obj) => obj;
 }

@@ -104,3 +104,19 @@ public sealed class EnumToBoolConverter : IValueConverter
         return null;
     }
 }
+
+/// <summary>XAML helper: <see cref="int"/>-valued <c>Count</c> bindings
+/// become <see cref="Visibility.Visible"/> when zero, otherwise
+/// <see cref="Visibility.Collapsed"/>. Used by the Settings dialog to
+/// show "no remembered clones yet" placeholder text only when the
+/// <c>RepoUrlMappings</c> collection is empty.</summary>
+public sealed class ZeroToVisibleConverter : IValueConverter
+{
+    public static readonly ZeroToVisibleConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is int i && i == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

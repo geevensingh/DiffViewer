@@ -34,6 +34,8 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     private readonly ISettingsService _settings;
     private readonly Action<string>? _openInEditor;
     private readonly Func<string, bool>? _confirmReset;
+    private readonly Func<string?, string?>? _pickFolder;
+    private readonly Func<string, bool>? _confirmRememberDefaultClone;
     private readonly DispatcherTimer? _colorSchemeDebounce;
     private bool _suppress;
 
@@ -42,16 +44,23 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         Action<string>? openInEditor = null,
         Func<string, bool>? confirmReset = null,
         bool useDispatcherTimer = true,
-        IReadOnlyList<FontFamilyOption>? availableFonts = null)
+        IReadOnlyList<FontFamilyOption>? availableFonts = null,
+        Func<string?, string?>? pickFolder = null,
+        Func<string, bool>? confirmRememberDefaultClone = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _openInEditor = openInEditor;
         _confirmReset = confirmReset;
+        _pickFolder = pickFolder;
+        _confirmRememberDefaultClone = confirmRememberDefaultClone;
 
         ColorSchemePresets = new ObservableCollection<ColorSchemePresetName>(
             Enum.GetValues<ColorSchemePresetName>());
 
         AvailableFonts = availableFonts ?? Array.Empty<FontFamilyOption>();
+
+        RepoRoots = new ObservableCollection<string>();
+        RepoUrlMappings = new ObservableCollection<RepoUrlMappingRow>();
 
         if (useDispatcherTimer && System.Windows.Application.Current is not null)
         {
@@ -101,6 +110,15 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     // Confirmations (note: bound as positives even though stored as suppress-flags)
     [ObservableProperty] private bool _confirmRevertHunk = true;
     [ObservableProperty] private bool _confirmDeleteFile = true;
+
+    // PR-review settings
+    public ObservableCollection<string> RepoRoots { get; }
+    public ObservableCollection<RepoUrlMappingRow> RepoUrlMappings { get; }
+    [ObservableProperty] private string _defaultCloneDestination = string.Empty;
+    [ObservableProperty] private string? _selectedRepoRoot;
+    public bool HasDefaultCloneDestination => !string.IsNullOrWhiteSpace(DefaultCloneDestination);
+    partial void OnDefaultCloneDestinationChanged(string value) =>
+        OnPropertyChanged(nameof(HasDefaultCloneDestination));
 
     // Status line
     [ObservableProperty] private string _statusMessage = string.Empty;
@@ -240,6 +258,142 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         StatusMessage = "Saved.";
     }
 
+    // ---------- PR-review commands ----------
+
+    [RelayCommand]
+    private void AddRepoRoot()
+    {
+        if (_pickFolder is null)
+        {
+            StatusMessage = "No folder picker available.";
+            return;
+        }
+
+        var picked = _pickFolder(null);
+        if (string.IsNullOrWhiteSpace(picked)) return;
+
+        if (RepoRoots.Any(r => string.Equals(r, picked, StringComparison.OrdinalIgnoreCase)))
+        {
+            StatusMessage = $"Already a repo root: {picked}";
+            return;
+        }
+
+        RepoRoots.Add(picked);
+        PersistRepoRoots();
+    }
+
+    [RelayCommand]
+    private void RemoveRepoRoot(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return;
+        if (!RepoRoots.Remove(root)) return;
+        PersistRepoRoots();
+    }
+
+    [RelayCommand]
+    private void MoveRepoRootUp(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return;
+        var index = RepoRoots.IndexOf(root);
+        if (index <= 0) return;
+        RepoRoots.Move(index, index - 1);
+        PersistRepoRoots();
+    }
+
+    [RelayCommand]
+    private void MoveRepoRootDown(string? root)
+    {
+        if (string.IsNullOrWhiteSpace(root)) return;
+        var index = RepoRoots.IndexOf(root);
+        if (index < 0 || index >= RepoRoots.Count - 1) return;
+        RepoRoots.Move(index, index + 1);
+        PersistRepoRoots();
+    }
+
+    private void PersistRepoRoots()
+    {
+        if (_suppress) return;
+        var snapshot = RepoRoots.ToList();
+        _settings.Update(s => s with { RepoRoots = snapshot });
+        StatusMessage = "Saved.";
+    }
+
+    [RelayCommand]
+    private void BrowseDefaultCloneDestination()
+    {
+        if (_pickFolder is null)
+        {
+            StatusMessage = "No folder picker available.";
+            return;
+        }
+
+        var initial = string.IsNullOrWhiteSpace(DefaultCloneDestination) ? null : DefaultCloneDestination;
+        var picked = _pickFolder(initial);
+        if (string.IsNullOrWhiteSpace(picked)) return;
+
+        DefaultCloneDestination = picked;
+        SaveIfNotSuppressed(s => s with { DefaultCloneDestination = picked });
+    }
+
+    [RelayCommand]
+    private void ClearDefaultCloneDestination()
+    {
+        DefaultCloneDestination = string.Empty;
+        SaveIfNotSuppressed(s => s with { DefaultCloneDestination = null });
+    }
+
+    [RelayCommand]
+    private void ForgetRepoUrlMapping(RepoUrlMappingRow? row)
+    {
+        if (row is null) return;
+        if (!RepoUrlMappings.Remove(row)) return;
+        if (_suppress) return;
+        var snapshot = RepoUrlMappings.ToDictionary(m => m.Key, m => m.Path);
+        _settings.Update(s => s with { RepoUrlMappings = snapshot });
+        StatusMessage = $"Forgot mapping for {row.DisplayKey}.";
+    }
+
+    /// <summary>
+    /// Public entry point used by the missing-clone dialog (Phase 5+).
+    /// Records or updates an explicit (host, owner, repo) → path mapping
+    /// and, if the user agrees, records the picked clone's parent as the
+    /// new <see cref="AppSettings.DefaultCloneDestination"/>. The
+    /// <paramref name="proposeDefaultClonePath"/> argument lets the
+    /// caller pre-compute the parent directory (e.g. for the "clone for
+    /// me" path); pass <c>null</c> to skip the prompt.
+    /// </summary>
+    public void RecordRepoUrlMapping(
+        RepoUrlKey key,
+        string clonePath,
+        string? proposeDefaultClonePath = null)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentException.ThrowIfNullOrWhiteSpace(clonePath);
+
+        var existing = RepoUrlMappings.FirstOrDefault(m => m.Key == key);
+        if (existing is not null) RepoUrlMappings.Remove(existing);
+        RepoUrlMappings.Add(new RepoUrlMappingRow(key, clonePath));
+
+        var snapshot = RepoUrlMappings.ToDictionary(m => m.Key, m => m.Path);
+
+        bool acceptDefault = false;
+        if (!string.IsNullOrWhiteSpace(proposeDefaultClonePath)
+            && string.IsNullOrWhiteSpace(DefaultCloneDestination)
+            && _confirmRememberDefaultClone is not null)
+        {
+            acceptDefault = _confirmRememberDefaultClone(proposeDefaultClonePath);
+        }
+
+        _settings.Update(s => s with
+        {
+            RepoUrlMappings = snapshot,
+            DefaultCloneDestination = acceptDefault ? proposeDefaultClonePath : s.DefaultCloneDestination,
+        });
+
+        if (acceptDefault) DefaultCloneDestination = proposeDefaultClonePath!;
+        StatusMessage = $"Remembered clone for {key.Owner}/{key.Repo}.";
+    }
+
     private void LoadFromSettings()
     {
         _suppress = true;
@@ -256,6 +410,18 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             LargeFileThresholdMb = (int)Math.Clamp(s.LargeFileThresholdBytes / (1024 * 1024), 1, 2048);
             ConfirmRevertHunk = !s.SuppressRevertHunkConfirmation;
             ConfirmDeleteFile = !s.SuppressDeleteFileConfirmation;
+
+            RepoRoots.Clear();
+            foreach (var root in s.RepoRoots) RepoRoots.Add(root);
+
+            DefaultCloneDestination = s.DefaultCloneDestination ?? string.Empty;
+
+            RepoUrlMappings.Clear();
+            foreach (var kvp in s.RepoUrlMappings
+                .OrderBy(kvp => kvp.Key.ToWireString(), StringComparer.Ordinal))
+            {
+                RepoUrlMappings.Add(new RepoUrlMappingRow(kvp.Key, kvp.Value));
+            }
 
             switch (s.ColorScheme)
             {

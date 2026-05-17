@@ -51,6 +51,9 @@ internal static class SettingsJsonSerializer
             ["suppressDeleteFileConfirmation"] = s.SuppressDeleteFileConfirmation,
             ["windowState"] = SerializeWindowState(s.WindowState),
             ["fileListPaneWidthPixels"] = s.FileListPaneWidthPixels,
+            ["repoRoots"] = SerializeStringList(s.RepoRoots),
+            ["defaultCloneDestination"] = s.DefaultCloneDestination,
+            ["repoUrlMappings"] = SerializeRepoUrlMappings(s.RepoUrlMappings),
         };
         return obj.ToJsonString(WriteOptions);
     }
@@ -81,6 +84,9 @@ internal static class SettingsJsonSerializer
             SuppressDeleteFileConfirmation = TryBool(obj, "suppressDeleteFileConfirmation") ?? defaults.SuppressDeleteFileConfirmation,
             WindowState = DeserializeWindowState(obj["windowState"]),
             FileListPaneWidthPixels = TryDouble(obj, "fileListPaneWidthPixels") ?? defaults.FileListPaneWidthPixels,
+            RepoRoots = DeserializeStringList(obj["repoRoots"]) ?? defaults.RepoRoots,
+            DefaultCloneDestination = TryString(obj, "defaultCloneDestination"),
+            RepoUrlMappings = DeserializeRepoUrlMappings(obj["repoUrlMappings"]) ?? defaults.RepoUrlMappings,
         };
     }
 
@@ -147,6 +153,53 @@ internal static class SettingsJsonSerializer
                 RemovedIntraline: TryString(c, "removedIntraline") ?? "#fdb8c0")),
             _ => null,
         };
+    }
+
+    private static JsonArray SerializeStringList(IReadOnlyList<string> values)
+    {
+        var arr = new JsonArray();
+        foreach (var v in values) arr.Add(JsonValue.Create(v));
+        return arr;
+    }
+
+    private static IReadOnlyList<string>? DeserializeStringList(JsonNode? node)
+    {
+        if (node is not JsonArray arr) return null;
+        var list = new List<string>(arr.Count);
+        foreach (var item in arr)
+        {
+            if (item is JsonValue v && v.TryGetValue<string>(out var s) && !string.IsNullOrWhiteSpace(s))
+            {
+                list.Add(s);
+            }
+        }
+        return list;
+    }
+
+    private static JsonObject SerializeRepoUrlMappings(IReadOnlyDictionary<RepoUrlKey, string> mappings)
+    {
+        var obj = new JsonObject();
+        // Sort by encoded key so diffs / hand-edits are stable across saves.
+        foreach (var kvp in mappings.OrderBy(kvp => kvp.Key.ToWireString(), StringComparer.Ordinal))
+        {
+            obj[kvp.Key.ToWireString()] = kvp.Value;
+        }
+        return obj;
+    }
+
+    private static IReadOnlyDictionary<RepoUrlKey, string>? DeserializeRepoUrlMappings(JsonNode? node)
+    {
+        if (node is not JsonObject obj) return null;
+        var result = new Dictionary<RepoUrlKey, string>();
+        foreach (var kvp in obj)
+        {
+            var key = RepoUrlKey.TryParseWire(kvp.Key);
+            if (key is null) continue; // Skip malformed keys (hand-edit typo tolerance).
+            if (kvp.Value is not JsonValue v) continue;
+            if (!v.TryGetValue<string>(out var path) || string.IsNullOrWhiteSpace(path)) continue;
+            result[key] = path;
+        }
+        return result;
     }
 
     private static bool? TryBool(JsonObject obj, string key) =>

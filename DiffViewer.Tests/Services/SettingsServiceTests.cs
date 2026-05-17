@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -60,6 +61,12 @@ public sealed class SettingsServiceTests : IDisposable
             SuppressDeleteFileConfirmation = true,
             WindowState = new WindowStateSnapshot(-50, 75, 1400, 900, IsMaximized: true),
             FileListPaneWidthPixels = 480.0,
+            RepoRoots = new[] { @"C:\Repos", @"D:\OSS" },
+            DefaultCloneDestination = @"D:\Clones",
+            RepoUrlMappings = new Dictionary<RepoUrlKey, string>
+            {
+                [RepoUrlKey.From("github.com", "geevensingh", "jotjson")] = @"C:\Repos\jotjson",
+            },
         };
         svc.Save(modified);
 
@@ -345,5 +352,154 @@ public sealed class SettingsServiceTests : IDisposable
         svc.Current.FontSize.Should().Be(17);
         svc.Current.TabWidth.Should().Be(3);
         svc.Current.FileListPaneWidthPixels.Should().Be(320.0);
+    }
+
+    [Fact]
+    public void RepoRoots_RoundTrip_PreservesOrder()
+    {
+        var svc = new SettingsService(_settingsPath);
+        var roots = new[] { @"C:\Repos", @"D:\OSS", @"E:\Forks" };
+        svc.Save(svc.Current with { RepoRoots = roots });
+
+        var reloaded = new SettingsService(_settingsPath);
+        reloaded.Current.RepoRoots.Should().Equal(roots);
+    }
+
+    [Fact]
+    public void DefaultCloneDestination_RoundTrips_AndNullStaysNull()
+    {
+        var svc = new SettingsService(_settingsPath);
+        svc.Save(svc.Current with { DefaultCloneDestination = @"D:\Clones" });
+
+        var loaded = new SettingsService(_settingsPath);
+        loaded.Current.DefaultCloneDestination.Should().Be(@"D:\Clones");
+
+        // Round-trip null too: previously-set destination cleared.
+        loaded.Save(loaded.Current with { DefaultCloneDestination = null });
+        var loaded2 = new SettingsService(_settingsPath);
+        loaded2.Current.DefaultCloneDestination.Should().BeNull();
+    }
+
+    [Fact]
+    public void RepoUrlMappings_RoundTrip_NormalizesKeysOnRead()
+    {
+        var svc = new SettingsService(_settingsPath);
+        var mappings = new Dictionary<RepoUrlKey, string>
+        {
+            [RepoUrlKey.From("github.com", "geevensingh", "jotjson")] = @"C:\Repos\jotjson",
+            [RepoUrlKey.From("github.com", "microsoft", "vscode")] = @"D:\OSS\vscode",
+        };
+        svc.Save(svc.Current with { RepoUrlMappings = mappings });
+
+        var reloaded = new SettingsService(_settingsPath);
+        reloaded.Current.RepoUrlMappings.Should().HaveCount(2);
+        reloaded.Current.RepoUrlMappings[RepoUrlKey.From("github.com", "geevensingh", "jotjson")]
+            .Should().Be(@"C:\Repos\jotjson");
+        reloaded.Current.RepoUrlMappings[RepoUrlKey.From("github.com", "microsoft", "vscode")]
+            .Should().Be(@"D:\OSS\vscode");
+    }
+
+    [Fact]
+    public void RepoUrlMappings_OnDiskFormat_UsesPipeKeyEncoding()
+    {
+        var svc = new SettingsService(_settingsPath);
+        svc.Save(svc.Current with
+        {
+            RepoUrlMappings = new Dictionary<RepoUrlKey, string>
+            {
+                [RepoUrlKey.From("github.com", "geevensingh", "jotjson")] = @"C:\Repos\jotjson",
+            },
+        });
+
+        var json = JsonNode.Parse(File.ReadAllText(_settingsPath))!.AsObject();
+        var mappings = json["repoUrlMappings"]!.AsObject();
+        mappings.Should().ContainKey("github.com|geevensingh|jotjson");
+        mappings["github.com|geevensingh|jotjson"]!.GetValue<string>()
+            .Should().Be(@"C:\Repos\jotjson");
+    }
+
+    [Fact]
+    public void RepoUrlMappings_MalformedKeysOnDisk_AreDroppedNotCrashed()
+    {
+        // A hand-edited file with one broken key and one good key.
+        // The good one survives; the broken one is dropped silently
+        // (preferable to refusing to load the whole settings file).
+        var json = new JsonObject
+        {
+            ["schemaVersion"] = AppSettings.CurrentSchemaVersion,
+            ["repoUrlMappings"] = new JsonObject
+            {
+                ["github.com|owner|repo"] = @"C:\good",
+                ["not-a-valid-key"] = @"C:\bad",
+            },
+        };
+        File.WriteAllText(_settingsPath, json.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.Current.RepoUrlMappings.Should().HaveCount(1);
+        svc.Current.RepoUrlMappings[RepoUrlKey.From("github.com", "owner", "repo")]
+            .Should().Be(@"C:\good");
+    }
+
+    [Fact]
+    public void Load_V4File_MigratesToV5_PRReviewFieldsHydrateToDefaults()
+    {
+        // v4 schema (current minus 1) had no PR-review fields. After
+        // v4->v5 migration the three fields should hydrate to their
+        // safe defaults (empty list / null / empty dict) and other
+        // fields should be preserved unchanged.
+        var v4 = new JsonObject
+        {
+            ["schemaVersion"] = 4,
+            ["fontSize"] = 17,
+            ["tabWidth"] = 3,
+            ["fileListPaneWidthPixels"] = 400.0,
+        };
+        File.WriteAllText(_settingsPath, v4.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
+        svc.Current.FontSize.Should().Be(17);
+        svc.Current.TabWidth.Should().Be(3);
+        svc.Current.FileListPaneWidthPixels.Should().Be(400.0);
+        svc.Current.RepoRoots.Should().BeEmpty();
+        svc.Current.DefaultCloneDestination.Should().BeNull();
+        svc.Current.RepoUrlMappings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void RepoUrlMappings_StableOrderingOnDisk_AcrossSaves()
+    {
+        // Maps with the same content should serialize to the same JSON
+        // regardless of insertion order — important so settings.json
+        // diffs cleanly under source control / hand-edit comparisons.
+        var svc1 = new SettingsService(_settingsPath);
+        svc1.Save(svc1.Current with
+        {
+            RepoUrlMappings = new Dictionary<RepoUrlKey, string>
+            {
+                [RepoUrlKey.From("github.com", "z-org", "repo")] = "z",
+                [RepoUrlKey.From("github.com", "a-org", "repo")] = "a",
+                [RepoUrlKey.From("github.com", "m-org", "repo")] = "m",
+            },
+        });
+        var json1 = File.ReadAllText(_settingsPath);
+
+        var altPath = _settingsPath + ".alt";
+        var svc2 = new SettingsService(altPath);
+        svc2.Save(svc2.Current with
+        {
+            RepoUrlMappings = new Dictionary<RepoUrlKey, string>
+            {
+                [RepoUrlKey.From("github.com", "a-org", "repo")] = "a",
+                [RepoUrlKey.From("github.com", "m-org", "repo")] = "m",
+                [RepoUrlKey.From("github.com", "z-org", "repo")] = "z",
+            },
+        });
+        var json2 = File.ReadAllText(altPath);
+
+        json1.Should().Be(json2);
     }
 }

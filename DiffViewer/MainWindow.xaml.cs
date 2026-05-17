@@ -366,7 +366,26 @@ public partial class MainWindow : Window
             confirmReset: prompt => MessageBox.Show(
                 this, prompt, "Reset settings",
                 MessageBoxButton.OKCancel, MessageBoxImage.Warning) == MessageBoxResult.OK,
-            availableFonts: DiffViewer.Rendering.SystemFontEnumerator.Enumerate());
+            availableFonts: DiffViewer.Rendering.SystemFontEnumerator.Enumerate(),
+            pickFolder: initial =>
+            {
+                var picker = new Microsoft.Win32.OpenFolderDialog
+                {
+                    Title = "Pick a folder",
+                    Multiselect = false,
+                };
+                if (!string.IsNullOrWhiteSpace(initial) && System.IO.Directory.Exists(initial))
+                {
+                    picker.InitialDirectory = initial;
+                }
+                return picker.ShowDialog(this) == true ? picker.FolderName : null;
+            },
+            confirmRememberDefaultClone: parent => MessageBox.Show(
+                this,
+                $"Remember \"{parent}\" as the default destination for future clones?",
+                "Default clone destination",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question) == MessageBoxResult.Yes);
 
         var dialog = new SettingsDialog(dialogVm) { Owner = this };
         try { dialog.ShowDialog(); }

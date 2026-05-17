@@ -7,7 +7,7 @@
         d:DataContext="{d:DesignInstance Type=vm:SettingsViewModel}"
         mc:Ignorable="d"
         Title="DiffViewer settings"
-        Width="560" Height="640"
+        Width="640" Height="780"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
         ResizeMode="NoResize">
@@ -186,6 +186,92 @@
                           IsChecked="{Binding ConfirmRevertHunk}"/>
                 <CheckBox Content="Confirm before deleting an untracked file" Margin="0,4"
                           IsChecked="{Binding ConfirmDeleteFile}"/>
+
+                <!-- Pull-request review -->
+                <TextBlock Text="Pull-request review" Style="{StaticResource SectionHeader}"/>
+
+                <TextBlock Text="Repo roots" Margin="0,4,0,2" Foreground="#666"/>
+                <TextBlock Margin="0,0,0,4" Foreground="#888" TextWrapping="Wrap" FontStyle="Italic">
+                    DiffViewer scans each root's immediate subdirectories for a local clone
+                    matching a PR URL's owner/repo. Pick the parent folder where you keep your
+                    clones (e.g. C:\Repos).
+                </TextBlock>
+                <Grid Margin="0,2,0,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+                    <ListBox Grid.Row="0" Height="100"
+                             ItemsSource="{Binding RepoRoots}"
+                             SelectedItem="{Binding SelectedRepoRoot}"/>
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Content="Add..." Padding="10,3" Margin="0,0,6,0"
+                                Command="{Binding AddRepoRootCommand}"/>
+                        <Button Content="Remove" Padding="10,3" Margin="0,0,6,0"
+                                Command="{Binding RemoveRepoRootCommand}"
+                                CommandParameter="{Binding SelectedRepoRoot}"/>
+                        <Button Content="Move up" Padding="10,3" Margin="0,0,6,0"
+                                Command="{Binding MoveRepoRootUpCommand}"
+                                CommandParameter="{Binding SelectedRepoRoot}"/>
+                        <Button Content="Move down" Padding="10,3"
+                                Command="{Binding MoveRepoRootDownCommand}"
+                                CommandParameter="{Binding SelectedRepoRoot}"/>
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="Default clone destination" Margin="0,10,0,2" Foreground="#666"/>
+                <TextBlock Margin="0,0,0,4" Foreground="#888" TextWrapping="Wrap" FontStyle="Italic">
+                    Optional. When DiffViewer offers to clone a missing repo for you, the
+                    destination picker is pre-filled with this folder. Leave empty to be
+                    prompted each time.
+                </TextBlock>
+                <Grid Margin="0,2,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" IsReadOnly="True" Padding="4,2"
+                             Text="{Binding DefaultCloneDestination, Mode=OneWay}"/>
+                    <Button Grid.Column="1" Content="Browse..." Padding="10,3" Margin="6,0,0,0"
+                            Command="{Binding BrowseDefaultCloneDestinationCommand}"/>
+                    <Button Grid.Column="2" Content="Clear" Padding="10,3" Margin="6,0,0,0"
+                            Command="{Binding ClearDefaultCloneDestinationCommand}"
+                            IsEnabled="{Binding HasDefaultCloneDestination}"/>
+                </Grid>
+
+                <TextBlock Text="Remembered clones" Margin="0,10,0,2" Foreground="#666"/>
+                <TextBlock Margin="0,0,0,4" Foreground="#888" TextWrapping="Wrap" FontStyle="Italic">
+                    Explicit mappings DiffViewer recorded when you pointed it at a clone outside
+                    your repo roots. "Forget" clears the entry — you'll be prompted again the
+                    next time you open a PR from that repo.
+                </TextBlock>
+                <ItemsControl ItemsSource="{Binding RepoUrlMappings}" Margin="0,2,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="0,4">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding DisplayKey}" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding Path}" Foreground="#666" FontSize="11"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="Forget" Padding="10,3" VerticalAlignment="Center"
+                                            Command="{Binding DataContext.ForgetRepoUrlMappingCommand,
+                                                              RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock Margin="0,4,0,0" FontStyle="Italic" Foreground="#888"
+                           Visibility="{Binding RepoUrlMappings.Count,
+                                                Converter={x:Static vm:ZeroToVisibleConverter.Instance}}"
+                           Text="No remembered clones yet."/>
             </StackPanel>
         </ScrollViewer>
     </DockPanel>

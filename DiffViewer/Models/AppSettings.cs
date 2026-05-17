@@ -16,7 +16,7 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 4;
+    public const int CurrentSchemaVersion = 5;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -73,6 +73,33 @@ public sealed record AppSettings
     public bool SuppressRevertHunkConfirmation { get; init; }
     public bool SuppressRevertFileConfirmation { get; init; }
     public bool SuppressDeleteFileConfirmation { get; init; }
+
+    // ---- PR-review feature (added in v5) ----
+    /// <summary>
+    /// Directories DiffViewer scans for a local clone matching a
+    /// PR URL's (host, owner, repo) triple. Each entry's immediate
+    /// children are inspected; sub-sub-directories are not. Initially
+    /// empty — the user populates this through the Settings dialog.
+    /// </summary>
+    public IReadOnlyList<string> RepoRoots { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Optional pre-fill for the destination picker in the
+    /// missing-clone dialog's "clone for me" branch. Set the first time
+    /// the user picks a destination and answers "yes" to "remember
+    /// this". <c>null</c> means "ask every time".
+    /// </summary>
+    public string? DefaultCloneDestination { get; init; }
+
+    /// <summary>
+    /// Explicit (host, owner, repo) → local-clone-path overrides
+    /// recorded when the user picks "browse to existing clone" in the
+    /// missing-clone dialog (and the scanned <see cref="RepoRoots"/>
+    /// didn't find it). Takes precedence over the root scan in
+    /// <c>ILocalRepoLocator</c>.
+    /// </summary>
+    public IReadOnlyDictionary<RepoUrlKey, string> RepoUrlMappings { get; init; }
+        = new Dictionary<RepoUrlKey, string>();
 }
 
 /// <summary>
