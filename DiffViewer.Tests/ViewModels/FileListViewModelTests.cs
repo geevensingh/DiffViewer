@@ -193,6 +193,125 @@ public class FileListViewModelTests
     }
 
     [Fact]
+    public void LoadFromChanges_IsReloading_IsTrueDuringRebuild_AndFalseAfter()
+    {
+        // The IsReloading gate is what suppresses MainViewModel's reaction
+        // to transient SelectedEntry changes during a rebuild. Verify the
+        // flag is observable inside the FlatEntries.Reset notification --
+        // that's the exact moment the WPF ListBox would write null back
+        // via its TwoWay binding -- and is reset before any post-reload
+        // consolidated PropertyChanged fires.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/a.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        bool? isReloadingAtResetTime = null;
+        bool? isReloadingAtFinalNotificationTime = null;
+        vm.FlatEntries.CollectionChanged += (s, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset
+                && isReloadingAtResetTime is null)
+            {
+                isReloadingAtResetTime = vm.IsReloading;
+            }
+        };
+        vm.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(FileListViewModel.SelectedEntry))
+            {
+                isReloadingAtFinalNotificationTime = vm.IsReloading;
+            }
+        };
+
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/a.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        isReloadingAtResetTime.Should().Be(true,
+            "the gate must be active while FlatEntries.Clear() fires - that's when " +
+            "the bound ListBox would write null back to SelectedEntry");
+        vm.IsReloading.Should().BeFalse(
+            "the gate must be cleared by the time LoadFromChanges returns");
+        if (isReloadingAtFinalNotificationTime is not null)
+        {
+            isReloadingAtFinalNotificationTime.Should().BeFalse(
+                "any SelectedEntry PropertyChanged that consumers actually see must " +
+                "fire AFTER the gate is cleared, not during the rebuild");
+        }
+    }
+
+    [Fact]
+    public void LoadFromChanges_FiresConsolidatedSelectedEntryNotification_AfterReloadCompletes()
+    {
+        // The consolidated PropertyChanged is the second half of the gate
+        // mechanism: intermediates were suppressed, so we MUST fire once at
+        // the end so MainViewModel can process the final state. Verify it
+        // fires when the SelectedEntry reference changes across the
+        // rebuild (the common "selection survived as a new VM instance"
+        // case for a same-file refresh).
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/a.cs"), MakeChange("src/b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+        vm.SelectedEntry = vm.FlatEntries.Single(e => e.Change.Path == "src/b.cs");
+
+        // Track SelectedEntry notifications that the consumer would
+        // actually see (i.e. fired with IsReloading=false).
+        int consumerVisibleSelectedEntryFires = 0;
+        vm.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(FileListViewModel.SelectedEntry) && !vm.IsReloading)
+            {
+                consumerVisibleSelectedEntryFires++;
+            }
+        };
+
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/a.cs"), MakeChange("src/b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        consumerVisibleSelectedEntryFires.Should().Be(1,
+            "exactly one consolidated SelectedEntry notification must fire after the " +
+            "rebuild completes - intermediates are suppressed by the IsReloading gate");
+        vm.SelectedEntry!.Change.Path.Should().Be("src/b.cs",
+            "the final state should be the restored selection on the new VM instance");
+    }
+
+    [Fact]
+    public void LoadFromChanges_DoesNotFireSelectedEntryNotification_WhenSelectionUnchanged()
+    {
+        // Optimisation guard: if there was no prior selection and there is
+        // no new selection, firing the consolidated PropertyChanged would
+        // trigger an unnecessary placeholder reload in MainViewModel. Skip
+        // the fire when the reference didn't change across the rebuild.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/a.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        // No selection at all (priorSelectedEntry == null).
+        vm.SelectedEntry.Should().BeNull();
+
+        int selectedEntryFires = 0;
+        vm.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(FileListViewModel.SelectedEntry))
+            {
+                selectedEntryFires++;
+            }
+        };
+
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/a.cs"), MakeChange("src/b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        selectedEntryFires.Should().Be(0,
+            "no notification should fire when the SelectedEntry reference is unchanged " +
+            "(null before, null after) - the consumer has nothing to do");
+    }
+
+    [Fact]
     public void DisplayMode_Switching_RecomputesEntryDisplayPaths()
     {
         var vm = new FileListViewModel();

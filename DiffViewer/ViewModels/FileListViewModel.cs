@@ -28,6 +28,23 @@ public sealed partial class FileListViewModel : ObservableObject
     private bool _suppressIsSelectedSync;
 
     /// <summary>
+    /// True while <see cref="LoadFromChanges"/> is rebuilding the list.
+    /// Downstream consumers of <see cref="SelectedEntry"/> PropertyChanged
+    /// (currently <c>MainViewModel.OnFileListPropertyChanged</c>) gate on
+    /// this so they ignore transient intermediates -- the binding-driven
+    /// null writeback when <see cref="FlatEntries"/> is cleared, and the
+    /// explicit re-assignment that restores the selection at the end. One
+    /// consolidated PropertyChanged is fired after the rebuild completes
+    /// so the consumer observes the final (post-reload) state exactly
+    /// once. Skipping the intermediates is what keeps
+    /// <c>DiffPaneViewModel.CurrentHunkIndex</c> from being reset on a
+    /// same-file refresh -- otherwise the transient null-load would empty
+    /// <c>_currentHunks</c> and defeat the same-shape preserve logic in
+    /// <c>DiffPaneViewModel.ApplyResult</c>.
+    /// </summary>
+    public bool IsReloading { get; private set; }
+
+    /// <summary>
     /// Per-process directory expansion memory. Keeps track of which
     /// directory nodes the user has explicitly collapsed so that adding
     /// or removing a file (which triggers a full <see cref="LoadFromChanges"/>)
@@ -259,61 +276,94 @@ public sealed partial class FileListViewModel : ObservableObject
         // collections. Clearing FlatEntries can cascade to the bound
         // grouped ListBox; capturing path/layer up front lets us re-resolve
         // to the matching new entry once the rebuild completes.
-        string? priorPath = SelectedEntry?.Change.Path;
-        WorkingTreeLayer? priorLayer = SelectedEntry?.Change.Layer;
+        var priorSelectedEntry = SelectedEntry;
+        string? priorPath = priorSelectedEntry?.Change.Path;
+        WorkingTreeLayer? priorLayer = priorSelectedEntry?.Change.Layer;
 
-        // Detach the per-entry IsSelected listener BEFORE the entries go
-        // away, otherwise we leak a handler per refresh.
-        foreach (var e in FlatEntries) e.PropertyChanged -= OnEntryPropertyChanged;
-
-        Sections.Clear();
-        FlatEntries.Clear();
-
-        var entries = changes.Select(c =>
+        // Gate consumers of SelectedEntry PropertyChanged so they don't
+        // react to intermediate states. Two writes happen during the
+        // rebuild: (1) the WPF ListBox writes null back to SelectedEntry
+        // when FlatEntries.Clear() empties its ItemsSource (TwoWay binding
+        // can't keep a SelectedItem that's no longer in the items list);
+        // (2) we explicitly re-assign SelectedEntry to the restored match
+        // below. Without this gate, (1) would null out DiffPane.CurrentEntry
+        // and clear _currentHunks, causing the (2) restore to be treated
+        // as a fresh-file load and resetting CurrentHunkIndex.
+        IsReloading = true;
+        try
         {
-            var e = new FileEntryViewModel(c, repoRoot);
-            e.ApplyDisplayMode(DisplayMode);
-            e.PropertyChanged += OnEntryPropertyChanged;
-            return e;
-        }).ToList();
-        foreach (var e in entries) FlatEntries.Add(e);
+            // Detach the per-entry IsSelected listener BEFORE the entries go
+            // away, otherwise we leak a handler per refresh.
+            foreach (var e in FlatEntries) e.PropertyChanged -= OnEntryPropertyChanged;
 
-        if (isCommitVsCommit)
-        {
-            // No section grouping for commit-vs-commit - flat list under one synthetic section.
-            IsFlatLayout = true;
-            Sections.Add(new FileListSectionViewModel(
-                WorkingTreeLayer.None, "Changes", entries,
-                _expansionStore, GetSectionHeader(WorkingTreeLayer.None)));
-        }
-        else
-        {
-            IsFlatLayout = false;
+            Sections.Clear();
+            FlatEntries.Clear();
 
-            // Order: Conflicted, CommittedSinceCommit, Staged, Unstaged, Untracked.
-            AddIfNonEmpty(WorkingTreeLayer.Conflicted, "Conflicted", entries);
-            AddIfNonEmpty(WorkingTreeLayer.CommittedSinceCommit, "Committed since baseline", entries);
-            AddIfNonEmpty(WorkingTreeLayer.Staged, "Staged", entries);
-            AddIfNonEmpty(WorkingTreeLayer.Unstaged, "Unstaged", entries);
-            AddIfNonEmpty(WorkingTreeLayer.Untracked, "Untracked", entries);
-        }
-
-        // Restore selection (or explicitly clear it if the prior file
-        // fell out of the list -- otherwise the diff pane stays stale
-        // showing a file that no longer appears anywhere on the left).
-        if (priorPath is not null)
-        {
-            FileEntryViewModel? match = null;
-            foreach (var e in FlatEntries)
+            var entries = changes.Select(c =>
             {
-                if (string.Equals(e.Change.Path, priorPath, StringComparison.OrdinalIgnoreCase)
-                    && e.Change.Layer == priorLayer)
-                {
-                    match = e;
-                    break;
-                }
+                var e = new FileEntryViewModel(c, repoRoot);
+                e.ApplyDisplayMode(DisplayMode);
+                e.PropertyChanged += OnEntryPropertyChanged;
+                return e;
+            }).ToList();
+            foreach (var e in entries) FlatEntries.Add(e);
+
+            if (isCommitVsCommit)
+            {
+                // No section grouping for commit-vs-commit - flat list under one synthetic section.
+                IsFlatLayout = true;
+                Sections.Add(new FileListSectionViewModel(
+                    WorkingTreeLayer.None, "Changes", entries,
+                    _expansionStore, GetSectionHeader(WorkingTreeLayer.None)));
             }
-            SelectedEntry = match;
+            else
+            {
+                IsFlatLayout = false;
+
+                // Order: Conflicted, CommittedSinceCommit, Staged, Unstaged, Untracked.
+                AddIfNonEmpty(WorkingTreeLayer.Conflicted, "Conflicted", entries);
+                AddIfNonEmpty(WorkingTreeLayer.CommittedSinceCommit, "Committed since baseline", entries);
+                AddIfNonEmpty(WorkingTreeLayer.Staged, "Staged", entries);
+                AddIfNonEmpty(WorkingTreeLayer.Unstaged, "Unstaged", entries);
+                AddIfNonEmpty(WorkingTreeLayer.Untracked, "Untracked", entries);
+            }
+
+            // Restore selection (or explicitly clear it if the prior file
+            // fell out of the list -- otherwise the diff pane stays stale
+            // showing a file that no longer appears anywhere on the left).
+            if (priorPath is not null)
+            {
+                FileEntryViewModel? match = null;
+                foreach (var e in FlatEntries)
+                {
+                    if (string.Equals(e.Change.Path, priorPath, StringComparison.OrdinalIgnoreCase)
+                        && e.Change.Layer == priorLayer)
+                    {
+                        match = e;
+                        break;
+                    }
+                }
+                SelectedEntry = match;
+            }
+        }
+        finally
+        {
+            IsReloading = false;
+        }
+
+        // Fire one consolidated PropertyChanged so the gated consumer
+        // (MainViewModel.OnFileListPropertyChanged) observes the final
+        // post-reload selection. The reference comparison handles the
+        // common no-op case where there was no selection before and none
+        // after, avoiding a pointless placeholder reload. When the
+        // refresh produced a new VM instance for the same path, the
+        // consumer treats it as a same-file refresh because
+        // DiffPane.CurrentEntry still points at the prior instance
+        // (which we never disturbed during the rebuild), preserving
+        // CurrentHunkIndex via HunksHaveSameShape in ApplyResult.
+        if (!ReferenceEquals(priorSelectedEntry, SelectedEntry))
+        {
+            OnPropertyChanged(nameof(SelectedEntry));
         }
     }
 

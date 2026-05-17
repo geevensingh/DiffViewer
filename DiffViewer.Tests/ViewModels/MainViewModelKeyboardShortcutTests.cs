@@ -366,6 +366,90 @@ public class MainViewModelKeyboardShortcutTests
     }
 
     [Fact]
+    public async Task RefreshChangeList_PreservesHunkIndex_AcrossListBoxBindingNullWriteback()
+    {
+        // Regression guard for the bug introduced by the multi-Selector
+        // refactor: the unified flat-mode ListBox persists in the visual
+        // tree (unlike the OLD per-section ListBoxes which were unloaded
+        // when Sections.Clear() removed their parents). When FlatEntries
+        // is cleared during LoadFromChanges, the bound SelectedItem can no
+        // longer point at the prior entry, so WPF's TwoWay binding writes
+        // null back to SelectedEntry. Without the IsReloading gate, this
+        // transient null was consumed by MainViewModel.OnFileListPropertyChanged,
+        // which called LoadAndScrollToFirstHunkAsync(null) and nulled out
+        // DiffPane.CurrentEntry plus _currentHunks. The subsequent restore
+        // (SelectedEntry = match) was then seen as a fresh-file load
+        // instead of a same-file refresh, defeating the HunksHaveSameShape
+        // preservation in DiffPaneViewModel.ApplyResult and resetting
+        // CurrentHunkIndex back to 0 / triggering a HunkNavigationRequested.
+        //
+        // This test simulates the WPF binding writeback by hooking
+        // FlatEntries.CollectionChanged (which fires synchronously on
+        // Clear()) and writing null to SelectedEntry exactly when WPF
+        // would. The IsReloading gate must keep the consumer's hands off.
+        var repo = new FakeRepoForKeyboard
+        {
+            // Same 2-hunk fixture as the test above.
+            LeftText  = string.Join("\n", new[]
+            {
+                "first-old", "b","c","d","e","f","g","h","i","j","k","l","m",
+                "last-line", "n", "o",
+            }) + "\n",
+            RightText = string.Join("\n", new[]
+            {
+                "first-new", "b","c","d","e","f","g","h","i","j","k","l","m",
+                "last-line+", "n", "o",
+            }) + "\n",
+        };
+        repo.SetChanges(ModifiedChange("a.cs"));
+
+        await RunOnUiSyncContextAsync(async vm =>
+        {
+            vm.RefreshChangeList();
+            var entry = vm.FileList.FlatEntries[0];
+            vm.FileList.SelectedEntry = entry;
+            await vm.DiffPane.LastLoadTask;
+
+            vm.DiffPane.CurrentHunks.Should().HaveCount(2,
+                "fixture should produce a 2-hunk diff");
+
+            // Navigate to hunk #2 of 2 (the user "is looking at the second
+            // diff" in the bug report).
+            vm.NavigateNextChangeCommand.Execute(null);
+            vm.DiffPane.CurrentHunkIndex.Should().Be(1);
+
+            // Hook the WPF binding writeback simulation: when FlatEntries
+            // is cleared during the next LoadFromChanges, mimic the bound
+            // ListBox by writing null back to SelectedEntry. The setter
+            // runs under IsReloading=true and must NOT propagate the null
+            // to MainViewModel.
+            vm.FileList.FlatEntries.CollectionChanged += (s, e) =>
+            {
+                if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset
+                    && vm.FileList.IsReloading)
+                {
+                    vm.FileList.SelectedEntry = null;
+                }
+            };
+
+            int navCount = 0;
+            vm.DiffPane.HunkNavigationRequested += (_, _) => navCount++;
+
+            // Refresh fires (e.g. RepositoryWatcher debounced event) AFTER
+            // the user is sitting on the second hunk.
+            vm.RefreshChangeList();
+            await vm.DiffPane.LastLoadTask;
+
+            navCount.Should().Be(0,
+                "the simulated binding null-writeback must not propagate to MainViewModel, " +
+                "so no HunkNavigationRequested fires during the same-file refresh");
+            vm.DiffPane.CurrentHunkIndex.Should().Be(1,
+                "the user's hunk index from before the refresh must be preserved even when " +
+                "the bound ListBox writes null back to SelectedEntry mid-rebuild");
+        }, repo);
+    }
+
+    [Fact]
     public async Task SelectingDifferentFile_StillAutoScrollsToFirstHunk()
     {
         // Guard the inverse of the regression above: switching to a

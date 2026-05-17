@@ -678,6 +678,18 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     private void OnFileListPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(FileListViewModel.SelectedEntry)) return;
+
+        // Ignore transient SelectedEntry changes during a rebuild. The WPF
+        // ListBox writes null back to SelectedEntry when FlatEntries is
+        // cleared, and FileListViewModel re-assigns the restored match
+        // inside the same call. Reacting to either of those intermediates
+        // would null out DiffPane.CurrentEntry and clear _currentHunks,
+        // defeating the same-file-refresh hunk-index preservation in
+        // DiffPaneViewModel.ApplyResult. FileListViewModel fires one
+        // consolidated PropertyChanged at the end of LoadFromChanges so
+        // we observe the final state exactly once.
+        if (FileList.IsReloading) return;
+
         var newSel = FileList.SelectedEntry;
 
         // A repository refresh (RefreshChangeList) re-creates every
