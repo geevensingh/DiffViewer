@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-16
+
 ### Added
 
 - **Whole-file Stage / Unstage / Revert** from the file-list
@@ -19,6 +21,10 @@ body. Keep section headings exact and write notes in Markdown.
   actions in the diff pane. Eligibility tracks the working-tree
   layer (untracked / unstaged / staged); destructive revert prompts
   with a "Don't ask me again" toggle.
+- **File-list / diff-pane splitter position is now persisted across
+  launches.** Dragging the splitter used to be a per-session change
+  that reset to the default 320 px every time the app launched;
+  it now remembers where you left it.
 
 ### Changed
 
@@ -38,25 +44,31 @@ body. Keep section headings exact and write notes in Markdown.
   right-clicking those rows is now a no-op instead of leaving a
   misleading "selected" highlight on a row that doesn't drive any
   state.
+- **Refreshing an unchanged file no longer flashes the diff pane.**
+  When a repository event (or F5) re-enumerates the change list and
+  the currently-open file's content hasn't moved, the diff pane now
+  skips the re-read / re-diff / overview-bar redraw cycle entirely
+  instead of cycling `IsLoading` and re-rendering identical output.
 
 ### Fixed
 
-- **Crash when clicking a section or directory header label.** The
-  expand-on-click handler walked the visual tree from the click's
-  original source; when the click landed on text inside the header
-  label, that source was a `Run` content element rather than a
-  `Visual`, which threw `InvalidOperationException` and tore down
-  the app. The walk now handles both visual and logical ancestors.
-- **Clicking a file row collapsed its parent section, and right-
-  clicking a file row swallowed its context menu.** The section /
-  directory header handlers fired for any mouse event in their
-  subtree — including events that originated inside a descendant
-  row — because the bubbling/tunneling routing reaches the parent
-  on its way through the tree. Both handlers now bail when the
-  click started inside a different `TreeViewItem`, so file-row
-  clicks select the file and show the entry context menu as
-  expected, and nested-directory clicks no longer affect their
-  containing section or directory.
+- **File-list selection across flat and grouped-by-directory modes.**
+  Clicking a file in section A, then a file in section B, then
+  back to A's previously-selected file used to be a silent no-op
+  until a manual refresh — each section's selector held its own
+  stale `SelectedItem`. Selection now routes through one source of
+  truth so cross-section navigation works on every click.
+- **Current-hunk position is preserved across same-file refreshes.**
+  A repository refresh used to lose the user's place in the diff
+  pane: the file would reload and snap back to the first hunk
+  instead of staying on the hunk that was already selected. Hunk
+  position now survives the refresh.
+
+### Install
+
+Same story as v0.1.0: single-file unsigned `DiffViewer.exe` for
+Windows 10+ (x64). SmartScreen may warn on first launch — click
+**"More info"** → **"Run anyway"**.
 
 ## [0.2.0] - 2026-05-15
 
