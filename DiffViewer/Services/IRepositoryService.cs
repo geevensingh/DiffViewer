@@ -43,6 +43,22 @@ public interface IRepositoryService : IDisposable
     BlobContent ReadSide(FileChange change, ChangeSide side);
 
     /// <summary>
+    /// Compute a cheap identity tag for one side of a change without
+    /// reading the blob bytes. Used by the diff pane to detect "this
+    /// side's content is identical to what we last loaded" so a refresh
+    /// that produced a new <see cref="FileChange"/> instance pointing at
+    /// the same bytes can skip the reload entirely (no IsLoading overlay
+    /// flash, no diff recompute, no highlight-map refire).
+    ///
+    /// <para>For blob-backed sides this is the blob SHA. For working-tree
+    /// sides this is the file's (mtime, size) at probe time -- the same
+    /// pair git itself caches in the index for fast change detection.
+    /// Returns <c>null</c> when no deterministic identity is available;
+    /// callers must treat <c>null</c> as "always changed" and not skip.</para>
+    /// </summary>
+    BlobIdentity? ProbeSideIdentity(FileChange change, ChangeSide side);
+
+    /// <summary>
     /// Drop LibGit2Sharp's in-memory index cache and re-read <c>.git\index</c>
     /// from disk. Required after every external <c>git.exe</c> mutation.
     /// </summary>
@@ -79,4 +95,42 @@ public enum ChangeSide
 {
     Left,
     Right,
+}
+
+/// <summary>
+/// Cheap identity tag for one side of a <see cref="FileChange"/>. Compared
+/// by value: two equal <see cref="BlobIdentity"/>s mean the underlying
+/// bytes are (almost certainly) unchanged between two probes, so the
+/// caller can skip a redundant <see cref="IRepositoryService.ReadSide"/>
+/// + diff recompute.
+///
+/// <para>Construct via the static factory members rather than the
+/// primary constructor so the field roles stay clear:
+/// <see cref="FromBlob"/> for SHA-addressed content,
+/// <see cref="FromWorkingTree"/> for a file on disk (mtime + size, the
+/// same identity proxy git uses in the index), <see cref="Empty"/> for
+/// an empty side (e.g. <c>Untracked</c> left, deleted-on-this-side),
+/// and <see cref="MissingWorkingTreeFile"/> for a workdir path that
+/// doesn't exist. The <see cref="Empty"/> and
+/// <see cref="MissingWorkingTreeFile"/> singletons compare equal to
+/// themselves, which is intentional: "still empty" and "still missing"
+/// are stable identities worth skipping.</para>
+/// </summary>
+public readonly record struct BlobIdentity(
+    string? BlobSha,
+    DateTime WorkingTreeMtimeUtc,
+    long WorkingTreeSizeBytes)
+{
+    /// <summary>SHA-addressed blob (any commit-side or staged-blob side).</summary>
+    public static BlobIdentity FromBlob(string sha) => new(sha, default, 0);
+
+    /// <summary>Genuinely empty side (e.g. <c>Untracked</c> left, file deleted on this side).</summary>
+    public static BlobIdentity Empty { get; } = new(null, default, 0);
+
+    /// <summary>Working-tree file that exists on disk; identity is (mtime, size).</summary>
+    public static BlobIdentity FromWorkingTree(DateTime mtimeUtc, long sizeBytes)
+        => new(null, mtimeUtc, sizeBytes);
+
+    /// <summary>Working-tree side whose file does not exist on disk.</summary>
+    public static BlobIdentity MissingWorkingTreeFile { get; } = new(null, default, -1);
 }

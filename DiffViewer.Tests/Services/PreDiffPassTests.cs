@@ -364,6 +364,14 @@ public sealed class PreDiffPassTests
             var text = side == ChangeSide.Left ? $"{change.Path}-L" : $"{change.Path}-R";
             return new BlobContent(Encoding.UTF8.GetBytes(text), Encoding.UTF8, text, false, false);
         }
+        public BlobIdentity? ProbeSideIdentity(FileChange change, ChangeSide side)
+        {
+            // Path-derived identity matches the path-derived content above
+            // so PreDiffPass tests (which don't go through DiffPaneViewModel)
+            // still get a coherent fake if anything ever queries this.
+            var text = side == ChangeSide.Left ? $"{change.Path}-L" : $"{change.Path}-R";
+            return BlobIdentity.FromBlob($"fake:{side}:{text}");
+        }
         public void RefreshIndex() { }
         public FileChange? TryResolveCurrent(string path, WorkingTreeLayer layer) => null;
         public bool TryReopen() => true;

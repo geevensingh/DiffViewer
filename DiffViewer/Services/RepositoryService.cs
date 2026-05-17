@@ -176,6 +176,45 @@ public sealed class RepositoryService : IRepositoryService
         }
     }
 
+    public BlobIdentity? ProbeSideIdentity(FileChange change, ChangeSide side)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        bool readLeft = side == ChangeSide.Left;
+
+        // Mirror ReadSideLocked's "right side of Unstaged/Untracked reads
+        // from the working tree" special case. The workdir path resolves
+        // under _lock (it depends on _shape which can mutate during
+        // TryReopen), but the stat call itself is plain System.IO and
+        // doesn't need to hold the libgit2 lock.
+        if (!readLeft && (change.Layer == WorkingTreeLayer.Unstaged
+                       || change.Layer == WorkingTreeLayer.Untracked))
+        {
+            string workPath;
+            lock (_lock) { workPath = WorkdirPath(change.Path); }
+            try
+            {
+                var info = new FileInfo(workPath);
+                if (!info.Exists) return BlobIdentity.MissingWorkingTreeFile;
+                return BlobIdentity.FromWorkingTree(info.LastWriteTimeUtc, info.Length);
+            }
+            catch
+            {
+                // I/O error or permission issue - force a reload rather
+                // than silently treating "can't stat" as "still the same".
+                return null;
+            }
+        }
+
+        // Blob-backed sides. A null SHA here is either Untracked-left
+        // (which ReadSideLocked treats as empty) or "file added/deleted
+        // on this side"; both observably produce empty content, so they
+        // share the same identity.
+        string? sha = readLeft ? change.LeftBlobSha : change.RightBlobSha;
+        if (sha is null) return BlobIdentity.Empty;
+        return BlobIdentity.FromBlob(sha);
+    }
+
     public FileChange? TryResolveCurrent(string path, WorkingTreeLayer layer)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);

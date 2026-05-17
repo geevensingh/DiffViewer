@@ -890,6 +890,158 @@ public class DiffPaneViewModelTests
         canRevert.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task LoadAsync_SkipsWork_WhenSameEntryReloadedWithUnchangedContent()
+    {
+        // Identity-skip fast path: a refresh that selects the same entry
+        // again, with unchanged blob identity on both sides, should NOT
+        // re-read the blobs, re-run the diff, or fire HighlightMapChanged.
+        // This is the optimisation that kills the same-content refresh
+        // flash users see when the watcher fires on an unrelated repo
+        // event.
+        var repo = new FakeRepository
+        {
+            LeftText = "alpha\nbeta\n",
+            RightText = "alpha\nBETA\n",
+        };
+        var diff = new DiffService();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            var entry = Entry(ModifiedTextFile("a.cs"));
+            await vm.LoadAsync(entry);
+
+            repo.ReadCount.Should().Be(2, "first load reads both sides");
+            int highlightEvents = 0;
+            vm.HighlightMapChanged += (_, _) => highlightEvents++;
+
+            // Refresh with a fresh FileEntryViewModel wrapping a FileChange
+            // with identical SHAs (the realistic refresh shape - the watcher
+            // / re-enumeration produces new instances even for unchanged
+            // files).
+            var refreshed = Entry(ModifiedTextFile("a.cs"));
+            await vm.LoadAsync(refreshed);
+
+            repo.ReadCount.Should().Be(2,
+                "the identity-skip path must avoid re-reading blobs on a same-content refresh");
+            highlightEvents.Should().Be(0,
+                "no ApplyResult means no HighlightMapChanged - this is what stops the flash");
+            vm.CurrentEntry.Should().BeSameAs(refreshed,
+                "the skip path still updates CurrentEntry to the refreshed FileEntryViewModel " +
+                "so MainViewModel.isSameFileRefresh sees the new instance on the NEXT refresh");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_ReloadsAgain_WhenLeftSideContentChanges()
+    {
+        // Counterpart to the skip test: if the underlying content moves,
+        // the identity changes, the skip predicate fails, and the load
+        // runs in full. This is the safety net that ensures the
+        // optimisation never hides a real edit from the user.
+        var repo = new FakeRepository
+        {
+            LeftText = "alpha\nbeta\n",
+            RightText = "alpha\nBETA\n",
+        };
+        var diff = new DiffService();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            var entry = Entry(ModifiedTextFile("a.cs"));
+            await vm.LoadAsync(entry);
+            repo.ReadCount.Should().Be(2);
+
+            // Simulate the working-tree file being edited between
+            // refreshes: the fake's ProbeSideIdentity is content-derived,
+            // so changing LeftText produces a new identity.
+            repo.LeftText = "alpha\nbeta-EDITED\n";
+
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            repo.ReadCount.Should().Be(4,
+                "content changed on disk - skip must NOT fire, full reload required");
+            vm.LeftDocument.Text.Should().Contain("EDITED",
+                "the editor must reflect the new content, not the stale cached buffer");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_DoesNotSkip_WhenSwitchingToDifferentFile()
+    {
+        // Path mismatch is the most basic skip-defeater; this guards
+        // against a future regression where LoadSignature accidentally
+        // omits Path / Layer from its equality.
+        var repo = new FakeRepository { LeftText = "x\n", RightText = "y\n" };
+        var diff = new DiffService();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+            repo.ReadCount.Should().Be(2);
+
+            await vm.LoadAsync(Entry(ModifiedTextFile("b.cs")));
+
+            repo.ReadCount.Should().Be(4,
+                "switching files must always re-read - this is a different path");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_DoesNotSkip_AfterNullEntryDeselection()
+    {
+        // Selecting nothing then re-selecting the same file should
+        // produce a full reload: deselection clears the signature so
+        // the editor is repopulated from scratch (otherwise the user
+        // would see stale documents from before the deselection).
+        var repo = new FakeRepository { LeftText = "alpha\n", RightText = "beta\n" };
+        var diff = new DiffService();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+            repo.ReadCount.Should().Be(2);
+
+            await vm.LoadAsync(null);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            repo.ReadCount.Should().Be(4,
+                "after deselection, re-selecting the same file must re-read - " +
+                "the signature is cleared on null load to avoid serving stale documents");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_SkipsPlaceholderReapply_OnSameBinaryFileRefresh()
+    {
+        // Placeholder paths (binary, LFS, large-file, mode-only) are
+        // also covered by the identity-skip: a refresh on an unchanged
+        // binary file shouldn't re-fire HighlightMapChanged either,
+        // since that triggers the same redraw machinery on the overview
+        // bar and contributes to the flash.
+        var repo = new FakeRepository();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo);
+            await vm.LoadAsync(Entry(Binary("img.png")));
+            vm.PlaceholderMessage.Should().Contain("Binary");
+
+            int highlightEvents = 0;
+            vm.HighlightMapChanged += (_, _) => highlightEvents++;
+
+            await vm.LoadAsync(Entry(Binary("img.png")));
+
+            highlightEvents.Should().Be(0,
+                "same-binary refresh must skip the placeholder ApplyResult " +
+                "to avoid re-firing HighlightMapChanged");
+        });
+    }
+
     /// <summary>
     /// DiffPaneViewModel.LoadAsync uses TaskScheduler.FromCurrentSynchronizationContext()
     /// for its continuation; awaiting it from a plain xunit thread without a
@@ -938,6 +1090,17 @@ public class DiffPaneViewModelTests
             ReadCount++;
             var text = side == ChangeSide.Left ? LeftText : RightText;
             return new BlobContent(Encoding.UTF8.GetBytes(text), Encoding.UTF8, text, false, false);
+        }
+
+        public BlobIdentity? ProbeSideIdentity(FileChange change, ChangeSide side)
+        {
+            // Mirror ReadSide observably so the identity-skip fast path
+            // exercises naturally: stable content -> stable identity ->
+            // skip; mutated LeftText / RightText -> fresh identity ->
+            // reload.
+            var text = side == ChangeSide.Left ? LeftText : RightText;
+            if (text.Length == 0) return BlobIdentity.Empty;
+            return BlobIdentity.FromBlob($"fake:{side}:{text.Length}:{text.GetHashCode():X8}");
         }
 
         public void RefreshIndex() { }

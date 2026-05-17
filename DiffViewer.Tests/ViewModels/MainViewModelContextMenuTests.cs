@@ -645,6 +645,15 @@ public class MainViewModelContextMenuTests : IDisposable
                 IsLfsPointer: false);
         }
 
+        public BlobIdentity? ProbeSideIdentity(FileChange change, ChangeSide side)
+        {
+            // Mirror ReadSide observably so identity-skip is wired up
+            // identically to production for tests that go through LoadAsync.
+            var text = side == ChangeSide.Left ? LeftText : RightText;
+            if (text.Length == 0) return BlobIdentity.Empty;
+            return BlobIdentity.FromBlob($"fake:{side}:{text.Length}:{text.GetHashCode():X8}");
+        }
+
         public void RefreshIndex() { }
 
         public FileChange? TryResolveCurrent(string path, WorkingTreeLayer layer) => null;

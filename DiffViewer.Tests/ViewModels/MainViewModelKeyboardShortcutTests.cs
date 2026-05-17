@@ -1000,6 +1000,17 @@ public class MainViewModelKeyboardShortcutTests
                 IsLfsPointer: false);
         }
 
+        public BlobIdentity? ProbeSideIdentity(FileChange change, ChangeSide side)
+        {
+            // Mirror ReadSide observably: identity is stable when LeftText /
+            // RightText is stable, and changes when they change. Tests that
+            // mutate the text between refreshes therefore see the same
+            // skip-vs-reload behaviour the production fast path produces.
+            var text = side == ChangeSide.Left ? LeftText : RightText;
+            if (text.Length == 0) return BlobIdentity.Empty;
+            return BlobIdentity.FromBlob($"fake:{side}:{text.Length}:{text.GetHashCode():X8}");
+        }
+
         public void RefreshIndex() { }
         public FileChange? TryResolveCurrent(string path, WorkingTreeLayer layer) => null;
         public bool TryReopen() => true;

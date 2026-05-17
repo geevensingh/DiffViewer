@@ -34,6 +34,38 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     private DispatcherTimer? _optionDebounceTimer;
     private const int OptionDebounceMs = 200;
 
+    // Identity-skip cache. Set after a successful load completes;
+    // checked synchronously at the top of LoadAsync to short-circuit a
+    // redundant reload (no IsLoading overlay flash, no blob read, no
+    // diff recompute) when a refresh produced a new FileChange VM
+    // pointing at the same underlying bytes. Cleared on failure /
+    // cancellation so the next load runs in full.
+    private LoadSignature? _lastLoadSignature;
+
+    /// <summary>
+    /// Snapshot of the identifying state of one loaded file: path, layer,
+    /// and per-side <see cref="BlobIdentity"/>. Equality is value-based
+    /// (record struct), so two signatures match iff every component
+    /// matches. A <c>null</c> <see cref="Left"/> / <see cref="Right"/>
+    /// means "no deterministic identity"; <see cref="TryBuild"/> returns
+    /// <c>null</c> in that case so the caller forces a reload.
+    /// </summary>
+    private readonly record struct LoadSignature(
+        string Path,
+        WorkingTreeLayer Layer,
+        BlobIdentity Left,
+        BlobIdentity Right)
+    {
+        public static LoadSignature? TryBuild(FileEntryViewModel entry, IRepositoryService repo)
+        {
+            var change = entry.Change;
+            var left = repo.ProbeSideIdentity(change, ChangeSide.Left);
+            var right = repo.ProbeSideIdentity(change, ChangeSide.Right);
+            if (left is not { } l || right is not { } r) return null;
+            return new LoadSignature(change.Path, change.Layer, l, r);
+        }
+    }
+
     public TextDocument LeftDocument { get; } = new();
     public TextDocument RightDocument { get; } = new();
     public TextDocument InlineDocument { get; } = new();
@@ -316,6 +348,28 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
 
     public Task LoadAsync(FileEntryViewModel? entry)
     {
+        // Identity-skip fast path. If the new entry is structurally the
+        // same as the one we already have loaded -- same path/layer, same
+        // blob SHAs on commit-backed sides, same (mtime, size) on
+        // working-tree-backed sides -- there is nothing to recompute. A
+        // refresh that produced a brand-new FileEntryViewModel for an
+        // unchanged file lands here. Skipping avoids the IsLoading
+        // overlay flash, the blob reads, the diff recompute, and the
+        // unconditional HighlightMapChanged fire in ApplyResult.
+        //
+        // Only safe when no load is currently in flight; an in-flight
+        // load may be cancelled below and replaced, and its prior
+        // signature is still _lastLoadSignature until ApplyResult runs.
+        if (entry is not null
+            && !IsLoading
+            && _lastLoadSignature is { } prior
+            && LoadSignature.TryBuild(entry, _repository) is { } current
+            && prior == current)
+        {
+            _currentEntry = entry;
+            return LastLoadTask;
+        }
+
         _loadCts?.Cancel();
         _loadCts = new CancellationTokenSource();
         var ct = _loadCts.Token;
@@ -324,6 +378,9 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
 
         if (entry is null)
         {
+            // Reset the signature so a subsequent "select the file again"
+            // doesn't false-positive skip against a stale prior load.
+            _lastLoadSignature = null;
             ApplyResult(string.Empty, string.Empty, "Select a file to see its diff.",
                 Array.Empty<DiffHunk>(), DiffHighlightMap.Empty, InlineDiffBuilder.Empty, false);
             LastLoadTask = Task.CompletedTask;
@@ -335,6 +392,11 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             ?? ResolveLargeFilePlaceholder(change);
         if (earlyPlaceholder is not null)
         {
+            // Capture the signature for the placeholder load so a
+            // refresh on the same binary / LFS / large-file entry skips
+            // re-applying the placeholder (which would also re-fire
+            // HighlightMapChanged).
+            _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
             ApplyResult(string.Empty, string.Empty, earlyPlaceholder,
                 Array.Empty<DiffHunk>(), DiffHighlightMap.Empty, InlineDiffBuilder.Empty, false);
             LastLoadTask = Task.CompletedTask;
@@ -357,6 +419,10 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
 
             if (t.IsFaulted)
             {
+                // Clear the signature on failure: we don't have a known-
+                // good content state to compare against, so the next
+                // load must run in full.
+                _lastLoadSignature = null;
                 ApplyResult(
                     string.Empty,
                     string.Empty,
@@ -371,6 +437,14 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 var (left, right, hunks, map, inline, ws) = t.Result;
                 _cachedLeftText = left;
                 _cachedRightText = right;
+                // Snapshot signature AFTER the successful read so the
+                // stored identity matches the content we actually
+                // applied. A workdir modification that races our read
+                // (mtime ticks between probe-at-LoadAsync-entry and
+                // probe-here) will show as a signature mismatch on the
+                // next refresh and force a re-read, picking up the
+                // missed change.
+                _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
                 ApplyResult(left, right, null, hunks, map, inline, ws);
             }
 
