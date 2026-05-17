@@ -36,11 +36,19 @@ public partial class FileListView : UserControl
     /// <see cref="ToggleButton"/> in the visual tree is the chevron); if a
     /// future custom template introduces another <see cref="ToggleButton"/>
     /// in the header it will need to opt out of this detection.</para>
+    ///
+    /// <para>The <see cref="NearestTreeViewItemAncestor"/> guard is what
+    /// stops a click on a descendant row (e.g. a file row inside an
+    /// unstaged section) from bubbling up and toggling the parent
+    /// section: the parent's handler fires too because the event bubbles,
+    /// but it bails immediately because the click originated inside the
+    /// child's <see cref="TreeViewItem"/>, not the parent's.</para>
     /// </summary>
     private void OnHeaderLeftMouseUp(object sender, MouseButtonEventArgs e)
     {
         if (e.Handled) return;
         if (sender is not TreeViewItem item) return;
+        if (NearestTreeViewItemAncestor(e.OriginalSource as DependencyObject) != item) return;
         if (IsInsideToggleButton(e.OriginalSource as DependencyObject)) return;
 
         item.IsExpanded = !item.IsExpanded;
@@ -56,10 +64,35 @@ public partial class FileListView : UserControl
     /// then does nothing. File rows keep their normal right-click behavior
     /// (the entry context menu fires from the row's <c>Grid</c> in
     /// <c>EntryTemplate</c>, below this handler in the visual tree).
+    ///
+    /// <para>This is a tunneling handler, so it would otherwise fire
+    /// before the file row's right-click handlers and swallow the file's
+    /// context menu entirely. The <see cref="NearestTreeViewItemAncestor"/>
+    /// guard ensures we only suppress right-clicks that originated in
+    /// this row's own header chrome, not in a descendant file or nested
+    /// directory row.</para>
     /// </summary>
     private void OnHeaderRightMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (sender is not TreeViewItem item) return;
+        if (NearestTreeViewItemAncestor(e.OriginalSource as DependencyObject) != item) return;
         e.Handled = true;
+    }
+
+    private static TreeViewItem? NearestTreeViewItemAncestor(DependencyObject? source)
+    {
+        // Same Visual / FrameworkContentElement branching as
+        // IsInsideToggleButton: a click on header label text starts at a
+        // Run (content element), so we have to fall back to
+        // LogicalTreeHelper for those nodes or VisualTreeHelper throws.
+        while (source is not null)
+        {
+            if (source is TreeViewItem tvi) return tvi;
+            source = source is Visual or Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+        return null;
     }
 
     private static bool IsInsideToggleButton(DependencyObject? source)

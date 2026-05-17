@@ -47,6 +47,16 @@ body. Keep section headings exact and write notes in Markdown.
   label, that source was a `Run` content element rather than a
   `Visual`, which threw `InvalidOperationException` and tore down
   the app. The walk now handles both visual and logical ancestors.
+- **Clicking a file row collapsed its parent section, and right-
+  clicking a file row swallowed its context menu.** The section /
+  directory header handlers fired for any mouse event in their
+  subtree — including events that originated inside a descendant
+  row — because the bubbling/tunneling routing reaches the parent
+  on its way through the tree. Both handlers now bail when the
+  click started inside a different `TreeViewItem`, so file-row
+  clicks select the file and show the entry context menu as
+  expected, and nested-directory clicks no longer affect their
+  containing section or directory.
 
 ## [0.2.0] - 2026-05-15
 
