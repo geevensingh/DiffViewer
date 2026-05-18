@@ -628,6 +628,13 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         if (!preserveHunkIndex)
         {
             CurrentHunkIndex = -1;
+            // Caret tracking is hunk-list-relative — a fresh-shape load
+            // means the prior caret position no longer maps to anything
+            // meaningful for F7/F8. The view will re-seed _caretSide /
+            // _caretLine on the next caret PositionChanged (typically the
+            // auto-jump to the first hunk).
+            _caretSide = null;
+            _caretLine = 0;
         }
         // Reset the viewport indicator — the new document will compute its
         // own visible-range on the next layout pass.
@@ -755,29 +762,154 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Non-cycling step to the next hunk in the current file. Returns true
-    /// if a step was made; false when the caret is already at (or past) the
-    /// last hunk, signalling the orchestrator to advance to the next file.
+    /// Most recent editor caret position pushed in by the view (via
+    /// <see cref="SetCaretPosition"/>). Drives caret-relative F7/F8
+    /// navigation: the user's mental model is "F8 jumps to the next change
+    /// after wherever I'm looking", and the caret is the source of truth
+    /// for "where I'm looking". Reset to <c>(null, 0)</c> on a fresh file
+    /// load — see <c>ApplyResult</c>.
+    /// </summary>
+    private ChangeSide? _caretSide;
+    private int _caretLine;
+
+    /// <summary>
+    /// Push the editor caret position into the VM. Called from the view's
+    /// <c>TextArea.Caret.PositionChanged</c> handler on each editor. Used
+    /// by <see cref="TryNavigateNextHunkInFile"/> /
+    /// <see cref="TryNavigatePreviousHunkInFile"/> to compute "next/prev
+    /// change after the caret" — without this, F7/F8 would always step
+    /// relative to the last <em>navigated-to</em> hunk and ignore an
+    /// intervening mouse click.
+    /// </summary>
+    public void SetCaretPosition(ChangeSide side, int oneBasedLine)
+    {
+        if (oneBasedLine < 1) return;
+        _caretSide = side;
+        _caretLine = oneBasedLine;
+    }
+
+    /// <summary>
+    /// Step to the next change in the current file relative to the caret.
+    /// If the caret is inside a hunk, advances to the hunk after it; if
+    /// the caret is in a context region, advances to the first hunk whose
+    /// start lies past the caret. Returns false when no such hunk exists
+    /// (caret is on or after the last hunk), signalling the cross-file
+    /// orchestrator to advance to the next file.
     /// </summary>
     public bool TryNavigateNextHunkInFile()
     {
         if (_currentHunks.Count == 0) return false;
-        int next = CurrentHunkIndex + 1;
-        if (next >= _currentHunks.Count) return false;
-        CurrentHunkIndex = next;
+        int target = FindNextHunkFromCaret(forward: true);
+        if (target < 0) return false;
+        CurrentHunkIndex = target;
         RaiseHunkNav();
         return true;
     }
 
-    /// <summary>Non-cycling step backwards (mirror of <see cref="TryNavigateNextHunkInFile"/>).</summary>
+    /// <summary>Caret-relative mirror of <see cref="TryNavigateNextHunkInFile"/>.</summary>
     public bool TryNavigatePreviousHunkInFile()
     {
         if (_currentHunks.Count == 0) return false;
-        int prev = CurrentHunkIndex - 1;
-        if (prev < 0) return false;
-        CurrentHunkIndex = prev;
+        int target = FindNextHunkFromCaret(forward: false);
+        if (target < 0) return false;
+        CurrentHunkIndex = target;
         RaiseHunkNav();
         return true;
+    }
+
+    /// <summary>
+    /// Resolve the next / previous hunk index relative to the tracked
+    /// caret position. Returns <c>-1</c> when no hunk lies in that
+    /// direction. Falls back to "after / before <see cref="CurrentHunkIndex"/>"
+    /// when no caret has been pushed yet (e.g., unit tests that drive
+    /// <see cref="JumpToHunk"/> directly without a view).
+    ///
+    /// <para>Algorithm: first determine the hunk index that
+    /// <em>contains</em> the caret on its tracked side (if any).
+    /// <list type="bullet">
+    ///   <item>Caret inside hunk <c>i</c> → next = <c>i + 1</c>, prev = <c>i - 1</c>.</item>
+    ///   <item>Caret in a context region → next = first hunk with
+    ///   <c>start &gt; caretLine</c>; prev = last hunk with
+    ///   <c>end &lt; caretLine</c>.</item>
+    /// </list>
+    /// "Side" picks which line numbering to compare against — left editor's
+    /// caret is on the old-side line space, right / inline on the new-side.
+    /// </para>
+    /// </summary>
+    private int FindNextHunkFromCaret(bool forward)
+    {
+        if (_currentHunks.Count == 0) return -1;
+
+        // No caret tracked yet — fall back to "step from CurrentHunkIndex",
+        // matching the historical contract. Tests that call JumpToFirst /
+        // JumpToLast then TryNavigate* rely on this; in production the
+        // view pushes a caret on the first hunk auto-jump, so the fallback
+        // path is rarely hit at runtime.
+        if (_caretSide is not { } side)
+        {
+            int stepped = CurrentHunkIndex + (forward ? 1 : -1);
+            if (stepped < 0 || stepped >= _currentHunks.Count) return -1;
+            return stepped;
+        }
+
+        int caretLine = _caretLine;
+        int containing = -1;
+        for (int i = 0; i < _currentHunks.Count; i++)
+        {
+            if (CaretLineIsInsideHunk(_currentHunks[i], side, caretLine))
+            {
+                containing = i;
+                break;
+            }
+        }
+
+        if (containing >= 0)
+        {
+            int stepped = containing + (forward ? 1 : -1);
+            if (stepped < 0 || stepped >= _currentHunks.Count) return -1;
+            return stepped;
+        }
+
+        // Caret in a context region (or before / after every hunk).
+        if (forward)
+        {
+            for (int i = 0; i < _currentHunks.Count; i++)
+            {
+                int start = HunkStartOnSide(_currentHunks[i], side);
+                if (start > caretLine) return i;
+            }
+            return -1;
+        }
+        else
+        {
+            for (int i = _currentHunks.Count - 1; i >= 0; i--)
+            {
+                int end = HunkEndOnSide(_currentHunks[i], side);
+                if (end < caretLine) return i;
+            }
+            return -1;
+        }
+    }
+
+    private static int HunkStartOnSide(DiffHunk h, ChangeSide side) =>
+        side == ChangeSide.Left ? h.OldStartLine : h.NewStartLine;
+
+    private static int HunkEndOnSide(DiffHunk h, ChangeSide side)
+    {
+        int start = HunkStartOnSide(h, side);
+        int count = side == ChangeSide.Left ? h.OldLineCount : h.NewLineCount;
+        // Pure-insert (count=0 on left) / pure-delete (count=0 on right)
+        // hunks anchor at start; treat them as a single line so that a
+        // caret on the anchor line is "inside" and a caret on any other
+        // line is in context.
+        return count == 0 ? start : start + count - 1;
+    }
+
+    private static bool CaretLineIsInsideHunk(DiffHunk h, ChangeSide side, int caretLine)
+    {
+        int start = HunkStartOnSide(h, side);
+        int end = HunkEndOnSide(h, side);
+        return caretLine >= start && caretLine <= end;
     }
 
     /// <summary>True when caret/cursor is on the last visible hunk (or no hunks exist).</summary>
@@ -825,6 +957,16 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     {
         if (CurrentHunkIndex < 0 || CurrentHunkIndex >= _currentHunks.Count) return;
         var hunk = _currentHunks[CurrentHunkIndex];
+        // The view will scroll its editors to this hunk and move the
+        // editor caret along with the scroll. Mirror that into the tracked
+        // caret state here so a subsequent F7/F8 (which reads
+        // _caretSide / _caretLine) sees the post-navigation position even
+        // in tests, where there's no view to observe the caret move.
+        // Prefer the side the user is currently on; default to Right
+        // (matches the auto-jump-to-first-hunk path on load).
+        var side = _caretSide ?? ChangeSide.Right;
+        _caretSide = side;
+        _caretLine = side == ChangeSide.Left ? hunk.OldStartLine : hunk.NewStartLine;
         HunkNavigationRequested?.Invoke(this, new HunkNavigationEventArgs(
             HunkIndex: CurrentHunkIndex,
             LeftLine: hunk.OldStartLine,

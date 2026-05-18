@@ -54,6 +54,7 @@ public partial class DiffPaneView : UserControl
         InstallRenderers(scheme);
 
         SubscribeViewportEvents();
+        SubscribeCaretEvents();
 
         AttachToViewModel(DataContext as DiffPaneViewModel);
     }
@@ -90,6 +91,40 @@ public partial class DiffPaneView : UserControl
         RightEditor.TextArea.TextView.VisualLinesChanged -= OnEditorViewportChanged;
         InlineEditor.TextArea.TextView.VisualLinesChanged -= OnEditorViewportChanged;
     }
+
+    /// <summary>
+    /// Subscribe to <c>Caret.PositionChanged</c> on each editor so the VM
+    /// always knows the user's current line + side. Drives caret-relative
+    /// F7/F8 navigation: a click in a context region between hunks needs
+    /// to be visible to the VM, otherwise the next F8 keeps stepping
+    /// relative to the last <em>navigated-to</em> hunk and looks like it
+    /// jumps backwards. Side mapping mirrors the existing right-click
+    /// code: Left editor → Left, Right editor → Right, Inline editor →
+    /// Right (the inline doc's line numbers approximate new-side lines —
+    /// the same approximation right-click hunk actions already use).
+    /// </summary>
+    private void SubscribeCaretEvents()
+    {
+        LeftEditor.TextArea.Caret.PositionChanged += OnLeftCaretPositionChanged;
+        RightEditor.TextArea.Caret.PositionChanged += OnRightCaretPositionChanged;
+        InlineEditor.TextArea.Caret.PositionChanged += OnInlineCaretPositionChanged;
+    }
+
+    private void UnsubscribeCaretEvents()
+    {
+        LeftEditor.TextArea.Caret.PositionChanged -= OnLeftCaretPositionChanged;
+        RightEditor.TextArea.Caret.PositionChanged -= OnRightCaretPositionChanged;
+        InlineEditor.TextArea.Caret.PositionChanged -= OnInlineCaretPositionChanged;
+    }
+
+    private void OnLeftCaretPositionChanged(object? sender, EventArgs e) =>
+        _vm?.SetCaretPosition(ChangeSide.Left, LeftEditor.TextArea.Caret.Line);
+
+    private void OnRightCaretPositionChanged(object? sender, EventArgs e) =>
+        _vm?.SetCaretPosition(ChangeSide.Right, RightEditor.TextArea.Caret.Line);
+
+    private void OnInlineCaretPositionChanged(object? sender, EventArgs e) =>
+        _vm?.SetCaretPosition(ChangeSide.Right, InlineEditor.TextArea.Caret.Line);
 
     private void OnEditorViewportChanged(object? sender, EventArgs e) => UpdateViewport();
 
@@ -243,6 +278,7 @@ public partial class DiffPaneView : UserControl
         _unifiedScrollBars = null;
 
         UnsubscribeViewportEvents();
+        UnsubscribeCaretEvents();
         if (_vm is not null) _vm.Viewport = null;
 
         DetachFromViewModel();

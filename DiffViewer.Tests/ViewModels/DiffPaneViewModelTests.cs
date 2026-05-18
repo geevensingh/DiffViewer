@@ -1072,6 +1072,299 @@ public class DiffPaneViewModelTests
         });
     }
 
+    // ============================================================
+    // Caret-relative F7 / F8 navigation
+    // ------------------------------------------------------------
+    // Repro for "click between hunks, hit F8, app jumps backwards":
+    // before the fix, TryNavigateNextHunkInFile used CurrentHunkIndex + 1
+    // and ignored the editor caret. The fix makes navigation read the
+    // caret position (pushed in via SetCaretPosition from the view) and
+    // pick the next hunk on the user's side.
+    // ============================================================
+
+    /// <summary>
+    /// Three-hunk fixture: 24 lines with edits at lines 1, 12, and 24.
+    /// DiffPlex's 3-line context can't bridge the 10-line gaps, so this
+    /// produces three distinct hunks on each side.
+    /// </summary>
+    private static FakeRepository ThreeHunkRepo()
+    {
+        // Middle stays the same on both sides; the head/middle/tail lines
+        // are mutated to force three hunks at predictable positions.
+        var leftMid1 = string.Concat(Enumerable.Range(2, 10).Select(i => $"line{i}\n"));     // lines 2..11
+        var leftMid2 = string.Concat(Enumerable.Range(13, 11).Select(i => $"line{i}\n"));    // lines 13..23
+        var rightMid1 = leftMid1;
+        var rightMid2 = leftMid2;
+        return new FakeRepository
+        {
+            LeftText = "head-old\n" + leftMid1 + "mid-old\n" + leftMid2 + "tail-old\n",
+            RightText = "head-new\n" + rightMid1 + "mid-new\n" + rightMid2 + "tail-new\n",
+        };
+    }
+
+    [Fact]
+    public async Task TryNavigateNextHunkInFile_AfterCaretBetweenHunks_GoesToHunkAfterCaret()
+    {
+        // Repro for the user-reported bug: open file (auto-jumps to hunk 0),
+        // click in the context region between hunk 1 and hunk 2, hit F8.
+        // Expected: hunk 2 (the change after the caret). Buggy behavior:
+        // CurrentHunkIndex + 1 = 0 + 1 = 1 → hunk 1 (backwards from caret).
+        var repo = ThreeHunkRepo();
+        var diff = new DiffService();
+
+        int? targetIndex = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+            vm.CurrentHunks.Count.Should().Be(3);
+
+            vm.JumpToFirstHunk();
+            vm.CurrentHunkIndex.Should().Be(0);
+
+            // Drop the caret onto a context line that sits between hunk 1
+            // (around line 12) and hunk 2 (around line 24). Line 18 is
+            // safely inside the unchanged window.
+            vm.SetCaretPosition(ChangeSide.Right, 18);
+
+            vm.TryNavigateNextHunkInFile().Should().BeTrue();
+            targetIndex = vm.CurrentHunkIndex;
+        });
+
+        targetIndex.Should().Be(2,
+            "F8 must navigate to the change AFTER the caret, not the change after the last visited hunk");
+    }
+
+    [Fact]
+    public async Task TryNavigatePreviousHunkInFile_AfterCaretBetweenHunks_GoesToHunkBeforeCaret()
+    {
+        var repo = ThreeHunkRepo();
+        var diff = new DiffService();
+
+        int? targetIndex = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            vm.JumpToLastHunk();
+            vm.CurrentHunkIndex.Should().Be(2);
+
+            // Caret in the context region between hunks 1 and 2.
+            vm.SetCaretPosition(ChangeSide.Right, 18);
+
+            vm.TryNavigatePreviousHunkInFile().Should().BeTrue();
+            targetIndex = vm.CurrentHunkIndex;
+        });
+
+        targetIndex.Should().Be(1,
+            "F7 must navigate to the change BEFORE the caret, not the change before the last visited hunk");
+    }
+
+    [Fact]
+    public async Task TryNavigateNextHunkInFile_WhenCaretInsideHunk_AdvancesToNextHunk()
+    {
+        var repo = ThreeHunkRepo();
+        var diff = new DiffService();
+
+        int? targetIndex = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            // Caret on the first hunk (line 1 is the head-edit on right).
+            vm.SetCaretPosition(ChangeSide.Right, vm.CurrentHunks[0].NewStartLine);
+
+            vm.TryNavigateNextHunkInFile().Should().BeTrue();
+            targetIndex = vm.CurrentHunkIndex;
+        });
+
+        targetIndex.Should().Be(1, "caret inside hunk i → next change is hunk i+1");
+    }
+
+    [Fact]
+    public async Task TryNavigatePreviousHunkInFile_WhenCaretInsideHunk_GoesToPriorHunk()
+    {
+        var repo = ThreeHunkRepo();
+        var diff = new DiffService();
+
+        int? targetIndex = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            // Caret on the middle hunk.
+            vm.SetCaretPosition(ChangeSide.Right, vm.CurrentHunks[1].NewStartLine);
+
+            vm.TryNavigatePreviousHunkInFile().Should().BeTrue();
+            targetIndex = vm.CurrentHunkIndex;
+        });
+
+        targetIndex.Should().Be(0, "caret inside hunk i → previous change is hunk i-1");
+    }
+
+    [Fact]
+    public async Task TryNavigateNextHunkInFile_WhenCaretBeforeAllHunks_LandsOnFirstHunk()
+    {
+        // Hunk 0 starts at line 1, so a caret strictly before all hunks
+        // doesn't really exist on the right-side here. Verify the
+        // boundary case on the left side instead using a 2-hunk fixture
+        // with a clear leading context window.
+        var repo = new FakeRepository
+        {
+            LeftText  = "context-0\ncontext-1\nA\n" + string.Concat(Enumerable.Range(0, 10).Select(_ => "same\n")) + "B\n",
+            RightText = "context-0\ncontext-1\nA'\n" + string.Concat(Enumerable.Range(0, 10).Select(_ => "same\n")) + "B'\n",
+        };
+        var diff = new DiffService();
+
+        int? targetIndex = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+            vm.CurrentHunks.Count.Should().Be(2);
+
+            // Caret on line 1 (a context line that DiffPlex still
+            // includes in the first hunk's context window). Use the
+            // tightest "before all hunks" sample we can: line 1 may be
+            // inside hunk 0's context, so jump to last hunk first then
+            // place the caret on line 1 to simulate "user scrolled back
+            // to the top and clicked".
+            vm.JumpToLastHunk();
+            vm.SetCaretPosition(ChangeSide.Right, 1);
+
+            // Whether line 1 is inside hunk 0 or before it, "next change"
+            // from line 1 should land on either hunk 0 (caret in context
+            // before it) or hunk 1 (caret inside hunk 0). Both are
+            // forward steps relative to line 1; the regression we're
+            // guarding against is "step relative to CurrentHunkIndex=1
+            // and return false because we were on the last hunk".
+            vm.TryNavigateNextHunkInFile().Should().BeTrue(
+                "caret near the top must yield a forward step regardless of last-visited index");
+            targetIndex = vm.CurrentHunkIndex;
+        });
+
+        targetIndex.Should().BeOneOf(0, 1);
+    }
+
+    [Fact]
+    public async Task TryNavigateNextHunkInFile_WhenCaretAfterAllHunks_ReturnsFalse()
+    {
+        var repo = ThreeHunkRepo();
+        var diff = new DiffService();
+
+        bool? result = null;
+        int? indexAfter = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            // Caret past the last hunk (last hunk ends around line 24).
+            vm.JumpToFirstHunk();
+            int lastEnd = vm.CurrentHunks[^1].NewStartLine + vm.CurrentHunks[^1].NewLineCount;
+            vm.SetCaretPosition(ChangeSide.Right, lastEnd + 5);
+
+            result = vm.TryNavigateNextHunkInFile();
+            indexAfter = vm.CurrentHunkIndex;
+        });
+
+        result.Should().BeFalse(
+            "caret after all hunks must report 'no next in this file' so the orchestrator advances");
+        indexAfter.Should().Be(0, "no navigation should have occurred");
+    }
+
+    [Fact]
+    public async Task TryNavigatePreviousHunkInFile_WhenCaretBeforeAllHunks_ReturnsFalse()
+    {
+        // Need a fixture with a clear lead-in context block so "caret
+        // before hunk 0" is reachable. Same shape as the boundary test
+        // above but big enough that line 1 is unambiguously in context.
+        var repo = new FakeRepository
+        {
+            LeftText  = string.Concat(Enumerable.Range(1, 10).Select(i => $"ctx{i}\n")) + "A\n" + string.Concat(Enumerable.Range(0, 10).Select(_ => "same\n")) + "B\n",
+            RightText = string.Concat(Enumerable.Range(1, 10).Select(i => $"ctx{i}\n")) + "A'\n" + string.Concat(Enumerable.Range(0, 10).Select(_ => "same\n")) + "B'\n",
+        };
+        var diff = new DiffService();
+
+        bool? result = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            vm.JumpToLastHunk();
+            // Caret on the very first line, which is well above hunk 0's
+            // edit line (around line 11). DiffPlex's context window
+            // typically claims 3 lines, so line 1 should be outside.
+            vm.SetCaretPosition(ChangeSide.Right, 1);
+
+            result = vm.TryNavigatePreviousHunkInFile();
+        });
+
+        result.Should().BeFalse(
+            "caret strictly before all hunks must report 'no previous in this file'");
+    }
+
+    [Fact]
+    public async Task SetCaretPosition_OnLeftSide_DrivesLeftSideNavigation()
+    {
+        // The user's caret can be on either editor in side-by-side mode.
+        // Track them independently so a click on the left editor in the
+        // gap between hunks navigates relative to the left-side line
+        // numbers (which differ from the right-side ones when hunks
+        // change line counts).
+        var repo = ThreeHunkRepo();
+        var diff = new DiffService();
+
+        int? targetIndex = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            // Place the left-side caret in the context gap between hunks
+            // 0 and 1 (around old-side line 6 for our fixture).
+            vm.SetCaretPosition(ChangeSide.Left, 6);
+
+            vm.TryNavigateNextHunkInFile().Should().BeTrue();
+            targetIndex = vm.CurrentHunkIndex;
+        });
+
+        targetIndex.Should().Be(1,
+            "F8 from a left-editor caret must use left-side line numbers when picking the next hunk");
+    }
+
+    [Fact]
+    public async Task TryNavigateNextHunkInFile_WithoutAnyCaret_FallsBackToCurrentHunkIndex()
+    {
+        // Belt-and-braces for the historical contract: tests that call
+        // JumpTo* and then TryNavigate* without ever pushing a caret
+        // expect the navigation to step relative to CurrentHunkIndex.
+        // RaiseHunkNav syncs the tracked caret to the navigated hunk, so
+        // the fallback path matters mostly for the pre-first-jump call
+        // sequence. Verify the contract directly.
+        var repo = ThreeHunkRepo();
+        var diff = new DiffService();
+
+        int? targetIndex = null;
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, diff);
+            await vm.LoadAsync(Entry(ModifiedTextFile("a.cs")));
+
+            // No SetCaretPosition call; CurrentHunkIndex is still -1
+            // (load reset). Stepping forward from -1 must yield hunk 0.
+            vm.TryNavigateNextHunkInFile().Should().BeTrue();
+            targetIndex = vm.CurrentHunkIndex;
+        });
+
+        targetIndex.Should().Be(0);
+    }
+
+
     /// <summary>
     /// DiffPaneViewModel.LoadAsync uses TaskScheduler.FromCurrentSynchronizationContext()
     /// for its continuation; awaiting it from a plain xunit thread without a

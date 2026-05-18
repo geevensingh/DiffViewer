@@ -14,6 +14,15 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- F8 / F7 (next / previous change) now navigate relative to where the
+  caret actually is, not relative to the last hunk visited via
+  keyboard navigation. Previously, after the auto-jump to the first
+  hunk on file open, clicking the mouse into a context region between
+  later hunks did not update navigation state — so pressing F8 from
+  the user's new caret position could step *backwards* to a hunk
+  before the caret. F8 now finds the first change after the caret;
+  F7 finds the last change before the caret. The overview-bar
+  "currently-selected hunk" highlight is unchanged.
 - PR fetches no longer fail with a spurious 403 ("GitHub refused the
   request… your token lacks `repo` scope, or your org requires SSO
   authorization"). DiffViewer now sends the `User-Agent` header that
