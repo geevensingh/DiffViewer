@@ -24,7 +24,8 @@ namespace DiffViewer.Services;
 /// multiple roots, the first match wins (preserving repo-roots order).
 /// Within a single root, directory enumeration order is
 /// platform-defined — usually alphabetical on Windows, but we don't
-/// promise that.</para>
+/// promise that. For the recents tier, MRU order is the tiebreaker so
+/// the most-recently-used checkout wins.</para>
 /// </remarks>
 public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
 {
@@ -32,32 +33,46 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
     public static readonly TimeSpan DefaultPerRootTimeout = TimeSpan.FromMilliseconds(1500);
 
     private readonly ISettingsService _settings;
+    private readonly IRecentContextsService _recents;
     private readonly IRepoInspector _inspector;
     private readonly TimeSpan _perRootTimeout;
     private readonly IRootScanRunner _scanRunner;
     private readonly object _gate = new();
-    private Dictionary<RepoUrlKey, string>? _cache;
+
+    // Roots-tier cache: keyed by AppSettings.RepoRoots, invalidated on
+    // ISettingsService.Changed when the roots list actually differs.
+    private Dictionary<RepoUrlKey, string>? _rootsCache;
     private IReadOnlyList<string> _cachedRootsSnapshot = Array.Empty<string>();
+
+    // Recents-tier cache: keyed by the deduped MRU set of recent
+    // CanonicalRepoPath values, invalidated on
+    // IRecentContextsService.Changed when that set actually differs.
+    private Dictionary<RepoUrlKey, string>? _recentsCache;
+    private IReadOnlyList<string> _cachedRecentsPathsSnapshot = Array.Empty<string>();
 
     public LocalRepoLocator(
         ISettingsService settings,
         IRepoInspector inspector,
+        IRecentContextsService recents,
         TimeSpan? perRootTimeout = null)
-        : this(settings, inspector, perRootTimeout, scanRunner: null)
+        : this(settings, inspector, recents, perRootTimeout, scanRunner: null)
     {
     }
 
     internal LocalRepoLocator(
         ISettingsService settings,
         IRepoInspector inspector,
+        IRecentContextsService recents,
         TimeSpan? perRootTimeout,
         IRootScanRunner? scanRunner)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _inspector = inspector ?? throw new ArgumentNullException(nameof(inspector));
+        _recents = recents ?? throw new ArgumentNullException(nameof(recents));
         _perRootTimeout = perRootTimeout ?? DefaultPerRootTimeout;
         _scanRunner = scanRunner ?? new TaskRunRootScanRunner();
         _settings.Changed += OnSettingsChanged;
+        _recents.Changed += OnRecentsChanged;
     }
 
     public LocalRepoLookup TryLocate(string host, string owner, string repo)
@@ -73,9 +88,23 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
             return new LocalRepoLookup(explicitPath, LocalRepoMatchSource.ExplicitMapping);
         }
 
-        // 2. Cached scan results across all configured roots.
-        var cache = GetOrBuildCache(snapshot.RepoRoots);
-        if (cache.TryGetValue(key, out var scannedPath))
+        // 2. Recent contexts the user has already opened. The currently-
+        //    active diff's clone always lives here (it just got recorded
+        //    by RecentContextsService.RecordLaunchAsync on launch), so
+        //    PR-launching back into "the repo I'm staring at" Just Works
+        //    without any RepoRoots configured. MRU order is the
+        //    tiebreaker when the same (host, owner, repo) key matches
+        //    multiple recent paths (e.g. two checkouts of the same
+        //    repo): the most recently used wins.
+        var recentsCache = GetOrBuildRecentsCache();
+        if (recentsCache.TryGetValue(key, out var recentPath))
+        {
+            return new LocalRepoLookup(recentPath, LocalRepoMatchSource.RecentContext);
+        }
+
+        // 3. Cached scan results across all configured roots.
+        var rootsCache = GetOrBuildRootsCache(snapshot.RepoRoots);
+        if (rootsCache.TryGetValue(key, out var scannedPath))
         {
             return new LocalRepoLookup(scannedPath, LocalRepoMatchSource.RepoRootScan);
         }
@@ -83,13 +112,13 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
         return new LocalRepoLookup(null, LocalRepoMatchSource.NotFound);
     }
 
-    private Dictionary<RepoUrlKey, string> GetOrBuildCache(IReadOnlyList<string> roots)
+    private Dictionary<RepoUrlKey, string> GetOrBuildRootsCache(IReadOnlyList<string> roots)
     {
         lock (_gate)
         {
-            if (_cache is not null && RootsEqual(_cachedRootsSnapshot, roots))
+            if (_rootsCache is not null && PathListsEqual(_cachedRootsSnapshot, roots))
             {
-                return _cache;
+                return _rootsCache;
             }
 
             var fresh = new Dictionary<RepoUrlKey, string>();
@@ -97,10 +126,96 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
             {
                 ScanRootWithTimeout(root, fresh);
             }
-            _cache = fresh;
+            _rootsCache = fresh;
             _cachedRootsSnapshot = roots.ToList();
-            return _cache;
+            return _rootsCache;
         }
+    }
+
+    private Dictionary<RepoUrlKey, string> GetOrBuildRecentsCache()
+    {
+        // Snapshot recents off-lock — IRecentContextsService.Current
+        // returns an atomically-replaced immutable list, so a read is
+        // consistent even if the service is being mutated concurrently.
+        var paths = DedupRecentPaths(_recents.Current);
+
+        lock (_gate)
+        {
+            if (_recentsCache is not null && PathListsEqual(_cachedRecentsPathsSnapshot, paths))
+            {
+                return _recentsCache;
+            }
+
+            var fresh = new Dictionary<RepoUrlKey, string>();
+            foreach (var path in paths)
+            {
+                ProbeRecentPathWithTimeout(path, fresh);
+            }
+            _recentsCache = fresh;
+            _cachedRecentsPathsSnapshot = paths;
+            return _recentsCache;
+        }
+    }
+
+    private static IReadOnlyList<string> DedupRecentPaths(IReadOnlyList<RecentLaunchContext> recents)
+    {
+        // Recents may contain the same path with different (Left, Right)
+        // sides. We only want to probe each distinct path once, but we
+        // must preserve MRU order so the first-match-wins tiebreaker
+        // hits the most-recently-used path for a given key.
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>(recents.Count);
+        foreach (var entry in recents)
+        {
+            var path = entry.Identity.CanonicalRepoPath;
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            if (seen.Add(path)) result.Add(path);
+        }
+        return result;
+    }
+
+    private void ProbeRecentPathWithTimeout(string path, Dictionary<RepoUrlKey, string> sink)
+    {
+        // Reuse the per-root timeout / scan-runner machinery so a
+        // recent path that points at a slow UNC mount or a vanished
+        // drive can't block PR-mode either. The runner key uses the
+        // path itself; tests can swap in a fake IRootScanRunner.
+        try
+        {
+            if (!_scanRunner.TryRunWithTimeout(
+                    path, () => ProbeRecentPath(path), _perRootTimeout, out var hits))
+            {
+                return;
+            }
+            foreach (var (key, hitPath) in hits)
+            {
+                // First match (in MRU order) wins for a given key.
+                sink.TryAdd(key, hitPath);
+            }
+        }
+        catch
+        {
+            // Same defensive bag-of-errors guard as ScanRootWithTimeout:
+            // one slow / broken recent path must not poison the cache.
+        }
+    }
+
+    private IReadOnlyList<(RepoUrlKey Key, string Path)> ProbeRecentPath(string path)
+    {
+        var hits = new List<(RepoUrlKey, string)>();
+        if (!_inspector.IsRepository(path)) return hits;
+
+        var remotes = _inspector.GetRemoteUrls(path);
+        var seenKeys = new HashSet<RepoUrlKey>();
+        foreach (var remoteUrl in remotes)
+        {
+            if (RemoteUrlMatcher.TryExtractKey(remoteUrl) is { } key
+                && seenKeys.Add(key))
+            {
+                hits.Add((key, path));
+            }
+        }
+        return hits;
     }
 
     private void ScanRootWithTimeout(string root, Dictionary<RepoUrlKey, string> sink)
@@ -165,7 +280,7 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
         return hits;
     }
 
-    private static bool RootsEqual(IReadOnlyList<string> a, IReadOnlyList<string> b)
+    private static bool PathListsEqual(IReadOnlyList<string> a, IReadOnlyList<string> b)
     {
         if (a.Count != b.Count) return false;
         for (int i = 0; i < a.Count; i++)
@@ -177,17 +292,35 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
 
     private void OnSettingsChanged(object? sender, SettingsChangedEventArgs e)
     {
-        // Repo roots are the only field that affects the cache. The
-        // mappings dictionary is consulted on every TryLocate call
+        // Repo roots are the only field that affects the roots cache.
+        // The mappings dictionary is consulted on every TryLocate call
         // (not cached) so it doesn't need invalidation here.
-        if (!RootsEqual(e.Previous.RepoRoots, e.Current.RepoRoots))
+        if (!PathListsEqual(e.Previous.RepoRoots, e.Current.RepoRoots))
         {
-            lock (_gate) { _cache = null; }
+            lock (_gate) { _rootsCache = null; }
+        }
+    }
+
+    private void OnRecentsChanged(object? sender, EventArgs e)
+    {
+        // Recents events fire on any state change — record, remove, or
+        // even just a LastUsedUtc bump from re-launching an existing
+        // entry. Only the deduped path set affects the cache; drop only
+        // when that set has actually changed so back-to-back launches
+        // of the same context don't force a re-probe.
+        var newPaths = DedupRecentPaths(_recents.Current);
+        lock (_gate)
+        {
+            if (!PathListsEqual(_cachedRecentsPathsSnapshot, newPaths))
+            {
+                _recentsCache = null;
+            }
         }
     }
 
     public void Dispose()
     {
         _settings.Changed -= OnSettingsChanged;
+        _recents.Changed -= OnRecentsChanged;
     }
 }

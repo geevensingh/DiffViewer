@@ -42,7 +42,7 @@ public partial class App : Application
         _httpClient = new HttpClient();
         var githubClient = new GitHubClient(_httpClient, authProvider);
         var repoInspector = new LibGit2RepoInspector();
-        var localRepoLocator = new LocalRepoLocator(settingsService, repoInspector);
+        var localRepoLocator = new LocalRepoLocator(settingsService, repoInspector, recents);
         var metadataResolver = new PullRequestMetadataResolver(githubClient);
         var fetcher = new PullRequestLocalFetcher();
         var prResolver = new PullRequestResolver(localRepoLocator, metadataResolver, fetcher);

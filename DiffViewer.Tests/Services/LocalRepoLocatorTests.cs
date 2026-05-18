@@ -70,6 +70,38 @@ public sealed class LocalRepoLocatorTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Minimal <see cref="IRecentContextsService"/> fake. Only the
+    /// <see cref="Current"/> snapshot and <see cref="Changed"/> event
+    /// are exercised by <see cref="LocalRepoLocator"/>; the mutation
+    /// methods are no-ops and tests manipulate state via
+    /// <see cref="ReplaceWith"/>.
+    /// </summary>
+    private sealed class FakeRecentContextsService : IRecentContextsService
+    {
+        private IReadOnlyList<RecentLaunchContext> _current = Array.Empty<RecentLaunchContext>();
+        public IReadOnlyList<RecentLaunchContext> Current => _current;
+        public event EventHandler? Changed;
+
+        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, IReviewRef? review = null, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task RemoveAsync(ContextIdentity identity, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public void ReplaceWith(params string[] canonicalPaths)
+        {
+            _current = canonicalPaths
+                .Select(p => new RecentLaunchContext(
+                    new ContextIdentity(p, new DiffSide.WorkingTree(), new DiffSide.CommitIsh("HEAD")),
+                    new DiffSide.WorkingTree(),
+                    new DiffSide.CommitIsh("HEAD"),
+                    DateTimeOffset.UtcNow))
+                .ToList();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     [Fact]
     public void TryLocate_ExplicitMappingHit_TakesPrecedenceOverScan()
     {
@@ -87,7 +119,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
             RepoUrlMappings = new Dictionary<RepoUrlKey, string> { [key] = explicitPath },
         });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
         var result = locator.TryLocate("github.com", "owner", "repo");
 
         result.Source.Should().Be(LocalRepoMatchSource.ExplicitMapping);
@@ -105,7 +137,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
         var inspector = new FakeRepoInspector();
         settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
         var result = locator.TryLocate("github.com", "owner", "repo");
 
         result.Source.Should().Be(LocalRepoMatchSource.NotFound);
@@ -122,7 +154,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
 
         settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
         var result = locator.TryLocate("github.com", "owner", "repo");
 
         result.Source.Should().Be(LocalRepoMatchSource.RepoRootScan);
@@ -139,7 +171,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
 
         settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
 
         // PR URL had different casing — RepoUrlKey.From lowercases on
         // both sides so it still matches.
@@ -164,7 +196,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
 
         settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
         var result = locator.TryLocate("github.com", "upstream-owner", "repo");
 
         result.Path.Should().Be(repoDir);
@@ -182,7 +214,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
 
         settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
         var result = locator.TryLocate("github.com", "owner", "repo");
         result.Path.Should().Be(repoDir);
     }
@@ -201,7 +233,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
 
         settings.Save(settings.Current with { RepoRoots = new[] { bogus, _tempRoot } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
         var result = locator.TryLocate("github.com", "owner", "repo");
 
         result.Path.Should().Be(good);
@@ -217,7 +249,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
 
         settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
 
         locator.TryLocate("github.com", "owner", "repo");
         locator.TryLocate("github.com", "owner", "repo");
@@ -241,7 +273,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
         inspector.RemotesByPath[repoInSecond] = new[] { "https://github.com/owner/repo.git" };
 
         settings.Save(settings.Current with { RepoRoots = new[] { firstRoot } });
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
 
         locator.TryLocate("github.com", "owner", "repo").Path.Should().Be(repoInFirst);
 
@@ -262,7 +294,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
         inspector.RemotesByPath[repoDir] = new[] { "https://github.com/owner/repo.git" };
 
         settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
 
         locator.TryLocate("github.com", "owner", "repo");
         var callsAfterFirst = inspector.IsRepositoryCalls.Count(p => p == repoDir);
@@ -294,7 +326,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
 
         settings.Save(settings.Current with { RepoRoots = new[] { root1, root2 } });
 
-        using var locator = new LocalRepoLocator(settings, inspector);
+        using var locator = new LocalRepoLocator(settings, inspector, new FakeRecentContextsService());
         locator.TryLocate("github.com", "owner", "repo").Path.Should().Be(repo1);
 
         // Swap the order: now repo2 should be returned.
@@ -328,6 +360,7 @@ public sealed class LocalRepoLocatorTests : IDisposable
         using var locator = new LocalRepoLocator(
             settings,
             inspector,
+            new FakeRecentContextsService(),
             perRootTimeout: TimeSpan.FromMilliseconds(200),
             scanRunner: scanRunner);
         var result = locator.TryLocate("github.com", "owner", "repo");
@@ -335,6 +368,243 @@ public sealed class LocalRepoLocatorTests : IDisposable
         result.Path.Should().Be(fastChild);
         scanRunner.TimedOutRoots.Should().ContainSingle().Which.Should().Be(slowRoot);
         scanRunner.CompletedRoots.Should().ContainSingle().Which.Should().Be(fastRoot);
+    }
+
+    [Fact]
+    public void TryLocate_RecentContextMatches_ReturnsRecentContextSource()
+    {
+        // The user is currently looking at a clone whose parent dir is
+        // NOT a configured repo root — this is the scenario the user
+        // reported: jotjson under c:\repos with c:\repos not in
+        // RepoRoots. The recents tier picks it up regardless.
+        var settings = new FakeSettingsService();
+        var clonePath = CreateScannableDir("active-clone");
+        var inspector = new FakeRepoInspector();
+        inspector.RemotesByPath[clonePath] = new[] { "https://github.com/owner/repo.git" };
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(clonePath);
+
+        // Crucially, no RepoRoots configured.
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        var result = locator.TryLocate("github.com", "owner", "repo");
+
+        result.Source.Should().Be(LocalRepoMatchSource.RecentContext);
+        result.Path.Should().Be(clonePath);
+    }
+
+    [Fact]
+    public void TryLocate_ExplicitMapping_TakesPrecedenceOverRecentContext()
+    {
+        var settings = new FakeSettingsService();
+        var recentPath = CreateScannableDir("recent-clone");
+        var explicitPath = CreateScannableDir("pinned-clone");
+        var key = RepoUrlKey.From("github.com", "owner", "repo");
+
+        var inspector = new FakeRepoInspector();
+        inspector.RemotesByPath[recentPath] = new[] { "https://github.com/owner/repo.git" };
+        // explicitPath does not need to be a real repo: explicit
+        // mappings short-circuit before any inspector probe.
+
+        settings.Save(settings.Current with
+        {
+            RepoUrlMappings = new Dictionary<RepoUrlKey, string> { [key] = explicitPath },
+        });
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(recentPath);
+
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        var result = locator.TryLocate("github.com", "owner", "repo");
+
+        result.Source.Should().Be(LocalRepoMatchSource.ExplicitMapping);
+        result.Path.Should().Be(explicitPath);
+
+        // Mapping hit must not have probed recents (or roots).
+        inspector.IsRepositoryCalls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryLocate_RecentContext_TakesPrecedenceOverRepoRootScan()
+    {
+        // Both tiers know about a clone for the same (host, owner, repo),
+        // but at different on-disk paths (e.g. two checkouts). Recents
+        // wins because the user just used it — that's the
+        // most-relevant signal.
+        var settings = new FakeSettingsService();
+        var recentPath = CreateScannableDir("recent-clone");
+        var scannedRoot = CreateScannableDir("scanned-root");
+        var scannedRepo = CreateScannableDir(@"scanned-root\scanned-clone");
+
+        var inspector = new FakeRepoInspector();
+        inspector.RemotesByPath[recentPath] = new[] { "https://github.com/owner/repo.git" };
+        inspector.RemotesByPath[scannedRepo] = new[] { "https://github.com/owner/repo.git" };
+
+        settings.Save(settings.Current with { RepoRoots = new[] { scannedRoot } });
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(recentPath);
+
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        var result = locator.TryLocate("github.com", "owner", "repo");
+
+        result.Source.Should().Be(LocalRepoMatchSource.RecentContext);
+        result.Path.Should().Be(recentPath);
+    }
+
+    [Fact]
+    public void TryLocate_RecentContextChanged_InvalidatesRecentsCache()
+    {
+        var settings = new FakeSettingsService();
+        var firstClone = CreateScannableDir("first-clone");
+        var secondClone = CreateScannableDir("second-clone");
+
+        var inspector = new FakeRepoInspector();
+        inspector.RemotesByPath[firstClone] = new[] { "https://github.com/owner/repo.git" };
+        inspector.RemotesByPath[secondClone] = new[] { "https://github.com/owner/repo.git" };
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(firstClone);
+
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        locator.TryLocate("github.com", "owner", "repo").Path.Should().Be(firstClone);
+
+        // The user closes that clone and opens another. The locator
+        // must re-probe and return the new path.
+        recents.ReplaceWith(secondClone);
+        locator.TryLocate("github.com", "owner", "repo").Path.Should().Be(secondClone);
+    }
+
+    [Fact]
+    public void TryLocate_RecentContextSamePathTwice_ProbedOnce()
+    {
+        // Recents can legitimately contain the same path with different
+        // (Left, Right) sides (e.g. WT-vs-HEAD and WT-vs-main both live
+        // in c:\repos\jotjson). The locator must dedup so the inspector
+        // is only probed once per distinct path.
+        var settings = new FakeSettingsService();
+        var clone = CreateScannableDir("dup-clone");
+
+        var inspector = new FakeRepoInspector();
+        inspector.RemotesByPath[clone] = new[] { "https://github.com/owner/repo.git" };
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(clone, clone);
+
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        var result = locator.TryLocate("github.com", "owner", "repo");
+
+        result.Path.Should().Be(clone);
+        inspector.IsRepositoryCalls.Count(p => p == clone).Should().Be(1);
+    }
+
+    [Fact]
+    public void TryLocate_RecentContextMRUOrder_FirstWinsForDuplicateKey()
+    {
+        // Two checkouts of the same repo on disk, both in recents. The
+        // most-recently-used (index 0) wins because it's the
+        // freshest signal of "which clone the user means right now."
+        var settings = new FakeSettingsService();
+        var newer = CreateScannableDir("newer-checkout");
+        var older = CreateScannableDir("older-checkout");
+
+        var inspector = new FakeRepoInspector();
+        inspector.RemotesByPath[newer] = new[] { "https://github.com/owner/repo.git" };
+        inspector.RemotesByPath[older] = new[] { "https://github.com/owner/repo.git" };
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(newer, older);
+
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        locator.TryLocate("github.com", "owner", "repo").Path.Should().Be(newer);
+    }
+
+    [Fact]
+    public void TryLocate_RecentContextNotARepo_FallsThroughToRootsScan()
+    {
+        // A recents entry that's no longer a valid git repo (rmdir'd,
+        // moved, .git folder corrupted) must not block the roots scan
+        // from finding a real match.
+        var settings = new FakeSettingsService();
+        var deadRecent = CreateScannableDir("dead-recent");
+        var rootRepo = CreateScannableDir("root-repo");
+
+        var inspector = new FakeRepoInspector();
+        // deadRecent is NOT in RemotesByPath → IsRepository returns false.
+        inspector.RemotesByPath[rootRepo] = new[] { "https://github.com/owner/repo.git" };
+
+        settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(deadRecent);
+
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        var result = locator.TryLocate("github.com", "owner", "repo");
+
+        result.Source.Should().Be(LocalRepoMatchSource.RepoRootScan);
+        result.Path.Should().Be(rootRepo);
+    }
+
+    [Fact]
+    public void TryLocate_RecentContextChange_SamePathSet_DoesNotForceRescan()
+    {
+        // Recents fires Changed on every LastUsedUtc bump, including
+        // when re-launching an entry that's already at index 0. The
+        // deduped path set didn't change, so we must not re-probe.
+        var settings = new FakeSettingsService();
+        var clone = CreateScannableDir("stable-clone");
+
+        var inspector = new FakeRepoInspector();
+        inspector.RemotesByPath[clone] = new[] { "https://github.com/owner/repo.git" };
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(clone);
+
+        using var locator = new LocalRepoLocator(settings, inspector, recents);
+        locator.TryLocate("github.com", "owner", "repo");
+        var probesAfterFirst = inspector.IsRepositoryCalls.Count(p => p == clone);
+
+        // Same path set, just a new Changed event (e.g. LastUsedUtc bump).
+        recents.ReplaceWith(clone);
+        locator.TryLocate("github.com", "owner", "repo");
+
+        inspector.IsRepositoryCalls.Count(p => p == clone).Should().Be(probesAfterFirst);
+    }
+
+    [Fact]
+    public void TryLocate_RecentContextSlowPath_TimesOutCleanly()
+    {
+        // A recent path on a vanished UNC mount must not block PR-mode.
+        // The fake scan runner reports the path as timed out without
+        // invoking the probe delegate, so we fall through to root scan.
+        var settings = new FakeSettingsService();
+        var slowRecent = CreateScannableDir("slow-recent");
+        var rootRepo = CreateScannableDir("root-repo");
+
+        var inspector = new FakeRepoInspector();
+        // slowRecent's remotes would match if probed, but the timeout
+        // prevents that. rootRepo is the fallback.
+        inspector.RemotesByPath[slowRecent] = new[] { "https://github.com/owner/repo.git" };
+        inspector.RemotesByPath[rootRepo] = new[] { "https://github.com/owner/repo.git" };
+
+        settings.Save(settings.Current with { RepoRoots = new[] { _tempRoot } });
+
+        var recents = new FakeRecentContextsService();
+        recents.ReplaceWith(slowRecent);
+
+        var scanRunner = new SelectiveTimeoutScanRunner(timeoutForRoot: slowRecent);
+
+        using var locator = new LocalRepoLocator(
+            settings,
+            inspector,
+            recents,
+            perRootTimeout: TimeSpan.FromMilliseconds(200),
+            scanRunner: scanRunner);
+        var result = locator.TryLocate("github.com", "owner", "repo");
+
+        result.Source.Should().Be(LocalRepoMatchSource.RepoRootScan);
+        result.Path.Should().Be(rootRepo);
+        scanRunner.TimedOutRoots.Should().Contain(slowRecent);
     }
 
     /// <summary>

@@ -12,6 +12,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub PR launches now find the local clone for a repo you already
+  have open in DiffViewer, even when its parent directory isn't in
+  the Repo roots setting. Previously, switching to a PR for the
+  currently-displayed repo could fail with "DiffViewer still can't
+  find a local clone of owner/repo" because the locator only
+  consulted explicit mappings and configured repo roots. It now
+  also probes the recent-contexts MRU list, so the active diff's
+  clone (and any clone you've recently opened) is matchable
+  without configuration.
+
 ## [1.0.0] - 2026-05-18
 
 DiffViewer 1.0 marks the stable cut of the side-by-side Git diff
