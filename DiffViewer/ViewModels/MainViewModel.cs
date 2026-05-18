@@ -26,6 +26,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     private readonly ISettingsService? _settingsService;
     private readonly IGitWriteService? _gitWriteService;
     private readonly IExternalAppLauncher? _externalAppLauncher;
+    private readonly IClipboardService? _clipboardService;
     private readonly DiffSide _left;
     private readonly DiffSide _right;
     private readonly bool _isCommitVsCommit;
@@ -79,6 +80,27 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     /// <see cref="ShowKeyboardShortcutsCommand"/> becomes a no-op.
     /// </summary>
     public Action? ShowKeyboardShortcutsHandler { get; set; }
+
+    /// <summary>
+    /// Hook for the View layer to display the modal commit-metadata
+    /// dialog (clicked from a <see cref="CommitMetadataPanelViewModel"/>
+    /// header row). Tests / headless contexts leave it null and the
+    /// row's ShowDetailsCommand becomes a no-op.
+    /// </summary>
+    public Action<CommitMetadataDialogViewModel>? ShowCommitMetadataHandler { get; set; }
+
+    /// <summary>
+    /// Compact "this side is commit X" header row for the left side, or
+    /// <c>null</c> when the left side is the working tree. Bound by the
+    /// View; a null value collapses the row entirely.
+    /// </summary>
+    public CommitMetadataPanelViewModel? LeftCommitPanel { get; }
+
+    /// <summary>
+    /// Compact "this side is commit X" header row for the right side, or
+    /// <c>null</c> when the right side is the working tree.
+    /// </summary>
+    public CommitMetadataPanelViewModel? RightCommitPanel { get; }
 
     [ObservableProperty]
     private string _windowTitle = "DiffViewer";
@@ -535,6 +557,31 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         }
     }
 
+    /// <summary>
+    /// Resolve commit metadata for one side and wrap it in a panel VM.
+    /// Returns null for working-tree sides or unresolved refs — the
+    /// caller binds the resulting property; null collapses the row.
+    /// </summary>
+    private CommitMetadataPanelViewModel? BuildCommitPanel(string sideLabel, DiffSide side)
+    {
+        if (side is not DiffSide.CommitIsh commit) return null;
+        var metadata = _repository.GetCommitMetadata(commit.Reference);
+        if (metadata is null) return null;
+        return new CommitMetadataPanelViewModel(
+            sideLabel, metadata, _clipboardService, ShowCommitMetadataInternal);
+    }
+
+    /// <summary>
+    /// Hand the dialog VM to the View-supplied handler. Bound to each
+    /// panel VM's ShowDetails command in <see cref="BuildCommitPanel"/>
+    /// so late-bound assignment to
+    /// <see cref="ShowCommitMetadataHandler"/> takes effect on the
+    /// next click without any re-wiring on the panel.
+    /// </summary>
+    private void ShowCommitMetadataInternal(CommitMetadataDialogViewModel dialog)
+        => ShowCommitMetadataHandler?.Invoke(dialog);
+
+
     public MainViewModel(
         IRepositoryService repository,
         DiffSide left,
@@ -548,7 +595,8 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         ContextScope? scope = null,
         IRecentContextsService? recentContextsService = null,
         IContextSwitcher? contextSwitcher = null,
-        INewDiffDialogHost? newDiffDialogHost = null)
+        INewDiffDialogHost? newDiffDialogHost = null,
+        IClipboardService? clipboardService = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _left = left ?? throw new ArgumentNullException(nameof(left));
@@ -559,6 +607,16 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         _settingsService = settingsService;
         _gitWriteService = gitWriteService;
         _externalAppLauncher = externalAppLauncher;
+        _clipboardService = clipboardService;
+
+        // Resolve commit metadata for any commit side. The lookup is
+        // cheap (single LibGit2Sharp ref → commit walk; sub-millisecond
+        // in practice) so we do it synchronously in the ctor rather
+        // than deferring to LoadInitialChangesAsync. Bad refs return
+        // null cleanly and produce no panel — the row simply doesn't
+        // render.
+        LeftCommitPanel = BuildCommitPanel("Left", left);
+        RightCommitPanel = BuildCommitPanel("Right", right);
 
         // If no scope was passed (legacy callers / tests), create one and
         // also register the per-context resources we were handed so that
