@@ -239,6 +239,9 @@ public class RepositoryServiceTests
         meta.AuthorDate.Should().BeCloseTo(t.Author.When, TimeSpan.FromSeconds(2));
         meta.MessageSubject.Should().Be("initial commit");
         meta.MessageBody.Should().BeEmpty();
+        // The initial commit is also the master branch's tip, so FriendlyName
+        // resolves via the HEAD-branch priority rule.
+        meta.FriendlyName.Should().Be("master");
     }
 
     [Fact]
@@ -316,6 +319,174 @@ public class RepositoryServiceTests
         meta.Should().NotBeNull();
         meta!.MessageSubject.Should().NotContain("\n");
         meta.MessageBody.Should().Be("actual body");
+    }
+
+    // -----------------------------------------------------------------
+    //  FriendlyName resolution (git log --decorate-style label).
+    //  Priority order: HEAD's branch ⇒ tags ⇒ other local branches ⇒
+    //  remote-tracking branches ⇒ null.
+    // -----------------------------------------------------------------
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_PrefersHeadBranch()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("init");
+
+        using var svc = new RepositoryService(t.Path);
+        var meta = svc.GetCommitMetadata(c1.Sha);
+
+        meta.Should().NotBeNull();
+        // libgit2's default initial branch is "master".
+        meta!.FriendlyName.Should().Be("master");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_ReturnsNullWhenNothingDecoratesCommit()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        using var svc = new RepositoryService(t.Path);
+
+        // HEAD is now at c2 (= master). c1 has no ref pointing at it.
+        var meta = svc.GetCommitMetadata(c1.Sha);
+
+        meta.Should().NotBeNull();
+        meta!.FriendlyName.Should().BeNull();
+        // c2 still gets the friendly name.
+        svc.GetCommitMetadata(c2.Sha)!.FriendlyName.Should().Be("master");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_ResolvesLightweightTag()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        // Tag the older commit so HEAD-branch (master @ c2) doesn't shadow it.
+        t.CreateLightweightTag("v0.1.0", c1);
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("v0.1.0");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_ResolvesAnnotatedTag()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        // Annotated tags wrap the target object — verify we Peel<Commit>
+        // when checking the target sha, otherwise this assertion fails.
+        t.CreateAnnotatedTag("v0.2.0", c1, "release 0.2.0");
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("v0.2.0");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_HeadBranchWinsOverTagAtSameCommit()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("init");
+
+        // Tag the same commit HEAD is on. HEAD-branch should still win.
+        t.CreateLightweightTag("v1.0.0", c1);
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("master");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_TagWinsOverNonHeadLocalBranch()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        // Park a non-HEAD branch at c1 *and* tag it. Tag should win.
+        t.CreateBranch("feature/old", c1);
+        t.CreateLightweightTag("v0.3.0", c1);
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("v0.3.0");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_NonHeadLocalBranchUsedWhenNoTag()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        t.CreateBranch("feature/old", c1);
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("feature/old");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_LocalBranchWinsOverRemoteTrackingBranch()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        t.CreateBranch("feature/local", c1);
+        t.CreateRemoteTrackingBranch("origin", "feature/local", c1);
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("feature/local");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_RemoteTrackingBranchUsedWhenNoLocalRef()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        t.CreateRemoteTrackingBranch("origin", "feature/only-on-remote", c1);
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("origin/feature/only-on-remote");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FriendlyName_DeterministicTieBreakWithinTier()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "a2\n");
+        var c2 = t.Commit("c2");
+
+        // Two tags at the same commit. Alphabetical-ordinal first wins.
+        t.CreateLightweightTag("v0.9.0", c1);
+        t.CreateLightweightTag("v0.1.0", c1);
+
+        using var svc = new RepositoryService(t.Path);
+        svc.GetCommitMetadata(c1.Sha)!.FriendlyName.Should().Be("v0.1.0");
     }
 
     [Fact]

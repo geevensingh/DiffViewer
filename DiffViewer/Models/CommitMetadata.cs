@@ -24,6 +24,15 @@ namespace DiffViewer.Models;
 /// one line with spaces).</param>
 /// <param name="MessageBody">Everything after the first blank line in the
 /// commit message; empty string when the message is subject-only.</param>
+/// <param name="FriendlyName">Optional <c>git log --decorate</c>-style
+/// label for the commit — a branch or tag name that points exactly at
+/// this commit. <see langword="null"/> when no ref decorates the commit,
+/// or when the consumer didn't ask the service to resolve one. Resolution
+/// priority is HEAD's branch ⇒ tags ⇒ other local branches ⇒
+/// remote-tracking branches. The user's literal CLI input string is
+/// deliberately ignored: <c>HEAD</c> shouldn't surface as <c>HEAD</c>,
+/// and a stale <c>feature/foo</c> that no longer points at the commit
+/// shouldn't be misrepresented as still pointing there.</param>
 public sealed record CommitMetadata(
     string Sha,
     string ShortSha,
@@ -31,4 +40,5 @@ public sealed record CommitMetadata(
     string AuthorEmail,
     DateTimeOffset AuthorDate,
     string MessageSubject,
-    string MessageBody);
+    string MessageBody,
+    string? FriendlyName = null);

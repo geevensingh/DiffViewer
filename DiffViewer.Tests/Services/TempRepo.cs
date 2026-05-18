@@ -86,6 +86,50 @@ internal sealed class TempRepo : IDisposable
         return repo.Commit(message, _author, _author);
     }
 
+    /// <summary>Create a local branch at a specific commit and leave HEAD
+    /// where it is. Use <see cref="Checkout"/> if you want to move HEAD
+    /// onto the new branch.</summary>
+    public void CreateBranch(string name, Commit commit)
+    {
+        using var repo = new Repository(_tempPath);
+        repo.CreateBranch(name, commit);
+    }
+
+    /// <summary>Move HEAD onto the named branch.</summary>
+    public void Checkout(string branchName)
+    {
+        using var repo = new Repository(_tempPath);
+        var branch = repo.Branches[branchName]
+            ?? throw new InvalidOperationException($"Branch '{branchName}' not found.");
+        Commands.Checkout(repo, branch);
+    }
+
+    /// <summary>Create a lightweight tag pointing at <paramref name="commit"/>.</summary>
+    public void CreateLightweightTag(string name, Commit commit)
+    {
+        using var repo = new Repository(_tempPath);
+        repo.ApplyTag(name, commit.Sha);
+    }
+
+    /// <summary>Create an annotated tag pointing at <paramref name="commit"/>
+    /// (the kind <c>git tag -a</c> creates — its object is a wrapper that
+    /// then peels to the commit).</summary>
+    public void CreateAnnotatedTag(string name, Commit commit, string message)
+    {
+        using var repo = new Repository(_tempPath);
+        repo.ApplyTag(name, commit.Sha, _author, message);
+    }
+
+    /// <summary>Force-create a remote-tracking branch ref
+    /// (<c>refs/remotes/{remote}/{branch}</c>) pointing at the given commit.
+    /// This sidesteps the need for an actual remote with a working network
+    /// connection — just installs the ref directly.</summary>
+    public void CreateRemoteTrackingBranch(string remote, string branch, Commit commit)
+    {
+        using var repo = new Repository(_tempPath);
+        repo.Refs.Add($"refs/remotes/{remote}/{branch}", commit.Sha);
+    }
+
     public void Dispose()
     {
         try

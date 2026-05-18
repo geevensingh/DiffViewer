@@ -81,7 +81,8 @@ public sealed class RepositoryService : IRepositoryService
                     AuthorEmail: author?.Email ?? string.Empty,
                     AuthorDate: author?.When ?? default,
                     MessageSubject: commit.MessageShort ?? string.Empty,
-                    MessageBody: ExtractMessageBody(commit.Message ?? string.Empty));
+                    MessageBody: ExtractMessageBody(commit.Message ?? string.Empty),
+                    FriendlyName: ResolveFriendlyName(commit));
             }
             catch (LibGit2SharpException)
             {
@@ -108,6 +109,79 @@ public sealed class RepositoryService : IRepositoryService
         var idx = fullMessage.IndexOf("\n\n", StringComparison.Ordinal);
         if (idx < 0) return string.Empty;
         return fullMessage[(idx + 2)..].TrimEnd('\n');
+    }
+
+    /// <summary>
+    /// Find a <c>git log --decorate</c>-style friendly label for the commit
+    /// by walking the repo's refs in priority order:
+    /// <list type="number">
+    ///   <item>HEAD's branch — if HEAD is on a branch (not detached) and its
+    ///   tip equals this commit, that branch wins. This is what makes
+    ///   <c>HEAD</c> render as <c>master</c> in the common case.</item>
+    ///   <item>Tags — annotated or lightweight — pointing at this commit.
+    ///   Tags are stable user-facing labels; once a release is tagged, the
+    ///   tag is more informative than a coincidentally-positioned branch.</item>
+    ///   <item>Other local branches whose tip equals this commit.</item>
+    ///   <item>Remote-tracking branches (e.g. <c>origin/master</c>) whose tip
+    ///   equals this commit. Lowest priority because they're a mirror of
+    ///   what was last fetched, not an authoritative local ref.</item>
+    /// </list>
+    /// Returns <see langword="null"/> when nothing decorates the commit, so
+    /// the View falls back to the short SHA alone. Deliberately does not
+    /// consider the user's literal CLI input string: a user who typed
+    /// <c>feature/foo</c> shouldn't see that label if the branch has since
+    /// moved off the commit.
+    /// <para>Within a single tier, ties are broken alphabetically for
+    /// determinism — needed because LibGit2Sharp's enumeration order isn't
+    /// contractually stable.</para>
+    /// </summary>
+    private string? ResolveFriendlyName(Commit commit)
+    {
+        try
+        {
+            // 1. HEAD's branch.
+            var head = _repo.Head;
+            if (head is not null
+                && !head.IsRemote
+                && head.FriendlyName != "(no branch)"
+                && head.Tip?.Sha == commit.Sha)
+            {
+                return head.FriendlyName;
+            }
+
+            // 2. Tags. Use Peel<Commit> so annotated and lightweight tags
+            //    are handled uniformly; annotated tags' Target is the
+            //    annotation object, not the commit.
+            var tagHit = _repo.Tags
+                .Where(t => t.Target is not null
+                            && t.Target.Peel<Commit>()?.Sha == commit.Sha)
+                .Select(t => t.FriendlyName)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (tagHit is not null) return tagHit;
+
+            // 3. Other local branches.
+            var localBranchHit = _repo.Branches
+                .Where(b => !b.IsRemote && b.Tip?.Sha == commit.Sha)
+                .Select(b => b.FriendlyName)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .FirstOrDefault();
+            if (localBranchHit is not null) return localBranchHit;
+
+            // 4. Remote-tracking branches.
+            var remoteBranchHit = _repo.Branches
+                .Where(b => b.IsRemote && b.Tip?.Sha == commit.Sha)
+                .Select(b => b.FriendlyName)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .FirstOrDefault();
+            return remoteBranchHit;
+        }
+        catch (LibGit2SharpException)
+        {
+            // Defensive: ref enumeration shouldn't throw, but a corrupt
+            // ref store shouldn't take down the whole header row either.
+            return null;
+        }
     }
 
     public void RefreshIndex()
