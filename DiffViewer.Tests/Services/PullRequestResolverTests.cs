@@ -84,7 +84,7 @@ public sealed class PullRequestResolverTests
         var fetcher = new FakeLocalFetcher();
         var resolver = new PullRequestResolver(locator, metadata, fetcher);
 
-        var result = await resolver.ResolveAsync(SamplePr, CancellationToken.None);
+        var result = await resolver.ResolveAsync(SamplePr, progress: null, CancellationToken.None);
 
         result.Should().BeOfType<PullRequestResolution.MissingClone>()
             .Which.Pr.Should().Be(SamplePr);
@@ -108,7 +108,7 @@ public sealed class PullRequestResolverTests
         };
         var resolver = new PullRequestResolver(locator, metadata, fetcher);
 
-        var result = await resolver.ResolveAsync(SamplePr, CancellationToken.None);
+        var result = await resolver.ResolveAsync(SamplePr, progress: null, CancellationToken.None);
 
         var ready = result.Should().BeOfType<PullRequestResolution.Ready>().Subject;
         ready.Pr.Should().Be(SamplePr);
@@ -137,7 +137,7 @@ public sealed class PullRequestResolverTests
         var fetcher = new FakeLocalFetcher();
         var resolver = new PullRequestResolver(locator, metadata, fetcher);
 
-        var result = await resolver.ResolveAsync(SamplePr, CancellationToken.None);
+        var result = await resolver.ResolveAsync(SamplePr, progress: null, CancellationToken.None);
 
         var failed = result.Should().BeOfType<PullRequestResolution.Failed>().Subject;
         failed.Pr.Should().Be(SamplePr);
@@ -161,7 +161,7 @@ public sealed class PullRequestResolverTests
         };
         var resolver = new PullRequestResolver(locator, metadata, fetcher);
 
-        var result = await resolver.ResolveAsync(SamplePr, CancellationToken.None);
+        var result = await resolver.ResolveAsync(SamplePr, progress: null, CancellationToken.None);
 
         var failed = result.Should().BeOfType<PullRequestResolution.Failed>().Subject;
         failed.Pr.Should().Be(SamplePr);
@@ -188,7 +188,7 @@ public sealed class PullRequestResolverTests
         var fetcher = new FakeLocalFetcher();
         var resolver = new PullRequestResolver(locator, metadata, fetcher);
 
-        var act = () => resolver.ResolveAsync(SamplePr, cts.Token);
+        var act = () => resolver.ResolveAsync(SamplePr, progress: null, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
         fetcher.CallCount.Should().Be(0);
@@ -214,7 +214,7 @@ public sealed class PullRequestResolverTests
         };
         var resolver = new PullRequestResolver(locator, metadata, fetcher);
 
-        var act = () => resolver.ResolveAsync(SamplePr, cts.Token);
+        var act = () => resolver.ResolveAsync(SamplePr, progress: null, cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -231,6 +231,7 @@ public sealed class PullRequestResolverTests
 
         await resolver.ResolveAsync(
             new PullRequestRef("github.com", "owner", "repo", 7),
+            progress: null,
             CancellationToken.None);
 
         locator.LastCall.Should().Be(("github.com", "owner", "repo"));
@@ -244,7 +245,7 @@ public sealed class PullRequestResolverTests
             new FakeMetadataResolver(),
             new FakeLocalFetcher());
 
-        var act = () => resolver.ResolveAsync(null!, CancellationToken.None);
+        var act = () => resolver.ResolveAsync(null!, progress: null, CancellationToken.None);
 
         await act.Should().ThrowAsync<ArgumentNullException>();
     }

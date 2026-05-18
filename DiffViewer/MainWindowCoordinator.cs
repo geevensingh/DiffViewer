@@ -50,6 +50,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     private IShellViewModel? _current;
     private ContextScope? _currentScope;
     private bool _isSwitching;
+    private string _switchingStatus = string.Empty;
 
     public MainWindowCoordinator(
         AppServices services,
@@ -86,6 +87,20 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     {
         get => _isSwitching;
         private set => SetProperty(ref _isSwitching, value);
+    }
+
+    /// <summary>
+    /// Human-readable description of the in-flight switch (e.g.
+    /// <c>"Loading PR #296 from owner/repo\u2026"</c>,
+    /// <c>"Fetching head and merge base\u2026"</c>). Bound to the window-level
+    /// loading overlay so the user has visible feedback during the
+    /// otherwise-silent gap between the New-diff / recents click and the
+    /// new context appearing. Empty when no switch is in flight.
+    /// </summary>
+    public string SwitchingStatus
+    {
+        get => _switchingStatus;
+        private set => SetProperty(ref _switchingStatus, value ?? string.Empty);
     }
 
     /// <summary>Raised after <see cref="Current"/> changes (build, swap, dispose).</summary>
@@ -185,7 +200,8 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     private async Task<PullRequestResolution> ResolveWithMissingClonePromptAsync(
         PullRequestRef pr, CancellationToken ct)
     {
-        var resolution = await _services.PullRequestResolver.ResolveAsync(pr, ct).ConfigureAwait(true);
+        var progress = new Progress<string>(s => SwitchingStatus = s);
+        var resolution = await _services.PullRequestResolver.ResolveAsync(pr, progress, ct).ConfigureAwait(true);
         if (resolution is PullRequestResolution.MissingClone)
         {
             var dialogResult = await _services.MissingClonePromptHost.ShowAsync(pr, ct).ConfigureAwait(true);
@@ -195,7 +211,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
                     // Settings now contains the mapping. Re-invoke the
                     // resolver; from this point on we accept whatever
                     // state it returns without prompting again.
-                    resolution = await _services.PullRequestResolver.ResolveAsync(pr, ct).ConfigureAwait(true);
+                    resolution = await _services.PullRequestResolver.ResolveAsync(pr, progress, ct).ConfigureAwait(true);
                     break;
                 case MissingClonePromptResult.Cancelled:
                     return new PullRequestResolution.Failed(
@@ -282,6 +298,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
 
         await _switchGate.WaitAsync(ct).ConfigureAwait(true);
         IsSwitching = true;
+        SwitchingStatus = $"Loading {DescribeRepo(parsed.RepoPath)}\u2026";
         try
         {
             return await SwitchContextCoreAsync(parsed, ct).ConfigureAwait(true);
@@ -289,12 +306,14 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         finally
         {
             IsSwitching = false;
+            SwitchingStatus = string.Empty;
             _switchGate.Release();
         }
     }
 
     private async Task<bool> SwitchContextCoreAsync(ParsedCommandLine parsed, CancellationToken ct)
     {
+        SwitchingStatus = "Loading repository\u2026";
         var newScope = new ContextScope(_appShutdownToken);
         MainViewModel newVm;
         try
@@ -401,6 +420,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         {
             await _switchGate.WaitAsync(ct).ConfigureAwait(true);
             IsSwitching = true;
+            SwitchingStatus = DescribePullRequestLoading(pr);
             try
             {
                 return await SwitchToGitHubPullRequestUnderGateAsync(
@@ -409,6 +429,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
             finally
             {
                 IsSwitching = false;
+                SwitchingStatus = string.Empty;
                 _switchGate.Release();
             }
         }
@@ -444,6 +465,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
             case DiffLaunchSource.GitHubPullRequest gh:
                 await _switchGate.WaitAsync(ct).ConfigureAwait(true);
                 IsSwitching = true;
+                SwitchingStatus = DescribePullRequestLoading(gh.Pr);
                 try
                 {
                     return await SwitchToGitHubPullRequestUnderGateAsync(
@@ -452,6 +474,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
                 finally
                 {
                     IsSwitching = false;
+                    SwitchingStatus = string.Empty;
                     _switchGate.Release();
                 }
 
@@ -475,9 +498,10 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         bool offerMissingClonePrompt,
         CancellationToken ct)
     {
+        var progress = new Progress<string>(s => SwitchingStatus = s);
         var resolution = offerMissingClonePrompt
             ? await ResolveWithMissingClonePromptAsync(pr, ct).ConfigureAwait(true)
-            : await _services.PullRequestResolver.ResolveAsync(pr, ct).ConfigureAwait(true);
+            : await _services.PullRequestResolver.ResolveAsync(pr, progress, ct).ConfigureAwait(true);
 
         switch (resolution)
         {
@@ -597,5 +621,25 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     {
         OnPropertyChanged(nameof(Current));
         CurrentChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static string DescribePullRequestLoading(PullRequestRef pr) =>
+        $"Loading PR #{pr.Number} from {pr.Owner}/{pr.Repo}\u2026";
+
+    private static string DescribeRepo(string repoPath)
+    {
+        if (string.IsNullOrEmpty(repoPath))
+        {
+            return "repository";
+        }
+        try
+        {
+            var name = System.IO.Path.GetFileName(repoPath.TrimEnd('\\', '/'));
+            return string.IsNullOrEmpty(name) ? repoPath : name;
+        }
+        catch
+        {
+            return repoPath;
+        }
     }
 }

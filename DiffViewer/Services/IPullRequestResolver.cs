@@ -72,7 +72,10 @@ public sealed class PullRequestFetchException : Exception
 /// </remarks>
 public interface IPullRequestResolver
 {
-    Task<PullRequestResolution> ResolveAsync(PullRequestRef pr, CancellationToken ct);
+    Task<PullRequestResolution> ResolveAsync(
+        PullRequestRef pr,
+        IProgress<string>? progress,
+        CancellationToken ct);
 }
 
 /// <summary>Outcome of <see cref="IPullRequestResolver.ResolveAsync"/>.</summary>

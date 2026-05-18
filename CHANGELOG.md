@@ -12,6 +12,19 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- Loading overlay during context switches. Opening a GitHub PR, a
+  different repo, or any other context now shows a window-level
+  overlay with an indeterminate progress bar and phased status text
+  ("Loading PR #N from owner/repo…" → "Fetching PR metadata…" →
+  "Fetching head and merge base…" → "Loading repository…") so the
+  10-second-ish gap between dismissing the New Diff dialog and the
+  diff appearing is no longer silent. The overlay tracks the same
+  switching state that already gated the recents dropdown, so it
+  also covers recents-based switches and the missing-clone-then-
+  resolve flow.
+
 ### Fixed
 
 - F8 / F7 (next / previous change) now navigate relative to where the

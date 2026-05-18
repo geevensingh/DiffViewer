@@ -368,6 +368,106 @@ public class MainWindowCoordinatorTests
         await coordinator.DisposeCurrentAsync();
     }
 
+    [Fact]
+    public async Task SwitchContextAsync_PopulatesSwitchingStatusInFlight_AndClearsOnSuccess()
+    {
+        using var repo = MakeRepoWithCommit();
+        var services = BuildServices(out _);
+        var dialog = new FakeDialog();
+
+        MainWindowCoordinator? coordinatorRef = null;
+        string? statusInFlight = null;
+        bool? isSwitchingInFlight = null;
+        var coordinator = new MainWindowCoordinator(
+            services, dialog, shutdownAction: _ => { },
+            contextFactory: async (p, s, sc, ct) =>
+            {
+                statusInFlight ??= coordinatorRef!.SwitchingStatus;
+                isSwitchingInFlight ??= coordinatorRef!.IsSwitching;
+                return await CompositionRoot.BuildContextAsync(p, s, sc, ct);
+            });
+        coordinatorRef = coordinator;
+
+        (await coordinator.SwitchContextAsync(ParsedFor(repo))).Should().BeTrue();
+
+        isSwitchingInFlight.Should().BeTrue("IsSwitching must hold for the entire switch");
+        statusInFlight.Should().NotBeNullOrEmpty(
+            "the overlay needs visible text the moment the switch starts");
+        statusInFlight.Should().Contain("Loading",
+            "the in-flight status describes what the user is waiting on");
+        coordinator.SwitchingStatus.Should().BeEmpty(
+            "status must be cleared once the switch completes so the next switch starts clean");
+        coordinator.IsSwitching.Should().BeFalse();
+
+        await coordinator.DisposeCurrentAsync();
+    }
+
+    [Fact]
+    public async Task SwitchContextAsync_OnContextBuildFailure_ClearsSwitchingStatus()
+    {
+        using var repoA = MakeRepoWithCommit();
+        var services = BuildServices(out _);
+        var dialog = new FakeDialog();
+
+        MainWindowCoordinator? coordinatorRef = null;
+        bool factoryHasThrown = false;
+        var coordinator = new MainWindowCoordinator(
+            services, dialog, shutdownAction: _ => { },
+            contextFactory: (p, s, sc, ct) =>
+            {
+                if (!factoryHasThrown)
+                {
+                    // First call (StartFromParsedAsync below) succeeds so
+                    // there's a real outgoing context. Second call (the
+                    // SwitchContextAsync under test) throws.
+                    return CompositionRoot.BuildContextAsync(p, s, sc, ct);
+                }
+                throw new ContextBuildException("simulated build failure");
+            });
+        coordinatorRef = coordinator;
+
+        (await coordinator.StartFromParsedAsync(ParsedFor(repoA))).Should().BeTrue();
+        factoryHasThrown = true;
+
+        var parsed = new ParsedCommandLine(
+            @"C:\repos\does-not-matter",
+            new DiffSide.WorkingTree(),
+            new DiffSide.CommitIsh("HEAD"));
+        (await coordinator.SwitchContextAsync(parsed)).Should().BeFalse();
+
+        coordinator.SwitchingStatus.Should().BeEmpty(
+            "the finally block must clear status even when the switch fails");
+        coordinator.IsSwitching.Should().BeFalse();
+
+        await coordinator.DisposeCurrentAsync();
+    }
+
+    [Fact]
+    public async Task SwitchToAsync_PullRequest_PlumbsProgressIntoResolverAndClearsStatus()
+    {
+        using var repoA = MakeRepoWithCommit();
+        using var repoB = MakeRepoWithCommit();
+        var services = BuildServices(out _, out var prResolver, out _);
+        var coordinator = new MainWindowCoordinator(
+            services, new FakeDialog(), shutdownAction: _ => { });
+
+        (await coordinator.StartFromParsedAsync(ParsedFor(repoA))).Should().BeTrue();
+
+        var pr = new PullRequestRef("github.com", "owner", "repo", 11);
+        prResolver.Results.Enqueue(new DiffViewer.Services.PullRequestResolution.Ready(ParsedFor(repoB), pr));
+
+        var source = new DiffViewer.Models.DiffLaunchSource.GitHubPullRequest(pr);
+        (await coordinator.SwitchToAsync(source)).Should().BeTrue();
+
+        prResolver.ProgressReports.Should().NotBeEmpty(
+            "the coordinator must pass a non-null IProgress<string> so the resolver can phase-report");
+        coordinator.SwitchingStatus.Should().BeEmpty(
+            "status must be cleared on completion of a PR switch");
+        coordinator.IsSwitching.Should().BeFalse();
+
+        await coordinator.DisposeCurrentAsync();
+    }
+
     private static RecentLaunchContext MakeContext(string repoPath, string commitRef)
     {
         var canonical = ContextIdentityFactory.CanonicalizeRepoPath(repoPath);
@@ -450,10 +550,13 @@ public class MainWindowCoordinatorTests
     {
         public System.Collections.Generic.List<DiffViewer.Models.PullRequestRef> Calls { get; } = new();
         public System.Collections.Generic.Queue<DiffViewer.Services.PullRequestResolution> Results { get; } = new();
+        public System.Collections.Generic.List<string> ProgressReports { get; } = new();
         public int CallCount => Calls.Count;
 
         public Task<DiffViewer.Services.PullRequestResolution> ResolveAsync(
-            DiffViewer.Models.PullRequestRef pr, System.Threading.CancellationToken ct)
+            DiffViewer.Models.PullRequestRef pr,
+            System.IProgress<string>? progress,
+            System.Threading.CancellationToken ct)
         {
             Calls.Add(pr);
             if (Results.Count == 0)
@@ -462,7 +565,10 @@ public class MainWindowCoordinatorTests
                     "FakePullRequestResolver had no result queued for "
                     + $"{pr.Owner}/{pr.Repo}#{pr.Number}.");
             }
-            return Task.FromResult(Results.Dequeue());
+            var result = Results.Dequeue();
+            progress?.Report($"fake-progress for {pr.Owner}/{pr.Repo}#{pr.Number}");
+            ProgressReports.Add($"fake-progress for {pr.Owner}/{pr.Repo}#{pr.Number}");
+            return Task.FromResult(result);
         }
     }
 

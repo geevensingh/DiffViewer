@@ -25,7 +25,9 @@ internal sealed class PullRequestResolver : IPullRequestResolver
     }
 
     public async Task<PullRequestResolution> ResolveAsync(
-        PullRequestRef pr, CancellationToken ct)
+        PullRequestRef pr,
+        IProgress<string>? progress,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pr);
 
@@ -39,6 +41,7 @@ internal sealed class PullRequestResolver : IPullRequestResolver
             return new PullRequestResolution.MissingClone(pr);
         }
 
+        progress?.Report("Fetching PR metadata\u2026");
         PullRequestInfo info;
         try
         {
@@ -53,6 +56,7 @@ internal sealed class PullRequestResolver : IPullRequestResolver
             return new PullRequestResolution.Failed(pr, ex.Message);
         }
 
+        progress?.Report("Fetching head and merge base\u2026");
         PullRequestFetchResult fetched;
         try
         {

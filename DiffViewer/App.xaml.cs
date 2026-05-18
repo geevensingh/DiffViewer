@@ -86,6 +86,12 @@ public partial class App : Application
 
         var window = new MainWindow(settingsService);
         Application.Current.MainWindow = window;
+        // Expose the coordinator on Window.Tag so MainWindow.xaml's
+        // loading-overlay bindings can read IsSwitching / SwitchingStatus
+        // via RelativeSource={RelativeSource AncestorType=Window} without
+        // perturbing the existing DataContext = Coordinator.Current
+        // contract that the inner content templates depend on.
+        window.Tag = _coordinator;
         _coordinator.CurrentChanged += (_, _) => window.DataContext = _coordinator.Current;
         window.Closed += async (_, _) =>
         {
