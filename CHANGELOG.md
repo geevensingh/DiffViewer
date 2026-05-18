@@ -39,6 +39,16 @@ body. Keep section headings exact and write notes in Markdown.
   a force-push. Read-only and `github.com`-only in v1; see the README
   for the full list of non-goals.
 
+### Fixed
+
+- **Grouped-by-directory mode no longer renders an empty row for
+  repo-root files.** When a section contained both a file at the
+  repo root and files in subdirectories, the root file used to be
+  wrapped in a synthetic empty-label directory node, which showed
+  up as a chevron-only header row above the file. Root files now
+  sit directly under the section header, at the same indent as the
+  root-directory rows.
+
 ## [0.3.0] - 2026-05-16
 
 ### Added

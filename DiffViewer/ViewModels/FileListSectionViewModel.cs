@@ -14,18 +14,27 @@ public sealed partial class FileListSectionViewModel : ObservableObject
     public WorkingTreeLayer Layer { get; }
     public string Header { get; }
     public ObservableCollection<FileEntryViewModel> Entries { get; }
-    public ObservableCollection<DirectoryNodeViewModel> RootDirectories { get; }
+
+    /// <summary>
+    /// Top-level items for grouped-by-directory mode: a heterogeneous
+    /// sequence of <see cref="FileEntryViewModel"/> (files at the repo
+    /// root, listed first) and <see cref="DirectoryNodeViewModel"/> (root
+    /// directories, sorted by label). Root files sit at the section's
+    /// top level rather than under a synthetic empty-labelled directory
+    /// node, which would otherwise render as an empty header row.
+    /// </summary>
+    public ObservableCollection<object> RootItems { get; }
 
     /// <summary>
     /// First-level children for the unified TreeView, projected from
     /// <see cref="Entries"/> in the flat display modes and from
-    /// <see cref="RootDirectories"/> in grouped-by-directory mode. Mutated
+    /// <see cref="RootItems"/> in grouped-by-directory mode. Mutated
     /// in place by <see cref="ApplyDisplayMode"/> so the bound
     /// <c>HierarchicalDataTemplate.ItemsSource</c> receives incremental
     /// CollectionChanged notifications rather than a full PropertyChanged
     /// re-bind.
     ///
-    /// <para>Typed as <see cref="object"/> because the two source collections
+    /// <para>Typed as <see cref="object"/> because the source collections
     /// hold different element types (<see cref="FileEntryViewModel"/> vs
     /// <see cref="DirectoryNodeViewModel"/>); WPF dispatches each item to
     /// its matching <c>DataTemplate</c> by runtime type, the same way the
@@ -62,7 +71,7 @@ public sealed partial class FileListSectionViewModel : ObservableObject
         Header = header;
         SharedHeader = sharedHeader ?? new FileListSectionHeader(layer, header);
         Entries = new ObservableCollection<FileEntryViewModel>(entries);
-        RootDirectories = new ObservableCollection<DirectoryNodeViewModel>(
+        RootItems = new ObservableCollection<object>(
             DirectoryNodeViewModel.Build(Entries, sectionKey: layer.ToString(), store: store));
 
         // Default to the directory projection so a section constructed
@@ -80,7 +89,8 @@ public sealed partial class FileListSectionViewModel : ObservableObject
     /// <see cref="FileListDisplayMode.RepoRelative"/> modes project from
     /// <see cref="Entries"/> (files listed directly under the section);
     /// <see cref="FileListDisplayMode.GroupedByDirectory"/> projects from
-    /// <see cref="RootDirectories"/> (a nested directory tree). Called by
+    /// <see cref="RootItems"/> (a nested directory tree, with repo-root
+    /// files surfaced as siblings of the root directories). Called by
     /// <see cref="FileListViewModel"/> after construction and again whenever
     /// the active display mode changes, so the unified TreeView reflects
     /// the right shape without rebuilding the section.
@@ -90,7 +100,7 @@ public sealed partial class FileListSectionViewModel : ObservableObject
         Children.Clear();
         if (mode == FileListDisplayMode.GroupedByDirectory)
         {
-            foreach (var dir in RootDirectories) Children.Add(dir);
+            foreach (var item in RootItems) Children.Add(item);
         }
         else
         {

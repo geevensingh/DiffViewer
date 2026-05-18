@@ -177,8 +177,9 @@
 
         <!-- Unified TreeView. Top-level branches are the per-layer
              sections; their children are either the section's files
-             directly (flat modes) or the section's RootDirectories
-             (grouped-by-directory mode), projected via
+             directly (flat modes) or the section's RootItems
+             (grouped-by-directory mode — root directories plus any
+             repo-root files as siblings), projected via
              FileListSectionViewModel.Children. One Selector means
              selection state lives in exactly one place, so cross-section
              click-throughs don't go stale. ItemContainerStyleSelector

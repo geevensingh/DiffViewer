@@ -62,15 +62,23 @@ public sealed partial class DirectoryNodeViewModel : ObservableObject
     /// chains of single-child directories into one node (e.g. <c>a\b\c</c>
     /// stays as one label rather than three nested nodes).
     /// </summary>
-    public static IEnumerable<DirectoryNodeViewModel> Build(IEnumerable<FileEntryViewModel> entries) =>
+    public static IEnumerable<object> Build(IEnumerable<FileEntryViewModel> entries) =>
         Build(entries, sectionKey: string.Empty, store: null);
 
     /// <summary>
     /// Build the directory tree from a flat list of file entries, hooking
     /// each node up to the provided <paramref name="store"/> so collapse
     /// state survives rebuilds (e.g. after a file is added or removed).
+    ///
+    /// <para>Returns a heterogeneous sequence: repo-root files surface as
+    /// <see cref="FileEntryViewModel"/> instances (sorted by file name) at
+    /// the head, followed by <see cref="DirectoryNodeViewModel"/> root
+    /// directories (sorted by label). The mixed shape lets the caller put
+    /// root files directly under the section, rather than nesting them
+    /// inside a synthetic empty-named directory node that would render as
+    /// an empty header row.</para>
     /// </summary>
-    public static IEnumerable<DirectoryNodeViewModel> Build(
+    public static IEnumerable<object> Build(
         IEnumerable<FileEntryViewModel> entries,
         string sectionKey,
         DirectoryExpansionStore? store)
@@ -105,22 +113,14 @@ public sealed partial class DirectoryNodeViewModel : ObservableObject
             SortRecursive(root);
         }
 
-        var result = new List<DirectoryNodeViewModel>();
+        var result = new List<object>();
+        foreach (var f in rootFiles.OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase))
+        {
+            result.Add(f);
+        }
         foreach (var root in roots.Values.OrderBy(d => d.Label, StringComparer.OrdinalIgnoreCase))
         {
             result.Add(CollapseSingleChildChains(root, sectionKey, store));
-        }
-
-        // Files at repo root sit under a synthetic node so the view stays uniform.
-        if (rootFiles.Count > 0)
-        {
-            var rootKey = MakeKey(sectionKey, "<root>");
-            var rootNode = new DirectoryNodeViewModel(string.Empty, rootKey, store);
-            foreach (var f in rootFiles.OrderBy(f => f.FileName, StringComparer.OrdinalIgnoreCase))
-            {
-                rootNode.Files.Add(f);
-            }
-            result.Insert(0, rootNode);
         }
 
         return result;

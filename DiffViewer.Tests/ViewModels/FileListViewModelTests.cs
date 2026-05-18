@@ -469,7 +469,32 @@ public class FileListViewModelTests
 
         var section = vm.Sections.Single();
         section.Children.Should().AllBeOfType<DirectoryNodeViewModel>();
-        section.Children.Should().HaveSameCount(section.RootDirectories);
+        section.Children.Should().HaveSameCount(section.RootItems);
+    }
+
+    [Fact]
+    public void Children_GroupedByDirectory_RepoRootFilesSurfaceAsSiblings_NotEmptyDirectoryNode()
+    {
+        // Regression test: when a section contains both repo-root files
+        // and files in subdirectories, the root files must appear as
+        // FileEntryViewModel siblings of the root directories, not as
+        // children of a synthetic empty-label DirectoryNodeViewModel
+        // (which used to render as an empty header row).
+        var vm = new FileListViewModel { DisplayMode = FileListDisplayMode.GroupedByDirectory };
+        var changes = new[]
+        {
+            MakeChange("package.json", layer: WorkingTreeLayer.Unstaged),
+            MakeChange("scripts/check.mjs", layer: WorkingTreeLayer.Unstaged),
+        };
+
+        vm.LoadFromChanges(changes, @"C:\repo", isCommitVsCommit: false);
+
+        var section = vm.Sections.Single();
+        section.Children.Should().HaveCount(2);
+        section.Children[0].Should().BeOfType<FileEntryViewModel>()
+            .Which.Change.Path.Should().Be("package.json");
+        section.Children[1].Should().BeOfType<DirectoryNodeViewModel>()
+            .Which.Label.Should().Be("scripts");
     }
 
     [Fact]
@@ -591,13 +616,13 @@ public class FileListViewModelTests
 
         var section = vm.Sections.Single();
         section.SharedHeader.IsExpanded = false;
-        CollapseRecursive(section.RootDirectories);
+        CollapseRecursive(section.RootItems.OfType<DirectoryNodeViewModel>());
 
         var y = vm.FlatEntries.Single(e => e.Change.Path == "src/deep/nested/y.cs");
         vm.SelectedEntry = y;
 
         section.SharedHeader.IsExpanded.Should().BeTrue();
-        AllAncestorsExpanded(section.RootDirectories, y).Should().BeTrue(
+        AllAncestorsExpanded(section.RootItems.OfType<DirectoryNodeViewModel>(), y).Should().BeTrue(
             "every directory on the path from the section root down to the selected file must be expanded");
 
         static void CollapseRecursive(IEnumerable<DirectoryNodeViewModel> nodes)
@@ -624,6 +649,32 @@ public class FileListViewModelTests
             }
             return false;
         }
+    }
+
+    [Fact]
+    public void SelectedEntry_Setter_ExpandsAncestorSection_WhenTargetIsRepoRootFile()
+    {
+        // Root files now sit directly under the section as
+        // FileEntryViewModel siblings of the root directories.
+        // Selecting one must still expand the section header, otherwise
+        // the auto-scroll lands inside a collapsed section and the user
+        // sees nothing change.
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("package.json", layer: WorkingTreeLayer.Unstaged),
+                MakeChange("src/a.cs", layer: WorkingTreeLayer.Unstaged),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var section = vm.Sections.Single();
+        section.SharedHeader.IsExpanded = false;
+
+        var rootFile = vm.FlatEntries.Single(e => e.Change.Path == "package.json");
+        vm.SelectedEntry = rootFile;
+
+        section.SharedHeader.IsExpanded.Should().BeTrue();
     }
 
     [Fact]

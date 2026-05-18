@@ -191,9 +191,18 @@ public sealed partial class FileListViewModel : ObservableObject
         foreach (var section in Sections)
         {
             if (section.Layer != entry.Change.Layer) continue;
-            foreach (var root in section.RootDirectories)
+            foreach (var item in section.RootItems)
             {
-                if (ExpandIfContains(root, entry))
+                // Root files surface as bare FileEntryViewModel siblings
+                // of the root directories, so a ref-equal hit here means
+                // the entry lives at the repo root and only the section
+                // header needs to be expanded.
+                if (item is FileEntryViewModel file && ReferenceEquals(file, entry))
+                {
+                    section.SharedHeader.IsExpanded = true;
+                    return;
+                }
+                if (item is DirectoryNodeViewModel root && ExpandIfContains(root, entry))
                 {
                     section.SharedHeader.IsExpanded = true;
                     return;
