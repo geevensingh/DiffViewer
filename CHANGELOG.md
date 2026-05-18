@@ -31,7 +31,16 @@ body. Keep section headings exact and write notes in Markdown.
   shortcuts: `Ctrl+/` focuses the filter, and `Space` (while the
   file list is focused) toggles **Viewed** on the selected row.
   F7/F8 navigation now skips rows hidden by the filter or
-  Hide-viewed in addition to whitespace-only ones. Resolves
+  Hide-viewed in addition to whitespace-only ones. The chrome is
+  custom-styled to fit the rest of the app: the viewed checkbox is
+  invisible at rest and fades in on row hover or selection, uses
+  the app's Fluent-blue accent, and sits flush against the row's
+  right edge; the filter box gets an italic placeholder and a
+  clear-X button; the **Hide viewed** toggle hides itself when
+  nothing is marked viewed, and auto-deactivates when the last
+  viewed file is unmarked. Selected rows switch text and checkbox
+  chrome to white-on-blue so the active row stays legible even
+  when its file is viewed-and-dimmed. Resolves
   [#3](https://github.com/geevensingh/DiffViewer/issues/3).
 
 ## [0.5.0] - 2026-05-17

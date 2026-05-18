@@ -15,6 +15,119 @@
         <SolidColorBrush x:Key="DimFgBrush"     Color="#909090"/>
         <SolidColorBrush x:Key="BadgeBgBrush"   Color="#E8E8E8"/>
 
+        <!-- Viewed-indicator chrome (issue #3 polish). Deep teal reads
+             distinctly against the white row background and the grey
+             section header band without colliding with any of the
+             existing palette swatches. -->
+        <!-- Viewed-checkbox chrome. Uses the app's existing Fluent
+             blue (#0078D4) — the same accent the diff toolbar's
+             active-toggle borders use, and the same blue as the
+             hunk-bar viewport. Hover darkens to #106EBE. Picked
+             over teal (which had been borrowed from the design
+             mockup) because (a) the app's UI accent is already
+             this blue everywhere and a viewed checkbox is just
+             another action toggle, and (b) the teal #0F766E we
+             previously used sat dangerously close to #138672
+             which is `RefAccentRight` — the semantic colour for
+             the diff's right side. Reusing a side-semantic colour
+             for a non-side concern would be misleading. -->
+        <SolidColorBrush x:Key="ViewedAccentBrush"       Color="#0078D4"/>
+        <SolidColorBrush x:Key="ViewedAccentHoverBrush"  Color="#106EBE"/>
+        <SolidColorBrush x:Key="ViewedBorderBrush"       Color="#BBBBBB"/>
+
+        <!-- Custom CheckBox chrome for the per-row "viewed" toggle.
+             Default WPF chrome reads as dated next to the lean section
+             chrome; this template paints a 14x14 rounded square with a
+             Path-based checkmark when checked. Hover-reveal opacity
+             behaviour lives on the per-instance Style below (so the
+             chrome resource can be reused if we ever need a non-revealed
+             variant). -->
+        <Style x:Key="ViewedToggleStyle" TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="Box"
+                                Width="14" Height="14"
+                                CornerRadius="2"
+                                BorderBrush="{StaticResource ViewedBorderBrush}"
+                                BorderThickness="1.2"
+                                Background="Transparent"
+                                SnapsToDevicePixels="True">
+                            <Path x:Name="Check"
+                                  Stretch="Uniform"
+                                  Margin="2"
+                                  Stroke="White"
+                                  StrokeThickness="1.8"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  Data="M 0,4 L 3,7 L 9,1"
+                                  Visibility="Collapsed"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Box" Property="BorderBrush"
+                                        Value="{StaticResource ViewedAccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Box" Property="Background"
+                                        Value="{StaticResource ViewedAccentBrush}"/>
+                                <Setter TargetName="Box" Property="BorderBrush"
+                                        Value="{StaticResource ViewedAccentBrush}"/>
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsChecked" Value="True"/>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Box" Property="Background"
+                                        Value="{StaticResource ViewedAccentHoverBrush}"/>
+                                <Setter TargetName="Box" Property="BorderBrush"
+                                        Value="{StaticResource ViewedAccentHoverBrush}"/>
+                            </MultiTrigger>
+                            <!-- High-contrast variant for rows whose
+                                 TreeViewItem is currently selected AND
+                                 the selection is active (the TreeView
+                                 has focus). The system paints the
+                                 highlight colour (typically Windows
+                                 blue) in that state, and a teal-on-blue
+                                 checkbox is hard to read. Switch to a
+                                 transparent box with white border +
+                                 white check; that reads cleanly against
+                                 the highlight in both checked (white
+                                 outline + white tick) and unchecked
+                                 (just the white outline) states.
+
+                                 When the selection goes inactive
+                                 (file list loses focus), WPF repaints
+                                 the row with a light-grey inactive
+                                 highlight — white-on-grey is the worst
+                                 of both worlds, so we drop back to the
+                                 default teal chrome which contrasts
+                                 fine against the grey.
+
+                                 Listed after the IsChecked trigger so
+                                 its setters override the teal fill. -->
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
+                                    <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="True"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="Box" Property="Background" Value="Transparent"/>
+                                <Setter TargetName="Box" Property="BorderBrush" Value="White"/>
+                                <Setter TargetName="Check" Property="Stroke" Value="White"/>
+                            </MultiDataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Right-click context menu shared by every file row. The menu's
              DataContext is the FileEntryViewModel (because the row is the
              PlacementTarget). Commands live on MainViewModel - we walk up
@@ -135,31 +248,70 @@
                                 <DataTrigger Binding="{Binding IsDimmed}" Value="True">
                                     <Setter Property="Foreground" Value="{StaticResource DimFgBrush}"/>
                                 </DataTrigger>
+                                <!-- Active selection (file list focused →
+                                     row paints the system highlight blue):
+                                     swap text to white for contrast.
+                                     MUST come after the IsDimmed trigger
+                                     so it overrides DimFgBrush when both
+                                     conditions apply (a viewed-and-
+                                     selected row should still read white,
+                                     not grey-on-blue). When focus moves
+                                     out of the file list the row paints
+                                     the inactive-selection light grey
+                                     instead, and the default dark
+                                     foreground reads fine there — so we
+                                     gate on Selector.IsSelectionActive. -->
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
+                                        <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="True"/>
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Foreground" Value="White"/>
+                                </MultiDataTrigger>
                             </Style.Triggers>
                         </Style>
                     </TextBlock.Style>
-                    <Run Text="{Binding DisplayPath, Mode=OneWay}"/><Run Text="{Binding RenameDescriptor, Mode=OneWay}"
+                    <Run Text="{Binding DisplayPath, Mode=OneWay}"/><Run x:Name="RenameDescriptorRun"
+                                                                        Text="{Binding RenameDescriptor, Mode=OneWay}"
                                                                         Foreground="{StaticResource DimFgBrush}"/>
                 </TextBlock>
 
-                <!-- GitHub-PR-review-style viewed checkbox. PreviewMouseDown
-                     and PreviewMouseUp are marked handled in code-behind so
-                     the click doesn't bubble to the TreeViewItem and steal
-                     selection / scroll-into-view. ToolTip flips by IsChecked
-                     so the user sees the action that will happen on click. -->
+                <!-- GitHub-PR-review-style viewed checkbox (issue #3,
+                     polished). Custom chrome (ViewedToggleStyle) replaces
+                     default WPF chrome; per-instance Style here layers
+                     hover-reveal on top so the checkbox is invisible at
+                     rest, fades in on row hover, and persists when
+                     checked. PreviewMouseDown / PreviewMouseUp are
+                     marked handled in code-behind so the click doesn't
+                     bubble to the TreeViewItem and steal selection /
+                     scroll-into-view. ToolTip flips by IsChecked so
+                     the user sees the action that will happen on click. -->
                 <CheckBox Grid.Column="2"
                           IsChecked="{Binding IsViewed, Mode=TwoWay}"
-                          VerticalAlignment="Center"
                           Margin="6,0,2,0"
                           PreviewMouseLeftButtonDown="OnViewedCheckBoxPreviewMouse"
                           PreviewMouseLeftButtonUp="OnViewedCheckBoxPreviewMouse">
                     <CheckBox.Style>
-                        <Style TargetType="CheckBox">
-                            <Setter Property="ToolTip" Value="Mark as viewed"/>
+                        <Style TargetType="CheckBox" BasedOn="{StaticResource ViewedToggleStyle}">
+                            <Setter Property="ToolTip" Value="Mark as viewed (Space)"/>
+                            <Setter Property="Opacity" Value="0"/>
                             <Style.Triggers>
                                 <Trigger Property="IsChecked" Value="True">
-                                    <Setter Property="ToolTip" Value="Mark as not viewed"/>
+                                    <Setter Property="ToolTip" Value="Mark as not viewed (Space)"/>
+                                    <Setter Property="Opacity" Value="1"/>
                                 </Trigger>
+                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsMouseOver}" Value="True">
+                                    <Setter Property="Opacity" Value="1"/>
+                                </DataTrigger>
+                                <!-- A selected row exposes its actions even
+                                     without the cursor over it (keyboard
+                                     navigation lands the user on a row
+                                     without hovering — and that user still
+                                     needs to see the viewed toggle to
+                                     mouse-click it). -->
+                                <DataTrigger Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True">
+                                    <Setter Property="Opacity" Value="1"/>
+                                </DataTrigger>
                             </Style.Triggers>
                         </Style>
                     </CheckBox.Style>
@@ -194,19 +346,91 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBox x:Name="FilterBox"
-                         Grid.Column="0"
-                         Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         VerticalContentAlignment="Center"
-                         Padding="4,2"
-                         KeyDown="OnFilterKeyDown"
-                         ToolTip="Filter files (Ctrl+/) — case-insensitive substring, repo-relative path"/>
+                <!-- Filter cell: TextBox underneath, placeholder hint and
+                     clear-X button overlaid on top. IsHitTestVisible=False
+                     on the placeholder lets clicks land on the TextBox.
+                     The X button gets HorizontalAlignment=Right so it
+                     hugs the trailing edge of the textbox cell regardless
+                     of the cell's actual width. -->
+                <Grid Grid.Column="0">
+                    <TextBox x:Name="FilterBox"
+                             Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             VerticalContentAlignment="Center"
+                             Padding="4,2,22,2"
+                             KeyDown="OnFilterKeyDown"
+                             ToolTip="Filter files (Ctrl+/) — case-insensitive substring, repo-relative path"/>
+                    <TextBlock IsHitTestVisible="False"
+                               VerticalAlignment="Center"
+                               Margin="6,0,0,0"
+                               Foreground="{StaticResource DimFgBrush}"
+                               FontStyle="Italic"
+                               Text="Filter files…  Ctrl+/">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=FilterBox}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <Button x:Name="FilterClearButton"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Margin="0,0,4,0"
+                            Width="16" Height="16"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            Focusable="False"
+                            ToolTip="Clear filter (Esc)"
+                            Click="OnFilterClearClick">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="ClearBg"
+                                                    Background="Transparent"
+                                                    CornerRadius="8">
+                                                <Path x:Name="ClearGlyph"
+                                                      Stretch="Uniform"
+                                                      Margin="4"
+                                                      Stroke="{StaticResource DimFgBrush}"
+                                                      StrokeThickness="1.4"
+                                                      StrokeStartLineCap="Round"
+                                                      StrokeEndLineCap="Round"
+                                                      Data="M 0,0 L 8,8 M 8,0 L 0,8"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ClearBg" Property="Background" Value="#E0E0E0"/>
+                                                    <Setter TargetName="ClearGlyph" Property="Stroke" Value="{StaticResource HeaderFgBrush}"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FilterText, Converter={x:Static vm:StringNotEmptyToBoolConverter.Instance}}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
                 <ToggleButton Grid.Column="1"
                               Content="Hide viewed"
                               IsChecked="{Binding HideViewed, Mode=TwoWay}"
                               Margin="6,0,0,0"
                               Padding="8,2"
-                              ToolTip="Hide files marked viewed"/>
+                              ToolTip="Hide files marked viewed"
+                              Visibility="{Binding HasAnyViewed, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}"/>
             </Grid>
         </Border>
 
@@ -243,20 +467,55 @@
              state (sections use SharedHeader.IsExpanded, directories use
              their own IsExpanded, files use IsSelected). -->
         <ScrollViewer VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Auto">
+                      HorizontalScrollBarVisibility="Disabled">
+            <!-- ScrollViewer.HorizontalScrollBarVisibility=Disabled on
+                 the TreeView (the attached-property setter below) is
+                 load-bearing for the per-row layout: TreeView has its
+                 own internal ScrollViewer in its default template and
+                 that's the one measuring each TreeViewItem's available
+                 width. Disabling its horizontal scroll forces it to
+                 measure items with the viewport width rather than
+                 infinite, so the FileStyle's
+                 HorizontalContentAlignment=Stretch can actually push the
+                 viewed-toggle checkbox to the right edge of the row.
+                 Without this, every TreeViewItem renders at its content's
+                 natural width and the checkbox sits flush against the
+                 filename. Long filenames ellipsize via TextTrimming on
+                 the filename TextBlock, so losing horizontal scroll
+                 costs nothing in practice. The outer ScrollViewer's HSB
+                 is also disabled for symmetry. -->
             <TreeView x:Name="FilesTree"
                       ItemsSource="{Binding Sections}"
                       BorderThickness="0"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                       VirtualizingStackPanel.IsVirtualizing="True"
                       VirtualizingStackPanel.VirtualizationMode="Recycling"
                       KeyDown="OnTreeKeyDown">
                 <TreeView.Resources>
                     <HierarchicalDataTemplate DataType="{x:Type vm:FileListSectionViewModel}"
                                               ItemsSource="{Binding Children}">
+                        <!-- Section header text. Runs inherit Foreground
+                             from the parent TextBlock so a single Style
+                             trigger flips all three (label + " (" + count
+                             + ")") together when the row is the active
+                             selection. -->
                         <TextBlock>
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource HeaderFgBrush}"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
+                                                <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
                             <Run Text="{Binding Header, Mode=OneWay}"
-                                 FontWeight="Bold"
-                                 Foreground="{StaticResource HeaderFgBrush}"/>
+                                 FontWeight="Bold"/>
                             <Run Text=" ("/>
                             <Run Text="{Binding CountChipText, Mode=OneWay}"/>
                             <Run Text=")"/>
@@ -265,8 +524,22 @@
                     <HierarchicalDataTemplate DataType="{x:Type vm:DirectoryNodeViewModel}"
                                               ItemsSource="{Binding ChildrenAndFiles}">
                         <TextBlock Text="{Binding Label}"
-                                   Foreground="{StaticResource HeaderFgBrush}"
-                                   FontWeight="SemiBold"/>
+                                   FontWeight="SemiBold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource HeaderFgBrush}"/>
+                                    <Style.Triggers>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=IsSelected}" Value="True"/>
+                                                <Condition Binding="{Binding RelativeSource={RelativeSource AncestorType=TreeViewItem}, Path=(Selector.IsSelectionActive)}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Foreground" Value="White"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </HierarchicalDataTemplate>
                     <DataTemplate DataType="{x:Type vm:FileEntryViewModel}">
                         <ContentPresenter Content="{Binding}"
@@ -325,6 +598,67 @@
                         <views:FileListItemContainerStyleSelector.FileStyle>
                             <Style TargetType="TreeViewItem">
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <!-- Custom ControlTemplate for file rows.
+                                     The default WPF TreeViewItem template
+                                     puts its content Border in a
+                                     Grid.Column=1 with ColumnSpan=2 over
+                                     [19px expander, Auto, *]. The Auto+*
+                                     ColumnSpan trips the well-known WPF
+                                     Grid gotcha where the spanned child
+                                     is measured with infinite width, so
+                                     our EntryTemplate's * column for the
+                                     filename collapses to text-natural
+                                     width and the trailing viewed-toggle
+                                     ends up flush against the filename
+                                     instead of flush right. This template
+                                     uses a clean [19px indent, *] grid so
+                                     the row content gets a finite width
+                                     and the * column expands properly.
+                                     Files have no children so we don't
+                                     need an expander toggle. Selection
+                                     background uses the system highlight
+                                     brushes to match the rest of the app
+                                     and stay theme-aware. -->
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="TreeViewItem">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="19"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Border x:Name="Bd"
+                                                        Grid.Column="1"
+                                                        Background="{TemplateBinding Background}"
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        Padding="{TemplateBinding Padding}"
+                                                        SnapsToDevicePixels="True">
+                                                    <ContentPresenter x:Name="PART_Header"
+                                                                      ContentSource="Header"
+                                                                      HorizontalAlignment="Stretch"
+                                                                      VerticalAlignment="Center"
+                                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                                </Border>
+                                            </Grid>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background"
+                                                            Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                                </Trigger>
+                                                <MultiTrigger>
+                                                    <MultiTrigger.Conditions>
+                                                        <Condition Property="IsSelected" Value="True"/>
+                                                        <Condition Property="IsSelectionActive" Value="False"/>
+                                                    </MultiTrigger.Conditions>
+                                                    <Setter TargetName="Bd" Property="Background"
+                                                            Value="{DynamicResource {x:Static SystemColors.ControlBrushKey}}"/>
+                                                </MultiTrigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsVisible}" Value="False">
                                         <Setter Property="Visibility" Value="Collapsed"/>

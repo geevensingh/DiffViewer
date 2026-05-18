@@ -146,6 +146,19 @@ public partial class FileListView : UserControl
     }
 
     /// <summary>
+    /// Click handler for the filter clear-X button. Clears the filter
+    /// and puts focus back in the TextBox (not the file list) so the
+    /// user can immediately type a new query — mouse-driven users tend
+    /// to be working in the filter at that moment, not navigating with
+    /// the keyboard.
+    /// </summary>
+    private void OnFilterClearClick(object sender, RoutedEventArgs e)
+    {
+        FilterBox.Clear();
+        FilterBox.Focus();
+    }
+
+    /// <summary>
     /// Space-toggles-viewed on the selected row (issue #3). Scoped to
     /// the TreeView's KeyDown handler so it doesn't intercept Space in
     /// the filter TextBox or in the diff editor — both of which

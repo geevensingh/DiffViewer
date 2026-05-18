@@ -131,6 +131,28 @@ public sealed partial class FileListViewModel : ObservableObject
     /// </summary>
     public bool IsFilterOrHideActive => HideViewed || !string.IsNullOrEmpty(FilterText);
 
+    /// <summary>
+    /// True when at least one file in the current context is marked
+    /// viewed. The toolbar's <em>Hide viewed</em> toggle binds its
+    /// visibility to this so the toggle vanishes when it would be a
+    /// no-op (nothing to hide). Computed from <see cref="_viewedByPath"/>
+    /// rather than scanning <see cref="FlatEntries"/> because the
+    /// dictionary outlives any single rebuild — a file may currently
+    /// be filtered out of the entry list while its viewed flag still
+    /// counts toward "have we marked anything?".
+    /// </summary>
+    public bool HasAnyViewed
+    {
+        get
+        {
+            foreach (var r in _viewedByPath.Values)
+            {
+                if (r.IsViewed) return true;
+            }
+            return false;
+        }
+    }
+
     /// <summary>True when <see cref="DisplayMode"/> is the grouped tree view.</summary>
     public bool IsGroupedMode => DisplayMode == FileListDisplayMode.GroupedByDirectory;
 
@@ -250,6 +272,14 @@ public sealed partial class FileListViewModel : ObservableObject
             // for large lists, since toggling viewed is a per-row action
             // that doesn't otherwise touch the tree structure.
             if (HideViewed) RecomputeVisibility();
+            // Notify HasAnyViewed so the toolbar's Hide-viewed button
+            // appears/disappears as needed. If un-marking just cleared
+            // the last viewed flag, also auto-reset HideViewed — otherwise
+            // the toggle would be stuck "on" with no UI to flip it off
+            // (and the next file the user marks viewed would vanish
+            // immediately, which is the wrong default).
+            OnPropertyChanged(nameof(HasAnyViewed));
+            if (HideViewed && !HasAnyViewed) HideViewed = false;
             return;
         }
 
@@ -384,6 +414,12 @@ public sealed partial class FileListViewModel : ObservableObject
                     _viewedByPath.Remove(e.Change.Path);
                 }
             }
+
+            // Dictionary may have been pruned (fingerprint mismatches) or
+            // had no viewed entries to reapply at all; either way the
+            // toolbar binding needs to reflect the post-reload truth.
+            OnPropertyChanged(nameof(HasAnyViewed));
+            if (HideViewed && !HasAnyViewed) HideViewed = false;
 
             if (isCommitVsCommit)
             {

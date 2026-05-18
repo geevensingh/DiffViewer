@@ -892,6 +892,75 @@ public class FileListViewModelTests
     }
 
     [Fact]
+    public void HasAnyViewed_TogglesWithIsViewed()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.HasAnyViewed.Should().BeFalse();
+
+        var a = vm.FlatEntries.Single(e => e.Change.Path == "a.cs");
+        var b = vm.FlatEntries.Single(e => e.Change.Path == "b.cs");
+
+        a.IsViewed = true;
+        vm.HasAnyViewed.Should().BeTrue();
+
+        b.IsViewed = true;
+        vm.HasAnyViewed.Should().BeTrue();
+
+        a.IsViewed = false;
+        vm.HasAnyViewed.Should().BeTrue();
+
+        b.IsViewed = false;
+        vm.HasAnyViewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HideViewed_AutoResetsWhenLastViewedCleared()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var a = vm.FlatEntries.Single(e => e.Change.Path == "a.cs");
+        a.IsViewed = true;
+        vm.HideViewed = true;
+
+        vm.HasAnyViewed.Should().BeTrue();
+        vm.HideViewed.Should().BeTrue();
+
+        // Un-marking the last viewed file should auto-reset HideViewed so
+        // the toolbar toggle (which is about to vanish) isn't stuck "on"
+        // for the next file the user marks viewed.
+        a.IsViewed = false;
+        vm.HasAnyViewed.Should().BeFalse();
+        vm.HideViewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void HideViewed_StaysOnWhenAtLeastOneViewedRemains()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var a = vm.FlatEntries.Single(e => e.Change.Path == "a.cs");
+        var b = vm.FlatEntries.Single(e => e.Change.Path == "b.cs");
+        a.IsViewed = true;
+        b.IsViewed = true;
+        vm.HideViewed = true;
+
+        a.IsViewed = false;
+
+        vm.HasAnyViewed.Should().BeTrue();
+        vm.HideViewed.Should().BeTrue();
+    }
+
+    [Fact]
     public void HideViewedAndFilter_ComposeAsAnd()
     {
         var vm = new FileListViewModel();
