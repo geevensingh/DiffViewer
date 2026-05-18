@@ -1,0 +1,118 @@
+<UserControl x:Class="DiffViewer.Views.CommitMetadataHeaderRow"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+             d:DataContext="{d:DesignInstance Type=vm:CommitMetadataPanelViewModel}"
+             mc:Ignorable="d">
+    <UserControl.Resources>
+        <SolidColorBrush x:Key="HeaderRowFgBrush"     Color="#424242"/>
+        <SolidColorBrush x:Key="HeaderRowDimFgBrush"  Color="#888888"/>
+        <SolidColorBrush x:Key="HeaderRowBadgeBg"     Color="#E8E8E8"/>
+        <SolidColorBrush x:Key="HeaderRowAccentLeft"  Color="#3F6FD8"/>
+        <SolidColorBrush x:Key="HeaderRowAccentRight" Color="#138672"/>
+    </UserControl.Resources>
+
+    <!-- Whole row is one click target. The Border has the click binding,
+         the Cursor hand affordance, and a hover-state background swap.
+         AutomationProperties.Name supplies a screen-reader phrase that
+         includes the short SHA so the user knows which commit they're
+         about to open. -->
+    <Border BorderThickness="3,0,0,1"
+            Padding="9,5,9,6"
+            Cursor="Hand"
+            AutomationProperties.Name="{Binding ShortSha, StringFormat='Show commit metadata for {0}'}"
+            Focusable="True">
+        <Border.InputBindings>
+            <MouseBinding Gesture="LeftClick" Command="{Binding ShowDetailsCommand}"/>
+        </Border.InputBindings>
+
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Background" Value="#FAFAFA"/>
+                <Setter Property="BorderBrush" Value="#DDDDDD"/>
+                <!-- Side-tinted left accent stripe. BorderBrush is shared
+                     by all four edges in WPF, so we paint it once and
+                     reflect the side through the BorderThickness above
+                     (3px on the left, 1px on the bottom). -->
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding SideLabel}" Value="Left">
+                        <Setter Property="BorderBrush" Value="{StaticResource HeaderRowAccentLeft}"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding SideLabel}" Value="Right">
+                        <Setter Property="BorderBrush" Value="{StaticResource HeaderRowAccentRight}"/>
+                    </DataTrigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Background" Value="#F0F0F0"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Side label badge ("Left" / "Right") - the visual anchor. -->
+            <TextBlock Grid.Row="0" Grid.Column="0"
+                       Text="{Binding SideLabel}"
+                       FontFamily="Consolas"
+                       FontWeight="SemiBold"
+                       FontSize="10"
+                       Margin="0,0,8,0"
+                       VerticalAlignment="Center"
+                       Foreground="{StaticResource HeaderRowDimFgBrush}"/>
+
+            <!-- Short SHA badge. Monospace for SHA discoverability;
+                 a soft background to read as a metadata chip. -->
+            <Border Grid.Row="0" Grid.Column="1"
+                    Background="{StaticResource HeaderRowBadgeBg}"
+                    CornerRadius="3"
+                    Padding="5,1"
+                    Margin="0,0,8,0"
+                    VerticalAlignment="Center">
+                <TextBlock Text="{Binding ShortSha}"
+                           FontFamily="Consolas"
+                           FontSize="11"
+                           Foreground="{StaticResource HeaderRowFgBrush}"/>
+            </Border>
+
+            <!-- Author name. Trims if cramped — full author shows in the
+                 modal. -->
+            <TextBlock Grid.Row="0" Grid.Column="2"
+                       Text="{Binding AuthorName}"
+                       FontSize="11"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{StaticResource HeaderRowFgBrush}"/>
+
+            <!-- Relative date with absolute-date tooltip (in the commit's
+                 own timezone). -->
+            <TextBlock Grid.Row="0" Grid.Column="3"
+                       Text="{Binding RelativeDate}"
+                       FontSize="11"
+                       VerticalAlignment="Center"
+                       Margin="8,0,0,0"
+                       Foreground="{StaticResource HeaderRowDimFgBrush}"
+                       ToolTip="{Binding AbsoluteDate}"
+                       ToolTipService.InitialShowDelay="300"/>
+
+            <!-- Subject - single line, ellipsized; full body is in the modal. -->
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+                       Text="{Binding Subject}"
+                       FontSize="11"
+                       Margin="0,2,0,0"
+                       TextTrimming="CharacterEllipsis"
+                       Foreground="{StaticResource HeaderRowFgBrush}"/>
+        </Grid>
+    </Border>
+</UserControl>

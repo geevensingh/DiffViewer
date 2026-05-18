@@ -76,15 +76,47 @@
                         <ColumnDefinition Width="*" MinWidth="300"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Column 0: recents dropdown above the file list. -->
+                    <!-- Column 0: recents dropdown, commit-metadata
+                         header rows (one per commit side), and the file
+                         list. The commit rows collapse to nothing for
+                         working-tree sides via the null-DataContext
+                         DataTrigger on each. -->
                     <Grid Grid.Column="0">
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <views:RecentsBarView Grid.Row="0"
                                               DataContext="{Binding Recents}"/>
-                        <views:FileListView Grid.Row="1"
+                        <views:CommitMetadataHeaderRow Grid.Row="1"
+                                                       DataContext="{Binding LeftCommitPanel}">
+                            <views:CommitMetadataHeaderRow.Style>
+                                <Style TargetType="views:CommitMetadataHeaderRow">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </views:CommitMetadataHeaderRow.Style>
+                        </views:CommitMetadataHeaderRow>
+                        <views:CommitMetadataHeaderRow Grid.Row="2"
+                                                       DataContext="{Binding RightCommitPanel}">
+                            <views:CommitMetadataHeaderRow.Style>
+                                <Style TargetType="views:CommitMetadataHeaderRow">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding}" Value="{x:Null}">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </views:CommitMetadataHeaderRow.Style>
+                        </views:CommitMetadataHeaderRow>
+                        <views:FileListView Grid.Row="3"
                                             DataContext="{Binding FileList}"/>
                     </Grid>
 

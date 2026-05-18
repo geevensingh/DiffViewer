@@ -1,0 +1,169 @@
+<Window x:Class="DiffViewer.Views.CommitMetadataDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        d:DataContext="{d:DesignInstance Type=vm:CommitMetadataDialogViewModel}"
+        mc:Ignorable="d"
+        Title="Commit details"
+        SizeToContent="Height"
+        Width="640"
+        MaxHeight="700"
+        MinHeight="200"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="White"
+        PreviewKeyDown="OnPreviewKeyDown">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="LabelFgBrush"   Color="#666666"/>
+        <SolidColorBrush x:Key="ValueFgBrush"   Color="#222222"/>
+        <SolidColorBrush x:Key="DimFgBrush"     Color="#888888"/>
+        <SolidColorBrush x:Key="BadgeBgBrush"   Color="#E8E8E8"/>
+        <SolidColorBrush x:Key="BodyBgBrush"    Color="#FAFAFA"/>
+        <SolidColorBrush x:Key="BorderBrushDim" Color="#DDDDDD"/>
+
+        <Style x:Key="LabelStyle" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource LabelFgBrush}"/>
+            <Setter Property="FontSize"   Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Margin="20">
+        <Button DockPanel.Dock="Bottom"
+                Content="Close"
+                MinWidth="90"
+                Padding="12,4"
+                Margin="0,16,0,0"
+                HorizontalAlignment="Right"
+                IsCancel="True"
+                IsDefault="True"
+                Click="OnCloseClick"/>
+
+        <StackPanel>
+            <!-- Side label + subject. Subject reads as the headline. -->
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                <TextBlock Text="{Binding SideLabel}"
+                           FontFamily="Consolas"
+                           FontWeight="SemiBold"
+                           FontSize="10"
+                           Foreground="{StaticResource DimFgBrush}"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Text="{Binding Subject}"
+                       FontSize="17"
+                       FontWeight="SemiBold"
+                       Foreground="{StaticResource ValueFgBrush}"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,14"/>
+
+            <!-- Metadata grid: label + value rows. -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="Author"
+                           Style="{StaticResource LabelStyle}"/>
+                <TextBlock Grid.Row="0" Grid.Column="1"
+                           Text="{Binding AuthorDisplay}"
+                           Foreground="{StaticResource ValueFgBrush}"
+                           FontSize="12"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0"
+                           Text="Date"
+                           Style="{StaticResource LabelStyle}"/>
+                <StackPanel Grid.Row="1" Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="0,0,0,4">
+                    <TextBlock Text="{Binding AbsoluteDate}"
+                               FontFamily="Consolas"
+                               FontSize="12"
+                               Foreground="{StaticResource ValueFgBrush}"/>
+                    <TextBlock Text="{Binding RelativeDate, StringFormat='  ({0})'}"
+                               FontSize="12"
+                               Foreground="{StaticResource DimFgBrush}"/>
+                </StackPanel>
+
+                <TextBlock Grid.Row="2" Grid.Column="0"
+                           Text="SHA"
+                           Style="{StaticResource LabelStyle}"/>
+                <StackPanel Grid.Row="2" Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="0,0,0,4">
+                    <!-- Short SHA badge + full SHA inline. The Copy button
+                         writes the full 40-char SHA to the clipboard. -->
+                    <Border Background="{StaticResource BadgeBgBrush}"
+                            CornerRadius="3"
+                            Padding="5,1"
+                            Margin="0,0,8,0">
+                        <TextBlock Text="{Binding ShortSha}"
+                                   FontFamily="Consolas"
+                                   FontSize="11"
+                                   Foreground="{StaticResource ValueFgBrush}"/>
+                    </Border>
+                    <TextBlock Text="{Binding FullSha}"
+                               FontFamily="Consolas"
+                               FontSize="11"
+                               Foreground="{StaticResource DimFgBrush}"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"/>
+                    <Button Content="Copy SHA"
+                            Padding="8,2"
+                            Command="{Binding CopyShaCommand}"
+                            ToolTip="Copy the full 40-character SHA to the clipboard"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Message body. ScrollViewer with bounded MaxHeight keeps
+                 long commit messages scrollable instead of clipping the
+                 dialog. Hidden entirely when the commit has no body. -->
+            <Border BorderBrush="{StaticResource BorderBrushDim}"
+                    BorderThickness="1"
+                    Background="{StaticResource BodyBgBrush}"
+                    CornerRadius="3"
+                    Margin="0,14,0,0"
+                    Padding="10,8">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasBody}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Auto"
+                              MaxHeight="380">
+                    <TextBox Text="{Binding Body, Mode=OneWay}"
+                             IsReadOnly="True"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             FontFamily="Consolas"
+                             FontSize="12"
+                             Foreground="{StaticResource ValueFgBrush}"
+                             TextWrapping="Wrap"/>
+                </ScrollViewer>
+            </Border>
+        </StackPanel>
+    </DockPanel>
+</Window>

@@ -14,6 +14,17 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **Commit metadata in the file-list column.** Each side of a
+  comparison that points at a commit now renders a compact header
+  row at the top of the file-list column showing the side label,
+  short SHA, author name, relative date, and truncated subject.
+  Clicking anywhere on the row opens a modal with the full author
+  (name plus email), the absolute date in the commit's own timezone,
+  both short and full SHA with a Copy-SHA button, and the full
+  commit message body in a scrollable region. Working-tree sides
+  render no row. For commit-vs-commit comparisons, both sides get
+  their own row. Resolves
+  [#6](https://github.com/geevensingh/DiffViewer/issues/6).
 - **Word-wrap toolbar toggle.** A new **Wrap** button next to the
   **Line #s** toggle wraps long lines at the editor's right edge in
   both side-by-side and inline modes. Useful for files with very long

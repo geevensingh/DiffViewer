@@ -193,10 +193,17 @@ public partial class MainWindow : Window
         {
             vm.ShowSettingsHandler = ShowSettingsDialog;
             vm.ShowKeyboardShortcutsHandler = ShowKeyboardShortcutsDialog;
+            vm.ShowCommitMetadataHandler = ShowCommitMetadataDialog;
             vm.ConfirmHandler = ShowConfirmDialog;
             vm.ToastHandler = ShowToast;
             vm.FocusCycleRequested = CycleFocusAcrossPanes;
         }
+    }
+
+    private void ShowCommitMetadataDialog(CommitMetadataDialogViewModel dialogVm)
+    {
+        var dialog = new CommitMetadataDialog(dialogVm) { Owner = this };
+        dialog.ShowDialog();
     }
 
     /// <summary>

@@ -133,6 +133,8 @@ internal static class CompositionRoot
         // contract — see class header).
         var gitWriteService = new GitWriteService();
 
+        var clipboardService = new WpfClipboardService();
+
         var vm = new MainViewModel(
             repo, parsed.Left, parsed.Right,
             services.DiffService, watcher,
@@ -143,7 +145,8 @@ internal static class CompositionRoot
             scope: scope,
             recentContextsService: services.RecentContextsService,
             contextSwitcher: services.ContextSwitcher,
-            newDiffDialogHost: services.NewDiffDialogHost);
+            newDiffDialogHost: services.NewDiffDialogHost,
+            clipboardService: clipboardService);
 
         await vm.LoadInitialChangesAsync(ct).ConfigureAwait(true);
         return vm;
