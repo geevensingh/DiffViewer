@@ -25,6 +25,14 @@
         <SolidColorBrush x:Key="BodyBgBrush"    Color="#FAFAFA"/>
         <SolidColorBrush x:Key="BorderBrushDim" Color="#DDDDDD"/>
 
+        <!-- Friendly-name ref badge (side-tinted to match the row). -->
+        <SolidColorBrush x:Key="RefAccentLeft"     Color="#3F6FD8"/>
+        <SolidColorBrush x:Key="RefAccentRight"    Color="#138672"/>
+        <SolidColorBrush x:Key="RefBgLeft"         Color="#3F6FD8" Opacity="0.10"/>
+        <SolidColorBrush x:Key="RefBorderLeft"     Color="#3F6FD8" Opacity="0.35"/>
+        <SolidColorBrush x:Key="RefBgRight"        Color="#138672" Opacity="0.10"/>
+        <SolidColorBrush x:Key="RefBorderRight"    Color="#138672" Opacity="0.35"/>
+
         <Style x:Key="LabelStyle" TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource LabelFgBrush}"/>
             <Setter Property="FontSize"   Value="11"/>
@@ -107,6 +115,47 @@
                             Orientation="Horizontal"
                             VerticalAlignment="Center"
                             Margin="0,0,0,4">
+                    <!-- Friendly ref name badge (git log decorate style).
+                         Collapsed when nothing decorates the commit. Same
+                         side-tint as the header row's ref badge so both
+                         surfaces use one visual language. -->
+                    <Border CornerRadius="3"
+                            BorderThickness="1"
+                            Padding="5,1"
+                            Margin="0,0,6,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Setter Property="Background" Value="{StaticResource RefBgLeft}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource RefBorderLeft}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasFriendlyName}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding SideLabel}" Value="Right">
+                                        <Setter Property="Background" Value="{StaticResource RefBgRight}"/>
+                                        <Setter Property="BorderBrush" Value="{StaticResource RefBorderRight}"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding FriendlyName}"
+                                   FontFamily="Consolas"
+                                   FontSize="11"
+                                   FontWeight="Medium">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource RefAccentLeft}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SideLabel}" Value="Right">
+                                            <Setter Property="Foreground" Value="{StaticResource RefAccentRight}"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+
                     <!-- Short SHA badge + full SHA inline. The Copy button
                          writes the full 40-char SHA to the clipboard. -->
                     <Border Background="{StaticResource BadgeBgBrush}"

@@ -47,6 +47,18 @@ public sealed partial class CommitMetadataPanelViewModel : ObservableObject
     /// <summary>Short SHA (7 chars) — the badge in the row.</summary>
     public string ShortSha => _metadata.ShortSha;
 
+    /// <summary>Optional <c>git log --decorate</c>-style label (a branch or
+    /// tag name that points at this commit). <see langword="null"/> when no
+    /// ref decorates the commit — the View renders an extra small badge
+    /// when this is non-null and hides the badge entirely when it is null.
+    /// See <see cref="CommitMetadata.FriendlyName"/> for resolution semantics.</summary>
+    public string? FriendlyName => _metadata.FriendlyName;
+
+    /// <summary>True iff <see cref="FriendlyName"/> is non-null and non-empty.
+    /// Used by the View's <c>Style.Triggers</c> to collapse the ref badge
+    /// when no friendly name resolves — no value converter needed.</summary>
+    public bool HasFriendlyName => !string.IsNullOrEmpty(_metadata.FriendlyName);
+
     /// <summary>Author display name (no email) — rendered in the row.</summary>
     public string AuthorName => _metadata.AuthorName;
 

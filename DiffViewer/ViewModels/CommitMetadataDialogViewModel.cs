@@ -23,6 +23,15 @@ public sealed partial class CommitMetadataDialogViewModel : ObservableObject
     public string SideLabel { get; }
     public string FullSha { get; }
     public string ShortSha { get; }
+
+    /// <summary>Optional <c>git log --decorate</c>-style label — see
+    /// <see cref="CommitMetadata.FriendlyName"/> for resolution semantics
+    /// and <see cref="HasFriendlyName"/> for the View-binding helper.</summary>
+    public string? FriendlyName { get; }
+
+    /// <summary>True iff <see cref="FriendlyName"/> is non-null and non-empty.</summary>
+    public bool HasFriendlyName { get; }
+
     public string AuthorName { get; }
     public string AuthorEmail { get; }
 
@@ -54,6 +63,8 @@ public sealed partial class CommitMetadataDialogViewModel : ObservableObject
         SideLabel = sideLabel ?? string.Empty;
         FullSha = metadata.Sha;
         ShortSha = metadata.ShortSha;
+        FriendlyName = metadata.FriendlyName;
+        HasFriendlyName = !string.IsNullOrEmpty(metadata.FriendlyName);
         AuthorName = metadata.AuthorName;
         AuthorEmail = metadata.AuthorEmail;
         AuthorDisplay = string.IsNullOrEmpty(metadata.AuthorEmail)

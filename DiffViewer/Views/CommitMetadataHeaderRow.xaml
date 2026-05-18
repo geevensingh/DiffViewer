@@ -12,6 +12,14 @@
         <SolidColorBrush x:Key="HeaderRowBadgeBg"     Color="#E8E8E8"/>
         <SolidColorBrush x:Key="HeaderRowAccentLeft"  Color="#3F6FD8"/>
         <SolidColorBrush x:Key="HeaderRowAccentRight" Color="#138672"/>
+
+        <!-- Side-tinted backgrounds + borders for the friendly-name badge.
+             Low-opacity accent tints so the badge reads as side-coloured
+             without competing with the row's accent stripe. -->
+        <SolidColorBrush x:Key="HeaderRowRefBgLeft"      Color="#3F6FD8" Opacity="0.10"/>
+        <SolidColorBrush x:Key="HeaderRowRefBorderLeft"  Color="#3F6FD8" Opacity="0.35"/>
+        <SolidColorBrush x:Key="HeaderRowRefBgRight"     Color="#138672" Opacity="0.10"/>
+        <SolidColorBrush x:Key="HeaderRowRefBorderRight" Color="#138672" Opacity="0.35"/>
     </UserControl.Resources>
 
     <!-- Whole row is one click target. The Border has the click binding,
@@ -58,6 +66,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
@@ -72,9 +81,53 @@
                        VerticalAlignment="Center"
                        Foreground="{StaticResource HeaderRowDimFgBrush}"/>
 
+            <!-- Friendly ref name badge (git log decorate style). Collapsed via
+                 Style.Triggers when no ref decorates the commit, so the
+                 row layout degrades cleanly to "side label + short SHA"
+                 in that case. Side-tinted background + border to read as
+                 part of the same side as the accent stripe. -->
+            <Border Grid.Row="0" Grid.Column="1"
+                    CornerRadius="3"
+                    BorderThickness="1"
+                    Padding="5,1"
+                    Margin="0,0,6,0"
+                    VerticalAlignment="Center">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Setter Property="Background" Value="{StaticResource HeaderRowRefBgLeft}"/>
+                        <Setter Property="BorderBrush" Value="{StaticResource HeaderRowRefBorderLeft}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasFriendlyName}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding SideLabel}" Value="Right">
+                                <Setter Property="Background" Value="{StaticResource HeaderRowRefBgRight}"/>
+                                <Setter Property="BorderBrush" Value="{StaticResource HeaderRowRefBorderRight}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock Text="{Binding FriendlyName}"
+                           FontFamily="Consolas"
+                           FontSize="11"
+                           FontWeight="Medium">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource HeaderRowAccentLeft}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SideLabel}" Value="Right">
+                                    <Setter Property="Foreground" Value="{StaticResource HeaderRowAccentRight}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Border>
+
             <!-- Short SHA badge. Monospace for SHA discoverability;
                  a soft background to read as a metadata chip. -->
-            <Border Grid.Row="0" Grid.Column="1"
+            <Border Grid.Row="0" Grid.Column="2"
                     Background="{StaticResource HeaderRowBadgeBg}"
                     CornerRadius="3"
                     Padding="5,1"
@@ -88,7 +141,7 @@
 
             <!-- Author name. Trims if cramped — full author shows in the
                  modal. -->
-            <TextBlock Grid.Row="0" Grid.Column="2"
+            <TextBlock Grid.Row="0" Grid.Column="3"
                        Text="{Binding AuthorName}"
                        FontSize="11"
                        VerticalAlignment="Center"
@@ -97,7 +150,7 @@
 
             <!-- Relative date with absolute-date tooltip (in the commit's
                  own timezone). -->
-            <TextBlock Grid.Row="0" Grid.Column="3"
+            <TextBlock Grid.Row="0" Grid.Column="4"
                        Text="{Binding RelativeDate}"
                        FontSize="11"
                        VerticalAlignment="Center"
@@ -107,7 +160,7 @@
                        ToolTipService.InitialShowDelay="300"/>
 
             <!-- Subject - single line, ellipsized; full body is in the modal. -->
-            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4"
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5"
                        Text="{Binding Subject}"
                        FontSize="11"
                        Margin="0,2,0,0"

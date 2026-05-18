@@ -23,7 +23,13 @@ body. Keep section headings exact and write notes in Markdown.
   both short and full SHA with a Copy-SHA button, and the full
   commit message body in a scrollable region. Working-tree sides
   render no row. For commit-vs-commit comparisons, both sides get
-  their own row. Resolves
+  their own row. When a branch or tag points exactly at the commit,
+  a side-tinted ref badge appears before the short SHA in both the
+  header row and the dialog — so e.g. comparing against `HEAD` reads
+  as `master`, and a tagged release reads as `v0.4.0`. Priority is
+  HEAD's branch, then tags, then other local branches, then
+  remote-tracking branches; ties within a tier are broken
+  alphabetically. Matches `git log --decorate` semantics. Resolves
   [#6](https://github.com/geevensingh/DiffViewer/issues/6).
 - **Word-wrap toolbar toggle.** A new **Wrap** button next to the
   **Line #s** toggle wraps long lines at the editor's right edge in

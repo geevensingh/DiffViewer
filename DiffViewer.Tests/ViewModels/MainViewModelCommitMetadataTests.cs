@@ -33,7 +33,10 @@ public class MainViewModelCommitMetadataTests : IDisposable
         try { Directory.Delete(_repoRoot, recursive: true); } catch { /* best effort */ }
     }
 
-    private static CommitMetadata Meta(string sha = "1111111111111111111111111111111111111111", string subject = "subj") =>
+    private static CommitMetadata Meta(
+        string sha = "1111111111111111111111111111111111111111",
+        string subject = "subj",
+        string? friendlyName = null) =>
         new(
             Sha: sha,
             ShortSha: sha[..7],
@@ -41,7 +44,8 @@ public class MainViewModelCommitMetadataTests : IDisposable
             AuthorEmail: "g@example.com",
             AuthorDate: new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero),
             MessageSubject: subject,
-            MessageBody: string.Empty);
+            MessageBody: string.Empty,
+            FriendlyName: friendlyName);
 
     private MainViewModel BuildVm(
         DiffSide left,
@@ -153,6 +157,29 @@ public class MainViewModelCommitMetadataTests : IDisposable
         // Handler intentionally left null.
         var act = () => vm.RightCommitPanel!.ShowDetailsCommand.Execute(null);
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void FriendlyName_FlowsFromService_ThroughPanelAndIntoDialog()
+    {
+        // End-to-end: a service that resolves a friendly name should yield
+        // a panel VM (and dialog VM) that exposes it. This is the
+        // integration regression net for the issue-#6 follow-up.
+        var repo = new FakeRepo();
+        repo.CommitMetadataByRef["HEAD"] = Meta(subject: "tip", friendlyName: "master");
+        using var vm = BuildVm(new DiffSide.WorkingTree(), new DiffSide.CommitIsh("HEAD"), repo);
+
+        vm.RightCommitPanel.Should().NotBeNull();
+        vm.RightCommitPanel!.FriendlyName.Should().Be("master");
+        vm.RightCommitPanel.HasFriendlyName.Should().BeTrue();
+
+        CommitMetadataDialogViewModel? dialogSeen = null;
+        vm.ShowCommitMetadataHandler = d => dialogSeen = d;
+        vm.RightCommitPanel.ShowDetailsCommand.Execute(null);
+
+        dialogSeen.Should().NotBeNull();
+        dialogSeen!.FriendlyName.Should().Be("master");
+        dialogSeen.HasFriendlyName.Should().BeTrue();
     }
 
     // ----- Minimal IRepositoryService fake (commit-metadata focused) -----

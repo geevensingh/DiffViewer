@@ -18,7 +18,8 @@ public class CommitMetadataPanelViewModelTests
         string email = "geeven@example.com",
         string subject = "Add commit metadata panel",
         string body = "",
-        DateTimeOffset? authorDate = null) =>
+        DateTimeOffset? authorDate = null,
+        string? friendlyName = null) =>
         new(
             Sha: sha,
             ShortSha: sha[..7],
@@ -26,7 +27,8 @@ public class CommitMetadataPanelViewModelTests
             AuthorEmail: email,
             AuthorDate: authorDate ?? new DateTimeOffset(2026, 1, 15, 9, 30, 0, TimeSpan.FromHours(-8)),
             MessageSubject: subject,
-            MessageBody: body);
+            MessageBody: body,
+            FriendlyName: friendlyName);
 
     [Fact]
     public void Properties_PopulateFromMetadata()
@@ -46,6 +48,32 @@ public class CommitMetadataPanelViewModelTests
         vm.RelativeDate.Should().Be("1 hour ago");
         vm.AbsoluteDate.Should().Be("2026-01-15 09:30:00 -08:00");
         vm.Metadata.Should().Be(metadata);
+        vm.FriendlyName.Should().BeNull();
+        vm.HasFriendlyName.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FriendlyName_FlowsThrough_WhenMetadataCarriesOne()
+    {
+        var metadata = SampleMetadata(friendlyName: "master");
+
+        var vm = new CommitMetadataPanelViewModel("Left", metadata);
+
+        vm.FriendlyName.Should().Be("master");
+        vm.HasFriendlyName.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasFriendlyName_IsFalse_ForEmptyString()
+    {
+        // Defensive: empty string is not a useful "ref" — treat as absent
+        // so the ref badge collapses even if a service ever returns "".
+        var metadata = SampleMetadata(friendlyName: "");
+
+        var vm = new CommitMetadataPanelViewModel("Left", metadata);
+
+        vm.FriendlyName.Should().Be("");
+        vm.HasFriendlyName.Should().BeFalse();
     }
 
     [Fact]

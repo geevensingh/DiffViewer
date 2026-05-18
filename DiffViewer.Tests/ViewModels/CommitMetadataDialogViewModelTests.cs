@@ -18,7 +18,8 @@ public class CommitMetadataDialogViewModelTests
         string email = "geeven@example.com",
         string subject = "Show commit metadata in header rows",
         string body = "Long-form body text.\nWith multiple lines.\n\nAnd a paragraph break.",
-        DateTimeOffset? authorDate = null) =>
+        DateTimeOffset? authorDate = null,
+        string? friendlyName = null) =>
         new(
             Sha: sha,
             ShortSha: sha[..7],
@@ -26,7 +27,8 @@ public class CommitMetadataDialogViewModelTests
             AuthorEmail: email,
             AuthorDate: authorDate ?? new DateTimeOffset(2026, 2, 20, 14, 0, 0, TimeSpan.FromHours(-8)),
             MessageSubject: subject,
-            MessageBody: body);
+            MessageBody: body,
+            FriendlyName: friendlyName);
 
     private sealed class RecordingClipboard : IClipboardService
     {
@@ -57,6 +59,30 @@ public class CommitMetadataDialogViewModelTests
         vm.AuthorDate.Should().Be(metadata.AuthorDate);
         vm.AbsoluteDate.Should().Be("2026-02-20 14:00:00 -08:00");
         vm.RelativeDate.Should().Be("yesterday");
+        vm.FriendlyName.Should().BeNull();
+        vm.HasFriendlyName.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FriendlyName_FlowsThrough_WhenMetadataCarriesOne()
+    {
+        var metadata = SampleMetadata(friendlyName: "v0.4.0");
+
+        var vm = new CommitMetadataDialogViewModel(metadata);
+
+        vm.FriendlyName.Should().Be("v0.4.0");
+        vm.HasFriendlyName.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HasFriendlyName_IsFalse_ForEmptyString()
+    {
+        var metadata = SampleMetadata(friendlyName: "");
+
+        var vm = new CommitMetadataDialogViewModel(metadata);
+
+        vm.FriendlyName.Should().Be("");
+        vm.HasFriendlyName.Should().BeFalse();
     }
 
     [Fact]
