@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DiffViewer.Models;
 using DiffViewer.Services;
 using DiffViewer.Utility;
@@ -31,21 +33,30 @@ namespace DiffViewer.ViewModels;
 /// <para><b>IsEnabled</b> is bound to <c>!ContextSwitcher.IsSwitching</c>
 /// so the dropdown disables itself for the duration of an in-flight
 /// switch.</para>
+///
+/// <para><b>NewDiffCommand</b> opens the "New diff" modal dialog
+/// (Phase 2/3 of the in-app mode-switching feature). The command is
+/// wired only when both a <see cref="IContextSwitcher"/> and a
+/// <see cref="INewDiffDialogHost"/> are provided; tests that don't
+/// exercise that path leave them null and the button hides.</para>
 /// </summary>
 public sealed class RecentContextsViewModel : ObservableObject, IDisposable
 {
     private readonly IRecentContextsService _service;
     private readonly IContextSwitcher? _switcher;
+    private readonly INewDiffDialogHost? _newDiffDialogHost;
     private readonly ContextIdentity? _currentIdentity;
     private bool _disposed;
 
     public RecentContextsViewModel(
         IRecentContextsService service,
         IContextSwitcher? switcher,
-        ContextIdentity? currentIdentity)
+        ContextIdentity? currentIdentity,
+        INewDiffDialogHost? newDiffDialogHost = null)
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
         _switcher = switcher;
+        _newDiffDialogHost = newDiffDialogHost;
         _currentIdentity = currentIdentity;
 
         _service.Changed += OnRecentsChanged;
@@ -53,6 +64,8 @@ public sealed class RecentContextsViewModel : ObservableObject, IDisposable
         {
             _switcher.PropertyChanged += OnSwitcherPropertyChanged;
         }
+
+        NewDiffCommand = new AsyncRelayCommand(OpenNewDiffAsync, () => IsNewDiffEnabled);
     }
 
     /// <summary>MRU-ordered snapshot from the singleton service.</summary>
@@ -117,6 +130,50 @@ public sealed class RecentContextsViewModel : ObservableObject, IDisposable
 
     /// <summary>True when there are no entries to show — used to surface a hint label.</summary>
     public bool IsEmpty => Items.Count == 0;
+
+    /// <summary>
+    /// Whether the <see cref="NewDiffCommand"/> can run. Bound (via
+    /// <c>BooleanToVisibilityConverter</c>) to the button's visibility
+    /// so tests + degenerate startup paths that lack the host or
+    /// switcher don't surface a non-functional button.
+    /// </summary>
+    public bool IsNewDiffEnabled => _newDiffDialogHost is not null && _switcher is not null;
+
+    /// <summary>
+    /// Opens the "New diff" modal dialog. On confirmation, dispatches
+    /// the user's selection to <see cref="IContextSwitcher.SwitchToAsync"/>.
+    /// </summary>
+    public IAsyncRelayCommand NewDiffCommand { get; }
+
+    private async Task OpenNewDiffAsync()
+    {
+        if (_newDiffDialogHost is null || _switcher is null) return;
+
+        var prefilledRepoPath = _currentIdentity?.CanonicalRepoPath;
+        DiffLaunchSource? choice;
+        try
+        {
+            choice = await _newDiffDialogHost.ShowAsync(prefilledRepoPath, CancellationToken.None)
+                .ConfigureAwait(true);
+        }
+        catch
+        {
+            // Host failures (rare; e.g. dispatcher already shut down)
+            // are not worth a user-facing toast on the cancel path.
+            return;
+        }
+        if (choice is null) return; // user cancelled
+
+        try
+        {
+            await _switcher.SwitchToAsync(choice, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch
+        {
+            // Same rationale as the recents-row path: the coordinator
+            // already surfaces failures via the dialog service.
+        }
+    }
 
     private async Task SwitchAsync(RecentLaunchContext picked)
     {

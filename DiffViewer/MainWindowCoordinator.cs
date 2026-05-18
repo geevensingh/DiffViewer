@@ -555,7 +555,8 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
             var recents = new RecentContextsViewModel(
                 _services.RecentContextsService,
                 this,
-                currentIdentity: null);
+                currentIdentity: null,
+                _services.NewDiffDialogHost);
             var emptyVm = new EmptyContextViewModel(
                 recents,
                 $"{errorMessage}{Environment.NewLine}{Environment.NewLine}Pick a recent context above to load it.");

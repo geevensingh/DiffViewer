@@ -6,41 +6,55 @@
              xmlns:vm="clr-namespace:DiffViewer.ViewModels"
              d:DataContext="{d:DesignInstance Type=vm:RecentContextsViewModel}"
              mc:Ignorable="d">
-    <!-- The whole bar collapses when there are no recent entries: bind
-         Visibility to !IsEmpty via the existing inverse converter. -->
-    <UserControl.Style>
-        <Style TargetType="UserControl">
-            <Setter Property="Visibility" Value="Visible"/>
-            <Style.Triggers>
-                <DataTrigger Binding="{Binding IsEmpty}" Value="True">
-                    <Setter Property="Visibility" Value="Collapsed"/>
-                </DataTrigger>
-            </Style.Triggers>
-        </Style>
-    </UserControl.Style>
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
 
     <Border Padding="6,4"
             Background="#F5F5F5"
             BorderBrush="#DDDDDD"
             BorderThickness="0,0,0,1">
-        <ComboBox ItemsSource="{Binding ItemViews}"
-                  SelectedItem="{Binding SelectedItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                  IsEnabled="{Binding IsEnabled}"
-                  AutomationProperties.Name="Recent contexts"
-                  ToolTipService.ShowOnDisabled="True">
-            <ComboBox.ItemTemplate>
-                <DataTemplate DataType="{x:Type vm:RecentContextItem}">
-                    <StackPanel Orientation="Vertical"
-                                ToolTip="{Binding Tooltip}"
-                                AutomationProperties.Name="{Binding AccessibilityName}">
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
-                        <TextBlock Text="{Binding Subtitle}"
-                                   FontSize="10"
-                                   Foreground="#888888"
-                                   TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                </DataTemplate>
-            </ComboBox.ItemTemplate>
-        </ComboBox>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding ItemViews}"
+                      SelectedItem="{Binding SelectedItem, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      IsEnabled="{Binding IsEnabled}"
+                      AutomationProperties.Name="Recent contexts"
+                      ToolTipService.ShowOnDisabled="True">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:RecentContextItem}">
+                        <StackPanel Orientation="Vertical"
+                                    ToolTip="{Binding Tooltip}"
+                                    AutomationProperties.Name="{Binding AccessibilityName}">
+                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding Subtitle}"
+                                       FontSize="10"
+                                       Foreground="#888888"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <!-- "+ New diff" opens the mode-picker dialog (commit vs
+                 commit, working tree vs HEAD/commit, GitHub PR, etc.).
+                 Hidden when no dialog host or switcher is wired (tests,
+                 degenerate startup paths) so we never present a
+                 non-functional button. -->
+            <Button Grid.Column="1"
+                    Margin="6,0,0,0"
+                    Padding="10,2"
+                    MinWidth="90"
+                    Content="+ New diff"
+                    Command="{Binding NewDiffCommand}"
+                    Visibility="{Binding IsNewDiffEnabled, Converter={StaticResource BoolToVis}}"
+                    AutomationProperties.Name="New diff"
+                    ToolTip="Start a new diff without restarting the app"/>
+        </Grid>
     </Border>
 </UserControl>

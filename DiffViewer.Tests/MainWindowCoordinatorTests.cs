@@ -148,7 +148,7 @@ public class MainWindowCoordinatorTests
         recents.SeededItems.Add(MakeContext(@"C:\repos\foo", "main"));
         var services = new AppServices(
             new SettingsService(), new DiffService(), new ExternalAppLauncher(null), recents,
-            new FakePullRequestResolver(), new FakeMissingClonePromptHost());
+            new FakePullRequestResolver(), new FakeMissingClonePromptHost(), new FakeNewDiffDialogHost());
 
         var coordinator = new MainWindowCoordinator(
             services, dialog, default, shutdownAction: c => exitCode = c);
@@ -395,7 +395,8 @@ public class MainWindowCoordinatorTests
             new ExternalAppLauncher(null),
             recents,
             prResolver,
-            prompt);
+            prompt,
+            new FakeNewDiffDialogHost());
     }
 
     private static TempRepo MakeRepoWithCommit()
@@ -475,6 +476,18 @@ public class MainWindowCoordinatorTests
             DiffViewer.Models.PullRequestRef pr, System.Threading.CancellationToken ct = default)
         {
             Calls.Add(pr);
+            return Task.FromResult(NextResult);
+        }
+    }
+
+    internal sealed class FakeNewDiffDialogHost : INewDiffDialogHost
+    {
+        public DiffViewer.Models.DiffLaunchSource? NextResult { get; set; }
+        public int Calls { get; private set; }
+        public Task<DiffViewer.Models.DiffLaunchSource?> ShowAsync(
+            string? prefilledRepoPath, System.Threading.CancellationToken ct = default)
+        {
+            Calls++;
             return Task.FromResult(NextResult);
         }
     }

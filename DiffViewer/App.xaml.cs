@@ -54,9 +54,23 @@ public partial class App : Application
             settingsService, repoInspector, cloner,
             ownerLookup: () => Application.Current?.MainWindow);
 
+        // "New diff" dialog (Phase 2/3 of the in-app mode-switching
+        // feature). Validator wraps a fresh ProcessCommandLineEnvironment
+        // — same seam the CLI parser uses, so the dialog accepts the
+        // same paths and commit-ish refs the command line does. The
+        // ownerLookup closure runs at dialog-show time so it picks up
+        // the live MainWindow, matching the MissingClonePromptHost
+        // pattern.
+        var diffLaunchValidator = new DiffLaunchValidator(new ProcessCommandLineEnvironment());
+        var diffModeRegistry = DiffModeRegistry.BuildDefault();
+        var newDiffDialogHost = new NewDiffDialogHost(
+            diffModeRegistry,
+            diffLaunchValidator,
+            ownerLookup: () => Application.Current?.MainWindow);
+
         var services = new AppServices(
             settingsService, diffService, externalAppLauncher, recents,
-            prResolver, missingClonePromptHost);
+            prResolver, missingClonePromptHost, newDiffDialogHost);
 
         _coordinator = new MainWindowCoordinator(
             services,

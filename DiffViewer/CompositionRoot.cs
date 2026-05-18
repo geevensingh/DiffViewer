@@ -142,7 +142,8 @@ internal static class CompositionRoot
             externalAppLauncher: services.ExternalAppLauncher,
             scope: scope,
             recentContextsService: services.RecentContextsService,
-            contextSwitcher: services.ContextSwitcher);
+            contextSwitcher: services.ContextSwitcher,
+            newDiffDialogHost: services.NewDiffDialogHost);
 
         await vm.LoadInitialChangesAsync(ct).ConfigureAwait(true);
         return vm;

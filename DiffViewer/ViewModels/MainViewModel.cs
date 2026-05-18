@@ -536,7 +536,8 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         IExternalAppLauncher? externalAppLauncher = null,
         ContextScope? scope = null,
         IRecentContextsService? recentContextsService = null,
-        IContextSwitcher? contextSwitcher = null)
+        IContextSwitcher? contextSwitcher = null,
+        INewDiffDialogHost? newDiffDialogHost = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _left = left ?? throw new ArgumentNullException(nameof(left));
@@ -569,7 +570,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         if (recentContextsService is not null)
         {
             var identity = ContextIdentityFactory.Create(repository.Shape.RepoRoot, left, right);
-            _recents = new RecentContextsViewModel(recentContextsService, contextSwitcher, identity);
+            _recents = new RecentContextsViewModel(recentContextsService, contextSwitcher, identity, newDiffDialogHost);
             _scope.Register(_recents);
         }
 
