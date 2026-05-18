@@ -12,9 +12,11 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-17
+
 ### Added
 
-- **Commit metadata in the file-list column.** Each side of a
+- **Commit metadata in the file-list column.**Each side of a
   comparison that points at a commit now renders a compact header
   row at the top of the file-list column showing the side label,
   short SHA, author name, relative date, and truncated subject.
@@ -222,7 +224,8 @@ The binary is unsigned, so Windows SmartScreen may warn on first
 launch — click **"More info"** → **"Run anyway"**. Code signing is
 planned for a later release.
 
-[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/geevensingh/DiffViewer/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/geevensingh/DiffViewer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/geevensingh/DiffViewer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/geevensingh/DiffViewer/compare/v0.1.0...v0.2.0
