@@ -14,6 +14,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **Find-in-diff with Ctrl+F.** Press Ctrl+F in the diff pane to
+  open AvalonEdit's find bar with Match-Case / Whole-Words / Regex
+  toggles. F3 / Shift+F3 step to the next / previous match; Esc
+  closes the find bar. Works in both side-by-side and inline modes.
+  Ctrl+F pressed while focus is on the file list automatically
+  routes to the visible diff editor, so "click file → Ctrl+F" works
+  without an intermediate click into the editor. Resolves
+  [#2](https://github.com/geevensingh/DiffViewer/issues/2).
+
+
+### Added
+
 - **Launch directly into a GitHub pull request's diff.** Pass a PR URL
   on the command line (`DiffViewer.exe https://github.com/owner/repo/pull/123`)
   and DiffViewer resolves the PR's `(merge-base, head)` into a normal

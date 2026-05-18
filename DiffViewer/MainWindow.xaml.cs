@@ -250,26 +250,57 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Esc cascading-close: closes the closest find-panel first.
-    /// 1. If the focused diff pane has its find panel open, close it.
-    /// 2. Else if the other diff pane has its find open, close it.
-    /// 3. Else clear the file-list selection.
+    /// Window-level key handler. Currently routes two shortcuts:
+    /// <list type="bullet">
+    /// <item><c>Esc</c> — cascading-close that prefers an open find
+    /// panel over the file-list deselect fallback.</item>
+    /// <item><c>Ctrl+F</c> — if focus is outside the three diff
+    /// editors, focus the visible one and open its find bar. When
+    /// focus is already inside an editor we let the event keep
+    /// tunneling so the editor's own <c>SearchPanel</c> binding
+    /// handles it.</item>
+    /// </list>
     /// </summary>
     private void OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (e.Key != System.Windows.Input.Key.Escape) return;
+        if (e.Key == System.Windows.Input.Key.Escape)
+        {
+            HandleEscape(e);
+            return;
+        }
+        if (e.Key == System.Windows.Input.Key.F &&
+            System.Windows.Input.Keyboard.Modifiers == System.Windows.Input.ModifierKeys.Control)
+        {
+            HandleCtrlF(e);
+            return;
+        }
+    }
 
-        var leftEditor  = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("LeftEditor");
-        var rightEditor = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("RightEditor");
+    /// <summary>
+    /// Esc cascading-close: closes the closest find-panel first.
+    /// 1. If the focused diff pane has its find panel open, close it.
+    /// 2. Else if another diff pane has its find open, close it.
+    /// 3. Else clear the file-list selection.
+    /// </summary>
+    private void HandleEscape(System.Windows.Input.KeyEventArgs e)
+    {
+        var leftEditor   = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("LeftEditor");
+        var rightEditor  = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("RightEditor");
+        var inlineEditor = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("InlineEditor");
         var focused = FocusManager.GetFocusedElement(this);
 
-        // Walk focus → other → fall through to selection clear.
-        var focusOwner = WhichEditor(focused, leftEditor, rightEditor);
+        // Walk focus → other side → inline → fall through to selection
+        // clear. Only one editor is "visible" at a time (SBS hides
+        // Inline; inline hides SBS) so TryCloseFindPanel naturally
+        // short-circuits on collapsed editors via the IsVisible check
+        // on the panel itself.
+        var focusOwner = WhichEditor(focused, leftEditor, rightEditor, inlineEditor);
         var ordered = focusOwner switch
         {
-            "left"  => new[] { leftEditor, rightEditor },
-            "right" => new[] { rightEditor, leftEditor },
-            _       => new[] { leftEditor, rightEditor },
+            "left"   => new[] { leftEditor,   rightEditor,  inlineEditor },
+            "right"  => new[] { rightEditor,  leftEditor,   inlineEditor },
+            "inline" => new[] { inlineEditor, leftEditor,   rightEditor  },
+            _        => new[] { leftEditor,   rightEditor,  inlineEditor },
         };
         foreach (var ed in ordered)
         {
@@ -282,13 +313,59 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Global Ctrl+F: route to the visible diff editor when focus is
+    /// outside the three editors. The most common path here is
+    /// "click file in list → press Ctrl+F" — file-list selection does
+    /// not auto-transfer focus to the editor, so without this redirect
+    /// Ctrl+F would feel broken from the file list. When focus is
+    /// already inside an editor we deliberately do nothing: the event
+    /// keeps tunneling and the editor's own <c>SearchPanel</c>-
+    /// installed command binding handles Find natively.
+    /// </summary>
+    private void HandleCtrlF(System.Windows.Input.KeyEventArgs e)
+    {
+        var leftEditor   = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("LeftEditor");
+        var rightEditor  = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("RightEditor");
+        var inlineEditor = FindDescendant<ICSharpCode.AvalonEdit.TextEditor>("InlineEditor");
+        var focused = FocusManager.GetFocusedElement(this);
+
+        if (WhichEditor(focused, leftEditor, rightEditor, inlineEditor) is not null)
+        {
+            // Editor-internal Ctrl+F: let the editor's own SearchPanel
+            // binding handle it via continued tunneling.
+            return;
+        }
+
+        // Prefer InlineEditor (only visible in inline mode), then Left,
+        // then Right (the rare side-by-side fallback when Left is
+        // hidden via the per-side toggles). IsVisible reflects the
+        // effective visibility through the Visibility bindings on the
+        // editors and their containing Grids.
+        var candidates = new[] { inlineEditor, leftEditor, rightEditor };
+        foreach (var editor in candidates)
+        {
+            if (editor is null) continue;
+            if (!editor.IsVisible) continue;
+            editor.Focus();
+            if (System.Windows.Input.ApplicationCommands.Find.CanExecute(null, editor.TextArea))
+            {
+                System.Windows.Input.ApplicationCommands.Find.Execute(null, editor.TextArea);
+                e.Handled = true;
+            }
+            return;
+        }
+    }
+
     private static string? WhichEditor(IInputElement? focused,
         ICSharpCode.AvalonEdit.TextEditor? left,
-        ICSharpCode.AvalonEdit.TextEditor? right)
+        ICSharpCode.AvalonEdit.TextEditor? right,
+        ICSharpCode.AvalonEdit.TextEditor? inline)
     {
         if (focused is null) return null;
-        if (left  is not null && IsLogicalDescendant(left,  focused as DependencyObject)) return "left";
-        if (right is not null && IsLogicalDescendant(right, focused as DependencyObject)) return "right";
+        if (left   is not null && IsLogicalDescendant(left,   focused as DependencyObject)) return "left";
+        if (right  is not null && IsLogicalDescendant(right,  focused as DependencyObject)) return "right";
+        if (inline is not null && IsLogicalDescendant(inline, focused as DependencyObject)) return "inline";
         return null;
     }
 
