@@ -305,31 +305,70 @@ public sealed class LocalRepoLocatorTests : IDisposable
     [Fact]
     public void TryLocate_SlowRoot_TimesOut_OtherRootsStillScanned()
     {
-        // Simulate a slow inspector for one specific child path. The
-        // locator should give up on that root after the timeout but
-        // still scan the other root successfully.
+        // Deterministic test: inject a fake IRootScanRunner that marks
+        // one root as "timed out" by name, never invoking its scan
+        // delegate. Other roots are scanned inline on the calling
+        // thread. This decouples the test from the .NET thread pool's
+        // ability to schedule two Task.Run calls within the per-root
+        // timeout — that scheduling latency is exactly what flaked on
+        // CI when both the slow root's still-running scan and the
+        // fast root's pending Task.Run competed for workers.
         var settings = new FakeSettingsService();
         var slowRoot = CreateScannableDir("slow-root");
-        var slowChild = CreateScannableDir(@"slow-root\slow-clone");
         var fastRoot = CreateScannableDir("fast-root");
         var fastChild = CreateScannableDir(@"fast-root\fast-clone");
 
-        var inspector = new FakeRepoInspector
-        {
-            OverrideIsRepository = path =>
-            {
-                if (path == slowChild) Thread.Sleep(2000);
-                return path == fastChild;
-            },
-        };
+        var inspector = new FakeRepoInspector();
         inspector.RemotesByPath[fastChild] = new[] { "https://github.com/owner/repo.git" };
+
+        var scanRunner = new SelectiveTimeoutScanRunner(timeoutForRoot: slowRoot);
 
         settings.Save(settings.Current with { RepoRoots = new[] { slowRoot, fastRoot } });
 
         using var locator = new LocalRepoLocator(
-            settings, inspector, perRootTimeout: TimeSpan.FromMilliseconds(200));
+            settings,
+            inspector,
+            perRootTimeout: TimeSpan.FromMilliseconds(200),
+            scanRunner: scanRunner);
         var result = locator.TryLocate("github.com", "owner", "repo");
 
         result.Path.Should().Be(fastChild);
+        scanRunner.TimedOutRoots.Should().ContainSingle().Which.Should().Be(slowRoot);
+        scanRunner.CompletedRoots.Should().ContainSingle().Which.Should().Be(fastRoot);
+    }
+
+    /// <summary>
+    /// Test fake for <see cref="IRootScanRunner"/>: scans the named
+    /// "slow" root are reported as having timed out (without running
+    /// the scan delegate); every other root is scanned inline.
+    /// </summary>
+    private sealed class SelectiveTimeoutScanRunner : IRootScanRunner
+    {
+        private readonly string _timeoutForRoot;
+        public List<string> TimedOutRoots { get; } = new();
+        public List<string> CompletedRoots { get; } = new();
+
+        public SelectiveTimeoutScanRunner(string timeoutForRoot)
+        {
+            _timeoutForRoot = timeoutForRoot;
+        }
+
+        public bool TryRunWithTimeout(
+            string root,
+            Func<IReadOnlyList<(RepoUrlKey Key, string Path)>> scan,
+            TimeSpan timeout,
+            out IReadOnlyList<(RepoUrlKey Key, string Path)> result)
+        {
+            if (string.Equals(root, _timeoutForRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                TimedOutRoots.Add(root);
+                result = Array.Empty<(RepoUrlKey, string)>();
+                return false;
+            }
+
+            CompletedRoots.Add(root);
+            result = scan();
+            return true;
+        }
     }
 }

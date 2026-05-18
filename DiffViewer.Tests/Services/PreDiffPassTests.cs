@@ -81,26 +81,51 @@ public sealed class PreDiffPassTests
     [Fact]
     public async Task Start_RespectsMaxConcurrency()
     {
+        const int maxConcurrency = 3;
         var repo = new FakeRepo();
         var inFlight = 0;
         var peak = 0;
         var peakLock = new object();
+        // Gate forces scripted diffs to park until the test releases
+        // them. This decouples peak observation from real wall-clock
+        // timing: we measure peak when the dispatcher has actually
+        // saturated, not "however many workers happened to be up
+        // within Thread.Sleep(40)".
+        using var release = new ManualResetEventSlim(initialState: false);
         var diff = new ScriptedDiffService(_ =>
         {
             var current = Interlocked.Increment(ref inFlight);
             lock (peakLock) { if (current > peak) peak = current; }
-            Thread.Sleep(40);
+            release.Wait();
             Interlocked.Decrement(ref inFlight);
             return true;
         });
-        using var pass = new PreDiffPass(repo, diff, maxConcurrency: 3, uiMarshaller: a => a());
+        using var pass = new PreDiffPass(repo, diff, maxConcurrency: maxConcurrency, uiMarshaller: a => a());
 
         var entries = MakeEntries(Enumerable.Range(0, 20).Select(i => $"f{i:00}.txt").ToArray());
         pass.Start(entries, selectedEntry: null, new DiffOptions());
+
+        try
+        {
+            // Wait until the dispatcher has saturated maxConcurrency
+            // workers, however long that takes on this runner. The
+            // 30 s deadline is a safety net for a genuine dispatcher
+            // bug, not a tuned timing budget.
+            await WaitUntil(
+                () => Volatile.Read(ref inFlight) >= maxConcurrency,
+                TimeSpan.FromSeconds(30));
+        }
+        finally
+        {
+            // Always release so workers can drain even if saturation
+            // never happened — keeps the failure mode a clean
+            // assertion miss rather than a deadlocked test process.
+            release.Set();
+        }
+
         await WaitForStamps(entries);
 
-        peak.Should().BeLessThanOrEqualTo(3);
-        peak.Should().BeGreaterThan(1, "concurrency=3 should actually parallelise on 20 entries");
+        peak.Should().Be(maxConcurrency);
     }
 
     [Fact]

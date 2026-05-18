@@ -34,6 +34,7 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
     private readonly ISettingsService _settings;
     private readonly IRepoInspector _inspector;
     private readonly TimeSpan _perRootTimeout;
+    private readonly IRootScanRunner _scanRunner;
     private readonly object _gate = new();
     private Dictionary<RepoUrlKey, string>? _cache;
     private IReadOnlyList<string> _cachedRootsSnapshot = Array.Empty<string>();
@@ -42,10 +43,20 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
         ISettingsService settings,
         IRepoInspector inspector,
         TimeSpan? perRootTimeout = null)
+        : this(settings, inspector, perRootTimeout, scanRunner: null)
+    {
+    }
+
+    internal LocalRepoLocator(
+        ISettingsService settings,
+        IRepoInspector inspector,
+        TimeSpan? perRootTimeout,
+        IRootScanRunner? scanRunner)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _inspector = inspector ?? throw new ArgumentNullException(nameof(inspector));
         _perRootTimeout = perRootTimeout ?? DefaultPerRootTimeout;
+        _scanRunner = scanRunner ?? new TaskRunRootScanRunner();
         _settings.Changed += OnSettingsChanged;
     }
 
@@ -98,15 +109,15 @@ public sealed class LocalRepoLocator : ILocalRepoLocator, IDisposable
 
         try
         {
-            var task = Task.Run(() => ScanRoot(root));
-            if (!task.Wait(_perRootTimeout))
+            if (!_scanRunner.TryRunWithTimeout(
+                    root, () => ScanRoot(root), _perRootTimeout, out var hits))
             {
                 // Slow root (slow UNC, root of C:\, network outage) —
                 // skip it. We'll try again on the next cache rebuild
                 // when settings change.
                 return;
             }
-            foreach (var (key, path) in task.Result)
+            foreach (var (key, path) in hits)
             {
                 // First match wins across roots, mirroring repo-roots
                 // priority order.
