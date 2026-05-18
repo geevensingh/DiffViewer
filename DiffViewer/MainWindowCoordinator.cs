@@ -92,12 +92,13 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     public event EventHandler? CurrentChanged;
 
     /// <summary>
-    /// Cold-launch entry. Parses args, builds the initial context, sets
-    /// <see cref="Current"/>. Returns <c>true</c> on success (caller can
-    /// show the window) — including when the cold-launch falls back to
-    /// the empty-state dropdown picker. Returns <c>false</c> only when
-    /// the coordinator has shown the error dialog AND requested
-    /// shutdown (no recents present).
+    /// Cold-launch entry. Parses args, dispatches to the appropriate
+    /// launch path (local repo vs PR URL), and sets <see cref="Current"/>.
+    /// Returns <c>true</c> on success (caller can show the window) —
+    /// including when the cold-launch falls back to the empty-state
+    /// dropdown picker. Returns <c>false</c> only when the coordinator
+    /// has shown the error dialog AND requested shutdown (no recents
+    /// present).
     /// </summary>
     public async Task<bool> InitialLaunchAsync(
         IReadOnlyList<string> args,
@@ -105,12 +106,104 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        var parseResult = CompositionRoot.BuildArgs(args);
-        if (!parseResult.IsSuccess)
+        var plan = CompositionRoot.BuildArgs(args);
+        if (plan.IsError)
         {
-            return HandleColdLaunchFailure(parseResult.Error?.Message ?? "Failed to parse command line.");
+            return HandleColdLaunchFailure(plan.Error?.Message ?? "Failed to parse command line.");
         }
-        return await StartFromParsedAsync(parseResult.Parsed!, ct).ConfigureAwait(true);
+        if (plan.IsPullRequest)
+        {
+            return await InitialLaunchFromPullRequestAsync(plan.PullRequest!, ct).ConfigureAwait(true);
+        }
+        return await StartFromParsedAsync(plan.Local!, ct).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Cold-launch from a parsed GitHub PR URL. Resolves the PR through
+    /// <see cref="AppServices.PullRequestResolver"/>; if the resolver
+    /// reports a missing clone, shows the missing-clone dialog and
+    /// retries once with the resolved path. On a terminal failure or a
+    /// user-cancelled missing-clone dialog, routes through
+    /// <see cref="HandleColdLaunchFailure"/> so the user lands on the
+    /// empty-state shell (when recents exist) rather than an exit.
+    /// </summary>
+    /// <remarks>
+    /// <para>The resolver's sub-services (libgit2, HTTP, gh-token
+    /// process spawn) are documented as free-threaded; the fetcher
+    /// already wraps libgit2 work in a <c>Task.Run</c> internally. We
+    /// do not add another <c>Task.Run</c> here — that would only add
+    /// thread-pool hops, not safety.</para>
+    ///
+    /// <para>The retry loop is bounded: at most one re-resolve after
+    /// the dialog resolves, to keep "user keeps mis-typing the path"
+    /// from looping forever. A second <see cref="PullRequestResolution.MissingClone"/>
+    /// on retry surfaces a clear "DiffViewer still can't find the clone"
+    /// message via <see cref="HandleColdLaunchFailure"/>.</para>
+    /// </remarks>
+    public async Task<bool> InitialLaunchFromPullRequestAsync(
+        PullRequestRef pr,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(pr);
+
+        var resolution = await _services.PullRequestResolver.ResolveAsync(pr, ct).ConfigureAwait(true);
+
+        if (resolution is PullRequestResolution.MissingClone)
+        {
+            var dialogResult = await _services.MissingClonePromptHost.ShowAsync(pr, ct).ConfigureAwait(true);
+            switch (dialogResult)
+            {
+                case MissingClonePromptResult.Resolved:
+                    // Settings now contains the mapping. Re-invoke the
+                    // resolver; from this point on we accept whatever
+                    // state it returns without prompting again.
+                    resolution = await _services.PullRequestResolver.ResolveAsync(pr, ct).ConfigureAwait(true);
+                    break;
+                case MissingClonePromptResult.Cancelled:
+                    return HandleColdLaunchFailure(
+                        $"Cancelled — no local clone available for {pr.Owner}/{pr.Repo}.");
+                case MissingClonePromptResult.Failed failed:
+                    return HandleColdLaunchFailure(failed.Message);
+            }
+        }
+
+        return resolution switch
+        {
+            PullRequestResolution.Ready ready =>
+                await StartFromPullRequestAsync(ready.Parsed, pr, ct).ConfigureAwait(true),
+            PullRequestResolution.MissingClone =>
+                HandleColdLaunchFailure(
+                    $"DiffViewer still can't find a local clone of {pr.Owner}/{pr.Repo}. "
+                    + "Add a repo root in Settings or browse to the clone via the missing-clone dialog."),
+            PullRequestResolution.Failed failed =>
+                HandleColdLaunchFailure(failed.Message),
+            _ => HandleColdLaunchFailure($"Unexpected PR resolution state for {pr.Owner}/{pr.Repo}#{pr.Number}."),
+        };
+    }
+
+    private async Task<bool> StartFromPullRequestAsync(
+        ParsedCommandLine parsed,
+        PullRequestRef pr,
+        CancellationToken ct)
+    {
+        var newScope = new ContextScope(_appShutdownToken);
+        MainViewModel newVm;
+        try
+        {
+            newVm = await _contextFactory(parsed, _services, newScope, ct).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            await newScope.DisposeAsync().ConfigureAwait(true);
+            return HandleColdLaunchFailure(
+                ex is ContextBuildException ? ex.Message : $"Failed to start: {ex.Message}");
+        }
+
+        _current = newVm;
+        _currentScope = newScope;
+        OnCurrentChanged();
+        await TryRecordAsync(parsed, pullRequest: pr, ct: ct).ConfigureAwait(true);
+        return true;
     }
 
     /// <summary>
@@ -246,18 +339,81 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
 
     /// <summary>
     /// <see cref="IContextSwitcher"/> entry point used by the recents
-    /// dropdown. Converts a <see cref="RecentLaunchContext"/> into a
-    /// <see cref="ParsedCommandLine"/> (using the user's stored display
-    /// sides verbatim) and delegates to <see cref="SwitchContextAsync"/>.
+    /// dropdown. For local rows, converts a <see cref="RecentLaunchContext"/>
+    /// into a <see cref="ParsedCommandLine"/> using the stored display
+    /// sides verbatim and delegates to <see cref="SwitchContextAsync"/>.
+    /// For PR rows (D8 — always re-resolve), runs the PR resolver under
+    /// <see cref="_switchGate"/> so concurrent dropdown clicks can't race
+    /// on the same clone's object DB, then swaps in the freshly-resolved
+    /// context. Both branches preserve the row's
+    /// <see cref="RecentLaunchContext.PullRequest"/> on the recorded
+    /// recent so subsequent clicks continue to re-resolve.
     /// </summary>
-    public Task<bool> SwitchToRecentAsync(RecentLaunchContext recent, CancellationToken ct = default)
+    public async Task<bool> SwitchToRecentAsync(RecentLaunchContext recent, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(recent);
-        var parsed = new ParsedCommandLine(
-            recent.Identity.CanonicalRepoPath,
-            recent.LeftDisplay,
-            recent.RightDisplay);
-        return SwitchContextAsync(parsed, ct);
+
+        if (recent.PullRequest is null)
+        {
+            var parsed = new ParsedCommandLine(
+                recent.Identity.CanonicalRepoPath,
+                recent.LeftDisplay,
+                recent.RightDisplay);
+            return await SwitchContextAsync(parsed, ct).ConfigureAwait(true);
+        }
+
+        // PR-mode row: re-resolve under the switch gate so the resolve
+        // and the swap are atomic with respect to other dropdown clicks.
+        await _switchGate.WaitAsync(ct).ConfigureAwait(true);
+        IsSwitching = true;
+        try
+        {
+            var resolution = await _services.PullRequestResolver.ResolveAsync(recent.PullRequest, ct)
+                .ConfigureAwait(true);
+            switch (resolution)
+            {
+                case PullRequestResolution.Ready ready:
+                    var swapped = await SwitchContextCoreAsync(ready.Parsed, ct).ConfigureAwait(true);
+                    if (swapped)
+                    {
+                        // Re-stamp the recents row with the (possibly
+                        // refreshed) SHAs and the PR ref so the dedup
+                        // key stays stable across re-resolves.
+                        await TryRecordAsync(ready.Parsed, pullRequest: recent.PullRequest, ct: ct)
+                            .ConfigureAwait(true);
+                    }
+                    return swapped;
+
+                case PullRequestResolution.MissingClone:
+                    // The user previously had a working clone (the row
+                    // exists). It vanished between launches. Surface a
+                    // clear error and let them pick another recent; do
+                    // not unilaterally remove the row — they may want
+                    // to re-add the repo root themselves.
+                    _dialog.ShowError(
+                        "DiffViewer",
+                        $"DiffViewer can no longer find the clone for "
+                        + $"{recent.PullRequest.Owner}/{recent.PullRequest.Repo}. "
+                        + "Check the Repo roots setting or relaunch with the PR URL "
+                        + "to re-pick the clone path.");
+                    return false;
+
+                case PullRequestResolution.Failed failed:
+                    _dialog.ShowError("DiffViewer", failed.Message);
+                    return false;
+
+                default:
+                    _dialog.ShowError("DiffViewer",
+                        $"Unexpected PR resolution state for "
+                        + $"{recent.PullRequest.Owner}/{recent.PullRequest.Repo}#{recent.PullRequest.Number}.");
+                    return false;
+            }
+        }
+        finally
+        {
+            IsSwitching = false;
+            _switchGate.Release();
+        }
     }
 
     private async Task TryRecordAsync(

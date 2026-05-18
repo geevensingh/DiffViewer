@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Threading;
 using System.Windows;
 using DiffViewer.Services;
@@ -9,6 +10,7 @@ public partial class App : Application
 {
     private CancellationTokenSource? _shutdownCts;
     private MainWindowCoordinator? _coordinator;
+    private HttpClient? _httpClient;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -28,7 +30,33 @@ public partial class App : Application
         // load is already handled inside RecentsStore.LoadAsync (returns
         // Empty on missing/malformed file) so this only awaits the IO.
         await recents.LoadAsync(_shutdownCts.Token);
-        var services = new AppServices(settingsService, diffService, externalAppLauncher, recents);
+
+        // PR-review feature dependency graph (Phases 2-8). Each layer is
+        // a single instance for the app's lifetime; HttpClient is held by
+        // App so it can be disposed cleanly on shutdown. None of these
+        // services hold repo-specific state — they're keyed by
+        // (host, owner, repo, number) parameters at call time so the
+        // per-context ContextScope doesn't need to know about them.
+        var processRunner = new DefaultProcessRunner();
+        var authProvider = new GhCliAuthProvider(processRunner);
+        _httpClient = new HttpClient();
+        var githubClient = new GitHubClient(_httpClient, authProvider);
+        var repoInspector = new LibGit2RepoInspector();
+        var localRepoLocator = new LocalRepoLocator(settingsService, repoInspector);
+        var metadataResolver = new PullRequestMetadataResolver(githubClient);
+        var fetcher = new PullRequestLocalFetcher();
+        var prResolver = new PullRequestResolver(localRepoLocator, metadataResolver, fetcher);
+        var cloner = new LibGit2GitHubCloner();
+        // ownerLookup runs at dialog-show time so it picks up whichever
+        // window is currently active (handles the rare case where the
+        // main window has been re-created mid-session).
+        var missingClonePromptHost = new MissingClonePromptHost(
+            settingsService, repoInspector, cloner,
+            ownerLookup: () => Application.Current?.MainWindow);
+
+        var services = new AppServices(
+            settingsService, diffService, externalAppLauncher, recents,
+            prResolver, missingClonePromptHost);
 
         _coordinator = new MainWindowCoordinator(
             services,
@@ -40,6 +68,7 @@ public partial class App : Application
         services.ContextSwitcher = _coordinator;
 
         var window = new MainWindow(settingsService);
+        Application.Current.MainWindow = window;
         _coordinator.CurrentChanged += (_, _) => window.DataContext = _coordinator.Current;
         window.Closed += async (_, _) =>
         {
@@ -61,6 +90,7 @@ public partial class App : Application
     {
         try { _shutdownCts?.Cancel(); } catch { }
         try { _shutdownCts?.Dispose(); } catch { }
+        try { _httpClient?.Dispose(); } catch { }
         base.OnExit(e);
     }
 }

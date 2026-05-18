@@ -38,16 +38,25 @@ internal static class CompositionRoot
 {
     /// <summary>
     /// Parse + resolve the command line. The resulting
-    /// <see cref="CommandLineParseResult"/> is either a successful
-    /// <see cref="ParsedCommandLine"/> (with the repo root discovered and
-    /// commit-ish references resolved) or a structured
-    /// <see cref="CommandLineError"/>.
+    /// <see cref="CommandLineLaunchPlan"/> is exactly one of three
+    /// variants:
+    /// <list type="bullet">
+    ///   <item><see cref="CommandLineLaunchPlan.IsLocal"/> — a
+    ///     fully-resolved <see cref="ParsedCommandLine"/> (repo root
+    ///     discovered, commit-ish references kept verbatim).</item>
+    ///   <item><see cref="CommandLineLaunchPlan.IsPullRequest"/> — a
+    ///     parsed <see cref="PullRequestRef"/>; the actual repo path
+    ///     and side SHAs are resolved at launch time by the PR
+    ///     resolver registered in <see cref="AppServices"/>.</item>
+    ///   <item><see cref="CommandLineLaunchPlan.IsError"/> — a
+    ///     structured <see cref="CommandLineError"/>.</item>
+    /// </list>
     /// </summary>
-    public static CommandLineParseResult BuildArgs(System.Collections.Generic.IReadOnlyList<string> args)
+    public static CommandLineLaunchPlan BuildArgs(System.Collections.Generic.IReadOnlyList<string> args)
     {
         var parser = new CommandLineParser();
         var env = new ProcessCommandLineEnvironment();
-        return parser.Parse(args, env);
+        return parser.ParseLaunch(args, env);
     }
 
     /// <summary>

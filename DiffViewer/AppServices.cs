@@ -26,7 +26,9 @@ public sealed record AppServices(
     ISettingsService SettingsService,
     IDiffService DiffService,
     IExternalAppLauncher ExternalAppLauncher,
-    IRecentContextsService RecentContextsService)
+    IRecentContextsService RecentContextsService,
+    IPullRequestResolver PullRequestResolver,
+    IMissingClonePromptHost MissingClonePromptHost)
 {
     public IContextSwitcher? ContextSwitcher { get; set; }
 }
