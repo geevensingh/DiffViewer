@@ -55,11 +55,24 @@ public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBa
         }
         _canonicalRepoPath = v.CanonicalPath;
 
+        // Validate BOTH commit-ish fields against the canonical repo
+        // path and surface every error at once. Stopping at the first
+        // invalid ref hides the fact that the second one is also bad —
+        // which is the opposite of helpful when the user mistyped both
+        // (or, more commonly, used a default-branch name like `main`
+        // for a repo whose default branch is `master`).
         var baseResult = Validator.ValidateCommitIsh(v.CanonicalPath, BaseCommit);
-        if (baseResult is CommitIshValidation.Invalid bi) return bi.Message;
-
         var compareResult = Validator.ValidateCommitIsh(v.CanonicalPath, CompareCommit);
-        return compareResult is CommitIshValidation.Invalid ci ? ci.Message : null;
+
+        var baseError = (baseResult as CommitIshValidation.Invalid)?.Message;
+        var compareError = (compareResult as CommitIshValidation.Invalid)?.Message;
+
+        if (baseError is null && compareError is null) return null;
+        if (baseError is not null && compareError is not null)
+        {
+            return baseError + "\n" + compareError;
+        }
+        return baseError ?? compareError;
     }
 
     public override DiffLaunchSource BuildLaunchSource()

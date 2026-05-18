@@ -152,7 +152,7 @@ public class NewDiffFormViewModelTests
     }
 
     [Fact]
-    public void CommitVsCommit_BaseInvalid_SurfaceErrorBeforeReachingCompare()
+    public void CommitVsCommit_BaseInvalid_CompareValid_SurfacesOnlyBaseError()
     {
         var v = new FakeValidator();
         v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
@@ -167,7 +167,54 @@ public class NewDiffFormViewModelTests
         };
 
         form.IsValid.Should().BeFalse();
-        form.ValidationError.Should().Contain("bogus");
+        form.ValidationError.Should().Be("Cannot resolve `bogus`.");
+    }
+
+    [Fact]
+    public void CommitVsCommit_BothCommitsInvalid_SurfacesBothErrors()
+    {
+        // Regression guard for the v1.1 UX fix: when both commit-ish
+        // fields are invalid (e.g. user typed `main~1` and `main` in a
+        // repo whose default branch is `master`), the dialog must
+        // surface both errors at once instead of hiding the second
+        // failure behind the first.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        v.CommitResults[(@"C:\repo", "main~1")] = new CommitIshValidation.Invalid("Cannot resolve `main~1`.");
+        v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Invalid("Cannot resolve `main`.");
+
+        var form = new CommitVsCommitFormViewModel(v)
+        {
+            RepoPath = @"C:\repo",
+            BaseCommit = "main~1",
+            CompareCommit = "main",
+        };
+
+        form.IsValid.Should().BeFalse();
+        form.ValidationError.Should().NotBeNull();
+        form.ValidationError.Should().Contain("main~1");
+        form.ValidationError.Should().Contain("`main`");
+        // Both errors on separate lines, base first.
+        form.ValidationError.Should().Be("Cannot resolve `main~1`.\nCannot resolve `main`.");
+    }
+
+    [Fact]
+    public void CommitVsCommit_BaseValid_CompareInvalid_SurfacesOnlyCompareError()
+    {
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Valid();
+        v.CommitResults[(@"C:\repo", "bogus")] = new CommitIshValidation.Invalid("Cannot resolve `bogus`.");
+
+        var form = new CommitVsCommitFormViewModel(v)
+        {
+            RepoPath = @"C:\repo",
+            BaseCommit = "main",
+            CompareCommit = "bogus",
+        };
+
+        form.IsValid.Should().BeFalse();
+        form.ValidationError.Should().Be("Cannot resolve `bogus`.");
     }
 
     [Fact]
