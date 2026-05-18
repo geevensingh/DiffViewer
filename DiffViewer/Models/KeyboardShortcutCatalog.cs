@@ -112,6 +112,11 @@ public static class KeyboardShortcutCatalog
             {
                 XamlBindings = new[] { new KeyChord(Key.D3, ModifierKeys.Control) },
             },
+            new("Ctrl+/", "Focus file-list filter")
+            {
+                XamlBindings = new[] { new KeyChord(Key.OemQuestion, ModifierKeys.Control) },
+            },
+            new("Space", "Toggle viewed on the selected file", "file list focused"),
             new("Ctrl++", "Zoom in")
             {
                 XamlBindings = new[]

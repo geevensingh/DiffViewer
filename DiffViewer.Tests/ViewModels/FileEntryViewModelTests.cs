@@ -69,6 +69,54 @@ public class FileEntryViewModelTests
         e.IsWhitespaceOnly.Should().BeTrue();
     }
 
+    [Fact]
+    public void IsDimmed_TrueWhenViewedOrWhitespaceOnly_FalseWhenNeither()
+    {
+        var e = new FileEntryViewModel(Modified("a.cs"), @"C:\repo");
+
+        // Neither input set yet.
+        e.IsDimmed.Should().BeFalse();
+
+        // Whitespace-only alone dims.
+        e.HasVisibleDifferences = false;
+        e.IsDimmed.Should().BeTrue();
+
+        // Adding viewed on top still dims.
+        e.IsViewed = true;
+        e.IsDimmed.Should().BeTrue();
+
+        // Clear whitespace-only; viewed alone keeps it dimmed.
+        e.HasVisibleDifferences = true;
+        e.IsDimmed.Should().BeTrue();
+
+        // Clear viewed too: undimmed.
+        e.IsViewed = false;
+        e.IsDimmed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsDimmed_RaisesPropertyChanged_OnEitherInput()
+    {
+        var e = new FileEntryViewModel(Modified("a.cs"), @"C:\repo");
+        var raised = new List<string?>();
+        e.PropertyChanged += (_, args) => raised.Add(args.PropertyName);
+
+        e.IsViewed = true;
+        raised.Should().Contain(nameof(FileEntryViewModel.IsDimmed));
+
+        raised.Clear();
+        e.HasVisibleDifferences = false;
+        raised.Should().Contain(nameof(FileEntryViewModel.IsDimmed));
+    }
+
+    [Fact]
+    public void NormalizedPathForFilter_UsesForwardSlashes()
+    {
+        var e = new FileEntryViewModel(Modified("src/foo/bar.cs"), @"C:\repo");
+
+        e.NormalizedPathForFilter.Should().Be("src/foo/bar.cs");
+    }
+
     // ---- Whole-file write-action eligibility ----
     //
     // Mirrors per-hunk eligibility on DiffPaneViewModel one level up:

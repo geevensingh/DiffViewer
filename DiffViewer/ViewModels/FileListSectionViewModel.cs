@@ -52,6 +52,44 @@ public sealed partial class FileListSectionViewModel : ObservableObject
     /// </summary>
     public FileListSectionHeader SharedHeader { get; }
 
+    /// <summary>
+    /// True when the section row should appear in the file-list tree. Set
+    /// by <see cref="FileListViewModel.RecomputeVisibility"/> when the
+    /// section has at least one visible descendant entry. Composes with
+    /// — but is independent of — the user-driven
+    /// <see cref="FileListSectionHeader.IsExpanded"/> collapse flag.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isVisible = true;
+
+    /// <summary>
+    /// Number of entries with <see cref="FileEntryViewModel.IsVisible"/>
+    /// true. Drives the section header chip's "visible / total" suffix
+    /// when a filter or Hide-viewed toggle is active; falls back to a
+    /// plain count otherwise.
+    /// </summary>
+    [ObservableProperty]
+    private int _visibleEntryCount;
+
+    /// <summary>
+    /// Pre-formatted suffix text for the section header chip. The view
+    /// renders this verbatim so we don't need a multi-binding converter:
+    /// <c>"N"</c> when the visible and total counts match (no filter /
+    /// hide narrowing the list), <c>"V / T"</c> otherwise. Updated by
+    /// the <see cref="OnVisibleEntryCountChanged"/> partial; the
+    /// <see cref="Entries"/> count is fixed for the section's lifetime
+    /// so we don't need to listen for changes there.
+    /// </summary>
+    public string CountChipText =>
+        VisibleEntryCount == Entries.Count
+            ? Entries.Count.ToString(System.Globalization.CultureInfo.CurrentCulture)
+            : string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                "{0} / {1}", VisibleEntryCount, Entries.Count);
+
+    partial void OnVisibleEntryCountChanged(int value) =>
+        OnPropertyChanged(nameof(CountChipText));
+
     public FileListSectionViewModel(WorkingTreeLayer layer, string header, IEnumerable<FileEntryViewModel> entries)
         : this(layer, header, entries, store: null, sharedHeader: null) { }
 
@@ -71,6 +109,13 @@ public sealed partial class FileListSectionViewModel : ObservableObject
         Header = header;
         SharedHeader = sharedHeader ?? new FileListSectionHeader(layer, header);
         Entries = new ObservableCollection<FileEntryViewModel>(entries);
+        // Default to all-visible so the section header chip renders as
+        // the plain total count before RecomputeVisibility runs (the
+        // first reload calls it at the end of LoadFromChanges, but unit
+        // tests that build sections directly via this ctor skip that
+        // call). Once a filter / Hide-viewed flips, RecomputeVisibility
+        // overwrites the count to reflect the visible subset.
+        _visibleEntryCount = Entries.Count;
         RootItems = new ObservableCollection<object>(
             DirectoryNodeViewModel.Build(Entries, sectionKey: layer.ToString(), store: store));
 

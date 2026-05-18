@@ -75,6 +75,13 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     public Action? ShowSettingsHandler { get; set; }
 
     /// <summary>
+    /// Hook for the View layer to give focus to the file-list filter box
+    /// (Ctrl+/). Tests / headless contexts leave it null and the
+    /// <see cref="FocusFilterCommand"/> becomes a no-op.
+    /// </summary>
+    public Action? FocusFilterHandler { get; set; }
+
+    /// <summary>
     /// Hook for the View layer to display the modal keyboard cheat
     /// sheet (F1). Tests / headless contexts leave it null and the
     /// <see cref="ShowKeyboardShortcutsCommand"/> becomes a no-op.
@@ -110,6 +117,9 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
 
     [RelayCommand]
     private void ShowKeyboardShortcuts() => ShowKeyboardShortcutsHandler?.Invoke();
+
+    [RelayCommand]
+    private void FocusFilter() => FocusFilterHandler?.Invoke();
 
     /// <summary>
     /// Settings service the View can use to construct a
@@ -473,7 +483,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
                 : ((currentSec - hop) % sections.Count + sections.Count) % sections.Count;
             var sec = sections[idx];
             var first = sec.Entries.FirstOrDefault(e =>
-                e.HasVisibleDifferences ?? true);  // unknown counts as eligible
+                e.IsVisible && (e.HasVisibleDifferences ?? true));
             if (first is not null)
             {
                 FileList.SelectedEntry = first;
@@ -495,9 +505,10 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
 
     /// <summary>
     /// Walk <paramref name="entries"/> from <paramref name="from"/> in
-    /// <paramref name="forward"/> direction, returning the first row with
+    /// <paramref name="forward"/> direction, returning the first row that
+    /// is currently visible (per the filter / Hide-viewed toggle) AND has
     /// visible differences (or unknown). Cycles around. Returns null when
-    /// every row has been confirmed whitespace-only.
+    /// every row has been confirmed whitespace-only or filtered out.
     /// </summary>
     private static FileEntryViewModel? FindNextWithChanges(
         IReadOnlyList<FileEntryViewModel> entries, int from, bool forward)
@@ -509,8 +520,12 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
                 ? (from + hop) % n
                 : ((from - hop) % n + n) % n;
             var e = entries[idx];
-            // null = pre-diff hasn't run yet; treat as eligible so the user
-            // doesn't get stuck early in the load. Confirmed-false skips.
+            // Skip filtered / hide-viewed rows so navigation stays inside
+            // the set the user can see. null HasVisibleDifferences = pre-
+            // diff pass hasn't scored this entry yet; treat as eligible
+            // so the user doesn't get stuck early in the load. Confirmed-
+            // false skips.
+            if (!e.IsVisible) continue;
             if (e.HasVisibleDifferences ?? true) return e;
         }
         return null;

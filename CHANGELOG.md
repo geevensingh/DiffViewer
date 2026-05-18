@@ -12,6 +12,28 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **File-list filter + per-file viewed checkbox.** A new bar above
+  the display-mode toggle adds a case-insensitive substring filter
+  (slash-insensitive: `foo/bar.cs` and `foo\bar.cs` both match) that
+  narrows the file list live as you type. Each file row gets a
+  GitHub-PR-review-style **Viewed** checkbox on the right; viewed
+  rows dim. A toolbar **Hide viewed** toggle composes with the
+  filter to suppress reviewed files. Viewed state is per-launch-
+  context (in-memory only) and auto-clears when the file's content
+  fingerprint (left/right blob SHA, file sizes, status) changes
+  between refreshes, so reviewing a stale snapshot doesn't carry
+  forward when the file is edited again. Sections and directory
+  nodes auto-collapse when none of their descendants are visible.
+  Section header chips switch from `(N)` to `(visible / total)`
+  while the filter or Hide-viewed is active. Two new keyboard
+  shortcuts: `Ctrl+/` focuses the filter, and `Space` (while the
+  file list is focused) toggles **Viewed** on the selected row.
+  F7/F8 navigation now skips rows hidden by the filter or
+  Hide-viewed in addition to whitespace-only ones. Resolves
+  [#3](https://github.com/geevensingh/DiffViewer/issues/3).
+
 ## [0.5.0] - 2026-05-17
 
 ### Added

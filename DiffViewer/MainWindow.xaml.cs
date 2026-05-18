@@ -237,7 +237,26 @@ public partial class MainWindow : Window
             vm.ConfirmHandler = ShowConfirmDialog;
             vm.ToastHandler = ShowToast;
             vm.FocusCycleRequested = CycleFocusAcrossPanes;
+            vm.FocusFilterHandler = FocusFileListFilter;
         }
+    }
+
+    /// <summary>
+    /// Window-level Ctrl+/ handler: give focus to the file-list filter box
+    /// and pre-select its contents so the user can immediately start
+    /// typing (or overwrite the prior query). Routed through
+    /// <see cref="ViewModels.MainViewModel.FocusFilterHandler"/> so the
+    /// VM-defined <c>FocusFilterCommand</c> stays View-agnostic.
+    ///
+    /// <para>The <see cref="Views.FileListView"/> instance is inside the
+    /// MainViewModel <c>DataTemplate</c>, so its x:Name doesn't get hoisted
+    /// to a field on this Window. We walk the visual tree to find it; the
+    /// lookup is one-off per Ctrl+/ press, so the cost is negligible.</para>
+    /// </summary>
+    private void FocusFileListFilter()
+    {
+        var fileList = FindDescendant<Views.FileListView>(null);
+        fileList?.FocusFilter();
     }
 
     private void ShowCommitMetadataDialog(CommitMetadataDialogViewModel dialogVm)

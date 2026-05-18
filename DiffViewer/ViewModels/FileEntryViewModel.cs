@@ -1,6 +1,7 @@
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using DiffViewer.Models;
+using DiffViewer.Utility;
 
 namespace DiffViewer.ViewModels;
 
@@ -36,11 +37,37 @@ public sealed partial class FileEntryViewModel : ObservableObject
     [ObservableProperty]
     private bool _isSelected;
 
+    /// <summary>
+    /// GitHub-PR-review-style "I've looked at this" flag. TwoWay-bound to
+    /// the per-row CheckBox. State is owned by
+    /// <see cref="FileListViewModel"/> (keyed by <see cref="FileChange.Path"/>
+    /// plus a content fingerprint) so it survives a
+    /// <see cref="FileListViewModel.LoadFromChanges"/> rebuild for the
+    /// unchanged-content case and auto-clears when the file's content
+    /// fingerprint changes between rebuilds.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isViewed;
+
+    /// <summary>
+    /// True when the row should appear in the file-list tree. Driven by the
+    /// filter box plus the Hide-viewed toolbar toggle. Set by
+    /// <see cref="FileListViewModel.RecomputeVisibility"/>; the XAML
+    /// collapses the containing <see cref="System.Windows.Controls.TreeViewItem"/>
+    /// when false. Visibility-collapse is distinct from user-driven
+    /// section / directory collapse, which lives on
+    /// <see cref="FileListSectionHeader.IsExpanded"/> /
+    /// <see cref="DirectoryNodeViewModel.IsExpanded"/>; the two compose.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isVisible = true;
+
     public FileEntryViewModel(FileChange change, string repoRoot)
     {
         Change = change ?? throw new ArgumentNullException(nameof(change));
         _repoRoot = repoRoot ?? throw new ArgumentNullException(nameof(repoRoot));
         DisplayPath = RepoRelativePath;
+        NormalizedPathForFilter = FileListFilter.Normalize(RepoRelativePath);
     }
 
     /// <summary>Repo-relative path, always with backslashes on Windows for display.</summary>
@@ -181,8 +208,65 @@ public sealed partial class FileEntryViewModel : ObservableObject
     /// <summary>True once the pre-diff pass has flagged this entry as whitespace-only.</summary>
     public bool IsWhitespaceOnly => HasVisibleDifferences == false;
 
+    /// <summary>
+    /// Single signal driving the row's dim chrome. Composes the two
+    /// independent dim triggers — pre-diff-pass-says-whitespace-only and
+    /// user-marked-viewed — so the XAML only needs one
+    /// <c>DataTrigger</c> on this property rather than chained / nested
+    /// triggers across both inputs.
+    /// </summary>
+    public bool IsDimmed => IsWhitespaceOnly || IsViewed;
+
+    /// <summary>
+    /// <see cref="RepoRelativePath"/> with backslashes replaced by forward
+    /// slashes, computed once in the constructor so per-keystroke filter
+    /// recompute is allocation-free per row. See
+    /// <see cref="FileListFilter"/> for why we normalise.
+    /// </summary>
+    public string NormalizedPathForFilter { get; }
+
+    /// <summary>
+    /// Content identity used by <see cref="FileListViewModel"/> to decide
+    /// whether a stored "viewed" flag should carry over across a
+    /// <see cref="FileListViewModel.LoadFromChanges"/> rebuild. Fields are
+    /// pulled straight off the underlying <see cref="FileChange"/>: blob
+    /// SHAs cover both committed sides, file sizes catch working-tree
+    /// edits (modulo size-preserving content changes — a known v1
+    /// limitation), and <see cref="FileChange.Status"/> catches
+    /// modified↔renamed↔deleted transitions where the SHAs alone might
+    /// match coincidentally.
+    /// </summary>
+    public ContentFingerprint Fingerprint => new(
+        Change.LeftBlobSha,
+        Change.RightBlobSha,
+        Change.LeftFileSizeBytes,
+        Change.RightFileSizeBytes,
+        Change.Status);
+
     partial void OnHasVisibleDifferencesChanged(bool? value)
     {
         OnPropertyChanged(nameof(IsWhitespaceOnly));
+        OnPropertyChanged(nameof(IsDimmed));
+    }
+
+    partial void OnIsViewedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsDimmed));
     }
 }
+
+/// <summary>
+/// Content-identity tuple used by <see cref="FileListViewModel"/>'s viewed
+/// state machine: when the user marks a file viewed we snapshot this
+/// fingerprint, and on the next <see cref="FileListViewModel.LoadFromChanges"/>
+/// rebuild the viewed flag is re-applied only if the new entry's
+/// fingerprint matches the snapshot. Mismatch ⇒ the content has moved,
+/// so the prior "I reviewed this" assertion is stale and we drop it
+/// (GitHub-PR-review behaviour).
+/// </summary>
+public readonly record struct ContentFingerprint(
+    string? LeftBlobSha,
+    string? RightBlobSha,
+    long? LeftFileSizeBytes,
+    long? RightFileSizeBytes,
+    FileStatus Status);

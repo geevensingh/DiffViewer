@@ -51,6 +51,9 @@
         <KeyBinding Key="D2" Modifiers="Control" Command="{Binding SetDisplayModeRepoRelativeCommand}"/>
         <KeyBinding Key="D3" Modifiers="Control" Command="{Binding SetDisplayModeGroupedCommand}"/>
 
+        <!-- File-list filter (issue #3): Ctrl+/ focuses the filter box. -->
+        <KeyBinding Key="OemQuestion" Modifiers="Control" Command="{Binding FocusFilterCommand}"/>
+
         <!-- Focus cycle -->
         <KeyBinding Key="F6" Command="{Binding CycleFocusCommand}"/>
 

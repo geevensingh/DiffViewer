@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using DiffViewer.Models;
+using DiffViewer.Utility;
 
 namespace DiffViewer.ViewModels;
 
@@ -56,6 +57,27 @@ public sealed partial class FileListViewModel : ObservableObject
     /// </summary>
     private readonly Dictionary<WorkingTreeLayer, FileListSectionHeader> _sectionHeaders = new();
 
+    /// <summary>
+    /// Per-launch-context "viewed" memory. Survives
+    /// <see cref="LoadFromChanges"/> rebuilds — same pattern as
+    /// <see cref="_sectionHeaders"/> and <see cref="_expansionStore"/> —
+    /// keyed by <see cref="FileChange.Path"/> (case-insensitive on
+    /// Windows). Stored value is the entry's
+    /// <see cref="FileEntryViewModel.Fingerprint"/> at the moment the
+    /// flag was set; on the next rebuild we only re-apply the flag when
+    /// the new entry's fingerprint matches. Mismatch ⇒ content has moved
+    /// since the user marked it viewed, so the prior assertion is stale
+    /// and the dictionary entry is dropped (GitHub-PR-review behaviour).
+    ///
+    /// <para>Entries for files that fall out of the list are intentionally
+    /// kept: a file may temporarily disappear (revert, branch switch,
+    /// staging) and come back with the same content, in which case the
+    /// prior viewed flag should re-apply. Dictionary footprint is bounded
+    /// by the user's per-context interaction count.</para>
+    /// </summary>
+    private readonly Dictionary<string, ViewedRecord> _viewedByPath =
+        new(StringComparer.OrdinalIgnoreCase);
+
     public FileListViewModel(Services.ISettingsService? settingsService = null)
     {
         _settingsService = settingsService;
@@ -83,6 +105,31 @@ public sealed partial class FileListViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isFlatLayout;
+
+    /// <summary>
+    /// Substring filter applied to every row's repo-relative path.
+    /// Case-insensitive and slash-insensitive (see
+    /// <see cref="FileListFilter"/>). Empty string disables the filter.
+    /// </summary>
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    /// <summary>
+    /// Toolbar toggle that suppresses rows the user has marked viewed.
+    /// Composes with <see cref="FilterText"/> (AND, not OR): a row is
+    /// visible only when it both matches the filter and is either
+    /// un-viewed or Hide-viewed is off.
+    /// </summary>
+    [ObservableProperty]
+    private bool _hideViewed;
+
+    /// <summary>
+    /// True when at least one of <see cref="FilterText"/> /
+    /// <see cref="HideViewed"/> is currently restricting the visible set.
+    /// Used by the section header chip template to decide between the
+    /// plain <c>(N)</c> and the <c>(visible / total)</c> rendering.
+    /// </summary>
+    public bool IsFilterOrHideActive => HideViewed || !string.IsNullOrEmpty(FilterText);
 
     /// <summary>True when <see cref="DisplayMode"/> is the grouped tree view.</summary>
     public bool IsGroupedMode => DisplayMode == FileListDisplayMode.GroupedByDirectory;
@@ -121,6 +168,18 @@ public sealed partial class FileListViewModel : ObservableObject
         {
             _settingsService.Update(s => s with { DisplayMode = value });
         }
+    }
+
+    partial void OnFilterTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsFilterOrHideActive));
+        RecomputeVisibility();
+    }
+
+    partial void OnHideViewedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsFilterOrHideActive));
+        RecomputeVisibility();
     }
 
     /// <summary>
@@ -167,12 +226,35 @@ public sealed partial class FileListViewModel : ObservableObject
     /// which is the signal that <see cref="OnSelectedEntryChanged"/> is
     /// already running and the IsSelected change is its own bookkeeping
     /// (not a fresh user click).</para>
+    ///
+    /// <para>Also listens for <see cref="FileEntryViewModel.IsViewed"/>
+    /// changes so the per-entry checkbox writes back into
+    /// <see cref="_viewedByPath"/>, with the entry's current fingerprint,
+    /// so the flag can be re-applied across rebuilds when the content
+    /// hasn't changed. Skipped during <see cref="IsReloading"/> because
+    /// the reload path itself sets <c>IsViewed</c> from the dictionary
+    /// (writing back during reload would be a redundant write of the
+    /// same value).</para>
     /// </summary>
     private void OnEntryPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (sender is not FileEntryViewModel entry) return;
+
+        if (e.PropertyName == nameof(FileEntryViewModel.IsViewed))
+        {
+            if (IsReloading) return;
+            _viewedByPath[entry.Change.Path] = new ViewedRecord(entry.Fingerprint, entry.IsViewed);
+            // Only the Hide-viewed compose path cares about a viewed
+            // flip — the filter is independent of viewed state. Skipping
+            // the recompute when HideViewed is off is a meaningful win
+            // for large lists, since toggling viewed is a per-row action
+            // that doesn't otherwise touch the tree structure.
+            if (HideViewed) RecomputeVisibility();
+            return;
+        }
+
         if (_suppressIsSelectedSync) return;
         if (e.PropertyName != nameof(FileEntryViewModel.IsSelected)) return;
-        if (sender is not FileEntryViewModel entry) return;
         if (!entry.IsSelected) return;
 
         SelectedEntry = entry;
@@ -283,6 +365,26 @@ public sealed partial class FileListViewModel : ObservableObject
             }).ToList();
             foreach (var e in entries) FlatEntries.Add(e);
 
+            // Re-apply viewed flags from prior rebuilds. Only entries
+            // whose content fingerprint still matches the moment-of-mark
+            // get their flag back; on mismatch the dictionary entry is
+            // dropped so the user isn't lulled by a stale "viewed" badge
+            // on changed content. Files that simply fell out of the list
+            // are left in the dictionary so the flag can re-apply if they
+            // come back (revert / branch switch) with matching content.
+            foreach (var e in entries)
+            {
+                if (!_viewedByPath.TryGetValue(e.Change.Path, out var record)) continue;
+                if (record.Fingerprint.Equals(e.Fingerprint))
+                {
+                    e.IsViewed = record.IsViewed;
+                }
+                else
+                {
+                    _viewedByPath.Remove(e.Change.Path);
+                }
+            }
+
             if (isCommitVsCommit)
             {
                 // No section grouping for commit-vs-commit - flat list under one synthetic section.
@@ -322,6 +424,11 @@ public sealed partial class FileListViewModel : ObservableObject
                 }
                 SelectedEntry = match;
             }
+
+            // Initial visibility pass — seeds each section's
+            // VisibleEntryCount and applies any FilterText / HideViewed
+            // values that were set before the rebuild.
+            RecomputeVisibility();
         }
         finally
         {
@@ -383,4 +490,85 @@ public sealed partial class FileListViewModel : ObservableObject
         WorkingTreeLayer.None => "Changes",
         _ => layer.ToString(),
     };
+
+    /// <summary>
+    /// Recompute the <c>IsVisible</c> / <c>VisibleEntryCount</c> flags on
+    /// every entry, section, and directory node in the tree so the bound
+    /// triggers in the view collapse hidden rows. Called whenever
+    /// <see cref="FilterText"/> or <see cref="HideViewed"/> changes,
+    /// after <see cref="LoadFromChanges"/> rebuilds the list, and when an
+    /// individual entry's <see cref="FileEntryViewModel.IsViewed"/>
+    /// flips while <see cref="HideViewed"/> is on.
+    ///
+    /// <para>Each <see cref="FileEntryViewModel"/> instance is shared
+    /// between <see cref="FlatEntries"/>, the owning section's
+    /// <c>Entries</c>, and the directory tree's <c>Files</c>, so
+    /// updating <c>IsVisible</c> once via the section loop is enough.
+    /// Section and directory visibility derive from descendant visibility
+    /// (any visible descendant ⇒ the container itself is visible).</para>
+    /// </summary>
+    internal void RecomputeVisibility()
+    {
+        string? normalizedQuery = string.IsNullOrEmpty(FilterText)
+            ? null
+            : FileListFilter.Normalize(FilterText);
+
+        foreach (var section in Sections)
+        {
+            int visibleCount = 0;
+            foreach (var entry in section.Entries)
+            {
+                bool matchesFilter = normalizedQuery is null
+                    || FileListFilter.MatchesNormalized(entry.NormalizedPathForFilter, normalizedQuery);
+                bool passesHide = !HideViewed || !entry.IsViewed;
+                bool visible = matchesFilter && passesHide;
+                entry.IsVisible = visible;
+                if (visible) visibleCount++;
+            }
+            section.VisibleEntryCount = visibleCount;
+            // A section with no visible entries collapses itself so the
+            // header chrome doesn't dangle. The display-mode bar and the
+            // header collapse-arrow remain user-visible because they're
+            // not inside the section's TreeViewItem.
+            section.IsVisible = visibleCount > 0;
+
+            // Cascade through the directory tree for grouped-by-directory
+            // mode. The flat / repo-relative modes don't surface
+            // DirectoryNodeViewModels in the bound RootItems collection,
+            // so the inner walk is a no-op there.
+            foreach (var item in section.RootItems)
+            {
+                if (item is DirectoryNodeViewModel dir) RecomputeDirVisibility(dir);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Recursive helper for <see cref="RecomputeVisibility"/>. A directory
+    /// is visible when any of its descendant files (transitively, through
+    /// nested directories) is visible.
+    /// </summary>
+    private static bool RecomputeDirVisibility(DirectoryNodeViewModel dir)
+    {
+        bool anyVisible = false;
+        foreach (var child in dir.Children)
+        {
+            if (RecomputeDirVisibility(child)) anyVisible = true;
+        }
+        foreach (var file in dir.Files)
+        {
+            if (file.IsVisible) anyVisible = true;
+        }
+        dir.IsVisible = anyVisible;
+        return anyVisible;
+    }
 }
+
+/// <summary>
+/// Per-path snapshot of a viewed flag along with the content fingerprint
+/// at the moment it was set. Stored in
+/// <see cref="FileListViewModel._viewedByPath"/>; on the next rebuild we
+/// only re-apply the flag if the new entry's fingerprint still matches —
+/// otherwise the marking is stale (content moved on us) and is dropped.
+/// </summary>
+internal readonly record struct ViewedRecord(ContentFingerprint Fingerprint, bool IsViewed);

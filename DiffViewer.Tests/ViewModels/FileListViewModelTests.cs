@@ -736,4 +736,303 @@ public class FileListViewModelTests
         vm.SelectedEntry.Should().BeSameAs(b);
         a.IsSelected.Should().BeFalse();
     }
+
+    // ---------- Filter / Hide-viewed / IsViewed (issue #3) ----------
+
+    private static FileChange MakeChangeWithSha(
+        string path,
+        string? leftSha = "L",
+        string? rightSha = "R",
+        long? leftSize = 100,
+        long? rightSize = 200,
+        Models.FileStatus status = Models.FileStatus.Modified,
+        WorkingTreeLayer layer = WorkingTreeLayer.Unstaged) =>
+        new(
+            Path: path,
+            OldPath: null,
+            Status: status,
+            ConflictCode: null,
+            Layer: layer,
+            LeftBlobSha: leftSha,
+            RightBlobSha: rightSha,
+            IsBinary: false,
+            LeftFileSizeBytes: leftSize,
+            RightFileSizeBytes: rightSize,
+            IsLfsPointer: false,
+            IsSparseNotCheckedOut: false,
+            OldMode: 0,
+            NewMode: 0);
+
+    [Fact]
+    public void FilterText_NarrowsVisibleEntries_FlatList()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("src/alpha.cs"),
+                MakeChange("src/beta.cs"),
+                MakeChange("src/gamma.cs"),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FilterText = "alpha";
+
+        vm.FlatEntries.Single(e => e.Change.Path == "src/alpha.cs").IsVisible.Should().BeTrue();
+        vm.FlatEntries.Single(e => e.Change.Path == "src/beta.cs").IsVisible.Should().BeFalse();
+        vm.FlatEntries.Single(e => e.Change.Path == "src/gamma.cs").IsVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FilterText_IsCaseInsensitive()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/AlphaBeta.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FilterText = "ALPHABETA";
+
+        vm.FlatEntries[0].IsVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void FilterText_NormalisesSlashesBothDirections()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("src/deep/file.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FilterText = "deep/file";
+        vm.FlatEntries[0].IsVisible.Should().BeTrue();
+
+        vm.FilterText = "deep\\file";
+        vm.FlatEntries[0].IsVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void FilterText_HidesSection_WhenEveryEntryFilteredOut()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("a.cs", layer: WorkingTreeLayer.Unstaged),
+                MakeChange("b.cs", layer: WorkingTreeLayer.Staged),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FilterText = "a.cs";
+
+        var unstaged = vm.Sections.Single(s => s.Layer == WorkingTreeLayer.Unstaged);
+        var staged = vm.Sections.Single(s => s.Layer == WorkingTreeLayer.Staged);
+        unstaged.IsVisible.Should().BeTrue();
+        unstaged.VisibleEntryCount.Should().Be(1);
+        staged.IsVisible.Should().BeFalse();
+        staged.VisibleEntryCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void FilterText_HidesDirectoryNode_WhenAllDescendantsFiltered()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("src/foo/a.cs", layer: WorkingTreeLayer.Unstaged),
+                MakeChange("src/bar/b.cs", layer: WorkingTreeLayer.Unstaged),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FilterText = "foo";
+
+        var section = vm.Sections.Single();
+        var rootDir = section.RootItems.OfType<DirectoryNodeViewModel>().Single();
+        // src/ has one matching descendant (foo/a.cs), so the src node
+        // itself stays visible.
+        rootDir.IsVisible.Should().BeTrue();
+
+        var fooDir = rootDir.Children.Single(c => c.Label == "foo");
+        var barDir = rootDir.Children.Single(c => c.Label == "bar");
+        fooDir.IsVisible.Should().BeTrue();
+        barDir.IsVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FilterText_RestoresVisibility_WhenCleared()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FilterText = "a.cs";
+        vm.FilterText = string.Empty;
+
+        vm.FlatEntries.Should().OnlyContain(e => e.IsVisible);
+    }
+
+    [Fact]
+    public void HideViewed_HidesViewedEntries_AndRestoresWhenToggledOff()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var a = vm.FlatEntries.Single(e => e.Change.Path == "a.cs");
+        a.IsViewed = true;
+
+        vm.HideViewed = true;
+        a.IsVisible.Should().BeFalse();
+
+        vm.HideViewed = false;
+        a.IsVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void HideViewedAndFilter_ComposeAsAnd()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[]
+            {
+                MakeChange("alpha.cs"),
+                MakeChange("alphabet.cs"),
+                MakeChange("beta.cs"),
+            },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var alpha = vm.FlatEntries.Single(e => e.Change.Path == "alpha.cs");
+        alpha.IsViewed = true;
+
+        vm.FilterText = "alpha";
+        vm.HideViewed = true;
+
+        // matches filter AND not viewed: only alphabet.cs survives both.
+        vm.FlatEntries.Single(e => e.Change.Path == "alpha.cs").IsVisible.Should().BeFalse();
+        vm.FlatEntries.Single(e => e.Change.Path == "alphabet.cs").IsVisible.Should().BeTrue();
+        vm.FlatEntries.Single(e => e.Change.Path == "beta.cs").IsVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsFilterOrHideActive_TrueWhenEitherActive()
+    {
+        var vm = new FileListViewModel();
+        vm.IsFilterOrHideActive.Should().BeFalse();
+
+        vm.FilterText = "x";
+        vm.IsFilterOrHideActive.Should().BeTrue();
+
+        vm.FilterText = string.Empty;
+        vm.HideViewed = true;
+        vm.IsFilterOrHideActive.Should().BeTrue();
+
+        vm.HideViewed = false;
+        vm.IsFilterOrHideActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsViewed_ReappliesAcrossReload_WhenFingerprintMatches()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", "L", "R", 10, 20) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed = true;
+
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", "L", "R", 10, 20) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsViewed_DropsAcrossReload_WhenRightShaChanges()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", "L", "R1", 10, 20) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed = true;
+
+        // Same path but the working-tree blob SHA moved — content changed.
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", "L", "R2", 10, 20) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsViewed_DropsAcrossReload_WhenSizeChanges()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", null, null, 10, 20) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed = true;
+
+        // SHAs are absent (working-tree edit pre-stage); size change
+        // alone is enough to invalidate.
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", null, null, 10, 25) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void IsViewed_ReappliesIfFileReturns_AfterDisappearing()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", "L", "R", 10, 20) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed = true;
+
+        // a.cs disappears from the list entirely.
+        vm.LoadFromChanges(Array.Empty<FileChange>(), @"C:\repo", isCommitVsCommit: false);
+        // Then comes back with matching fingerprint (e.g. user reverted
+        // a deletion and re-staged the same content).
+        vm.LoadFromChanges(
+            new[] { MakeChangeWithSha("a.cs", "L", "R", 10, 20) },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FlatEntries[0].IsViewed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void VisibleEntryCount_StartsAtTotal_WhenNoFilterApplied()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs"), MakeChange("c.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        var section = vm.Sections.Single();
+        section.VisibleEntryCount.Should().Be(3);
+        section.CountChipText.Should().Be("3");
+    }
+
+    [Fact]
+    public void CountChipText_SwitchesToVisibleOverTotal_WhenFiltering()
+    {
+        var vm = new FileListViewModel();
+        vm.LoadFromChanges(
+            new[] { MakeChange("a.cs"), MakeChange("b.cs"), MakeChange("c.cs") },
+            @"C:\repo", isCommitVsCommit: false);
+
+        vm.FilterText = "a";
+
+        var section = vm.Sections.Single();
+        section.VisibleEntryCount.Should().Be(1);
+        section.CountChipText.Should().Be("1 / 3");
+    }
 }

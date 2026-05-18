@@ -38,6 +38,16 @@ public sealed partial class DirectoryNodeViewModel : ObservableObject
     [ObservableProperty]
     private bool _isExpanded = true;
 
+    /// <summary>
+    /// True when the directory row should appear in the grouped tree.
+    /// Set by <see cref="FileListViewModel.RecomputeVisibility"/>: a
+    /// directory is visible iff any descendant file is visible.
+    /// Composes with — but is independent of — the user-driven
+    /// <see cref="IsExpanded"/> collapse flag.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isVisible = true;
+
     partial void OnIsExpandedChanged(bool value)
     {
         _expansionStore?.Set(PersistenceKey, isCollapsed: !value);

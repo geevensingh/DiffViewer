@@ -110,6 +110,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
                 <Border Grid.Column="0"
@@ -131,7 +132,7 @@
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsWhitespaceOnly}" Value="True">
+                                <DataTrigger Binding="{Binding IsDimmed}" Value="True">
                                     <Setter Property="Foreground" Value="{StaticResource DimFgBrush}"/>
                                 </DataTrigger>
                             </Style.Triggers>
@@ -140,6 +141,29 @@
                     <Run Text="{Binding DisplayPath, Mode=OneWay}"/><Run Text="{Binding RenameDescriptor, Mode=OneWay}"
                                                                         Foreground="{StaticResource DimFgBrush}"/>
                 </TextBlock>
+
+                <!-- GitHub-PR-review-style viewed checkbox. PreviewMouseDown
+                     and PreviewMouseUp are marked handled in code-behind so
+                     the click doesn't bubble to the TreeViewItem and steal
+                     selection / scroll-into-view. ToolTip flips by IsChecked
+                     so the user sees the action that will happen on click. -->
+                <CheckBox Grid.Column="2"
+                          IsChecked="{Binding IsViewed, Mode=TwoWay}"
+                          VerticalAlignment="Center"
+                          Margin="6,0,2,0"
+                          PreviewMouseLeftButtonDown="OnViewedCheckBoxPreviewMouse"
+                          PreviewMouseLeftButtonUp="OnViewedCheckBoxPreviewMouse">
+                    <CheckBox.Style>
+                        <Style TargetType="CheckBox">
+                            <Setter Property="ToolTip" Value="Mark as viewed"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsChecked" Value="True">
+                                    <Setter Property="ToolTip" Value="Mark as not viewed"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </CheckBox.Style>
+                </CheckBox>
             </Grid>
         </DataTemplate>
 
@@ -154,6 +178,38 @@
     </UserControl.Resources>
 
     <DockPanel>
+        <!-- Filter + Hide-viewed bar (issue #3). Filter is repo-relative,
+             case-insensitive substring, slash-insensitive. Esc clears
+             and returns focus to the file list; Ctrl+/ at the Window
+             level focuses this TextBox via MainViewModel.FocusFilterCommand
+             (the handler is wired in code-behind). Hide-viewed composes
+             with the filter as AND. -->
+        <Border DockPanel.Dock="Top"
+                Background="{StaticResource SectionBgBrush}"
+                BorderBrush="#DDDDDD"
+                BorderThickness="0,0,0,1"
+                Padding="6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="FilterBox"
+                         Grid.Column="0"
+                         Text="{Binding FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         VerticalContentAlignment="Center"
+                         Padding="4,2"
+                         KeyDown="OnFilterKeyDown"
+                         ToolTip="Filter files (Ctrl+/) — case-insensitive substring, repo-relative path"/>
+                <ToggleButton Grid.Column="1"
+                              Content="Hide viewed"
+                              IsChecked="{Binding HideViewed, Mode=TwoWay}"
+                              Margin="6,0,0,0"
+                              Padding="8,2"
+                              ToolTip="Hide files marked viewed"/>
+            </Grid>
+        </Border>
+
         <!-- Display-mode toggle bar -->
         <Border DockPanel.Dock="Top"
                 Background="{StaticResource SectionBgBrush}"
@@ -188,10 +244,12 @@
              their own IsExpanded, files use IsSelected). -->
         <ScrollViewer VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Auto">
-            <TreeView ItemsSource="{Binding Sections}"
+            <TreeView x:Name="FilesTree"
+                      ItemsSource="{Binding Sections}"
                       BorderThickness="0"
                       VirtualizingStackPanel.IsVirtualizing="True"
-                      VirtualizingStackPanel.VirtualizationMode="Recycling">
+                      VirtualizingStackPanel.VirtualizationMode="Recycling"
+                      KeyDown="OnTreeKeyDown">
                 <TreeView.Resources>
                     <HierarchicalDataTemplate DataType="{x:Type vm:FileListSectionViewModel}"
                                               ItemsSource="{Binding Children}">
@@ -200,7 +258,7 @@
                                  FontWeight="Bold"
                                  Foreground="{StaticResource HeaderFgBrush}"/>
                             <Run Text=" ("/>
-                            <Run Text="{Binding Entries.Count, Mode=OneWay}"/>
+                            <Run Text="{Binding CountChipText, Mode=OneWay}"/>
                             <Run Text=")"/>
                         </TextBlock>
                     </HierarchicalDataTemplate>
@@ -227,7 +285,15 @@
                              handler walks the visual tree from
                              e.OriginalSource so a click that originated inside
                              the chevron ToggleButton is left alone (its own
-                             ToggleButton handler will toggle once). -->
+                             ToggleButton handler will toggle once).
+
+                             IsVisible→Collapsed DataTriggers implement the
+                             filter / Hide-viewed collapse: when a section,
+                             directory, or file row has no business being on
+                             screen the TreeViewItem disappears entirely.
+                             Collapse-by-visibility is independent of the
+                             user-driven IsExpanded collapse, so expand
+                             state survives a filter toggle. -->
                         <views:FileListItemContainerStyleSelector.SectionStyle>
                             <Style TargetType="TreeViewItem">
                                 <Setter Property="IsExpanded" Value="{Binding SharedHeader.IsExpanded, Mode=TwoWay}"/>
@@ -235,6 +301,11 @@
                                              Handler="OnHeaderLeftMouseUp"/>
                                 <EventSetter Event="PreviewMouseRightButtonDown"
                                              Handler="OnHeaderRightMouseDown"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsVisible}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
                             </Style>
                         </views:FileListItemContainerStyleSelector.SectionStyle>
                         <views:FileListItemContainerStyleSelector.DirectoryStyle>
@@ -244,11 +315,21 @@
                                              Handler="OnHeaderLeftMouseUp"/>
                                 <EventSetter Event="PreviewMouseRightButtonDown"
                                              Handler="OnHeaderRightMouseDown"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsVisible}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
                             </Style>
                         </views:FileListItemContainerStyleSelector.DirectoryStyle>
                         <views:FileListItemContainerStyleSelector.FileStyle>
                             <Style TargetType="TreeViewItem">
                                 <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsVisible}" Value="False">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
                             </Style>
                         </views:FileListItemContainerStyleSelector.FileStyle>
                     </views:FileListItemContainerStyleSelector>
