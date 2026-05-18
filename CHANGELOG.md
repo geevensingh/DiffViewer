@@ -12,6 +12,21 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Launch directly into a GitHub pull request's diff.** Pass a PR URL
+  on the command line (`DiffViewer.exe https://github.com/owner/repo/pull/123`)
+  and DiffViewer resolves the PR's `(merge-base, head)` into a normal
+  two-commit comparison — every existing affordance (side-by-side /
+  inline, hunk navigation, stage / unstage / revert, recents) works
+  unchanged on PR contexts. Auth is via `gh auth token` (install the
+  GitHub CLI and run `gh auth login`); the new **Settings → Repo roots**
+  field tells DiffViewer where to look for the matching local clone.
+  PRs appear in the recents dropdown labeled `owner/repo#N`; clicking
+  one always re-resolves so the latest head SHA is shown — handy after
+  a force-push. Read-only and `github.com`-only in v1; see the README
+  for the full list of non-goals.
+
 ## [0.3.0] - 2026-05-16
 
 ### Added
@@ -128,6 +143,7 @@ The binary is unsigned, so Windows SmartScreen may warn on first
 launch — click **"More info"** → **"Run anyway"**. Code signing is
 planned for a later release.
 
-[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/geevensingh/DiffViewer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/geevensingh/DiffViewer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/geevensingh/DiffViewer/releases/tag/v0.1.0

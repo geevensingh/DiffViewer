@@ -12,6 +12,9 @@ individual hunks.
   and show-whitespace (Ctrl+Shift+W) toggles.
 - Three launch contexts: **working tree vs HEAD**, **working tree vs any
   commit**, or **two arbitrary commits**.
+- **Review a GitHub pull request** by passing its URL on the command line
+  (e.g. `DiffViewer.exe https://github.com/owner/repo/pull/123`). See
+  [Pull request review](#pull-request-review) below for setup.
 - File list grouped by working-tree layer (Conflicted, Committed since
   baseline, Staged, Unstaged, Untracked), with three presentation modes —
   full path, repo-relative, or grouped-by-directory — and a status badge
@@ -28,6 +31,77 @@ individual hunks.
   entries) so jumping back to "working tree of repo X" or "two commits in
   repo Y" is one click.
 - Self-contained Windows x64 distribution — no .NET runtime install needed.
+
+## Pull request review
+
+DiffViewer can launch directly into a GitHub pull request's diff:
+
+```text
+DiffViewer.exe https://github.com/owner/repo/pull/123
+```
+
+The PR's `(merge-base, head)` is resolved into the same kind of two-commit
+diff the rest of the app already renders, so every existing affordance —
+side-by-side / inline, hunk navigation, stage / unstage / revert,
+recents — works on PRs without any new UI to learn.
+
+### One-time setup
+
+1. **Install the [GitHub CLI][gh-cli] and run `gh auth login`.** DiffViewer
+   asks `gh` for an OAuth token via `gh auth token` (per-host) on every PR
+   load, so the token in DiffViewer always matches the token in your
+   terminal. PATs in settings are not supported in v1.
+2. **Tell DiffViewer where your clones live.** Open **Settings → Repo
+   roots** and add one or more directories whose immediate children are
+   git clones (e.g. `C:\Repos`). On a PR launch, DiffViewer scans every
+   remote of every clone under those roots — not just `origin` — to find
+   one whose remote URL matches the PR's `owner/repo`. SSH and HTTPS URL
+   forms are both recognized and matching is case-insensitive.
+
+### Missing-clone dialog
+
+If no matching local clone is found, DiffViewer offers two options:
+
+- **Browse to an existing clone** somewhere else on disk. DiffViewer
+  validates that one of its remotes matches the PR's repo (with a
+  confirmation when none do — useful when you've renamed remotes), then
+  remembers the mapping so the next PR from that repo skips this dialog.
+  **This is also how you review PRs against private repos in v1**: clone
+  once with `gh repo clone` (where your existing credentials work), then
+  point DiffViewer at the path.
+- **Clone for me** into a destination you pick. Public repos only in v1;
+  private clones go through Browse.
+
+### Refs DiffViewer writes into your clone
+
+To diff a PR head against its base, DiffViewer fetches both into the
+local clone under its own refs namespace:
+
+- `refs/diffviewer/pr/N/head` — the PR's head commit.
+- `refs/diffviewer/base/<branch>` — the PR's base branch tip.
+
+These are local-only (never pushed) and accumulate over time as you view
+PRs. They show up in `git for-each-ref` and are otherwise harmless;
+v1 doesn't include a cleanup action.
+
+### Non-goals (v1)
+
+DiffViewer's PR review is a **read-only**, **public-repo-clone-friendly**,
+`github.com`-only first cut. The following are deliberate omissions:
+
+- No posting review comments, drafts, or approve / request-changes
+  submissions.
+- No inline rendering of existing review threads on the diff.
+- No "mark file as viewed" state.
+- No GitHub Enterprise Server (host plumbing is in place; configuration
+  is a follow-up).
+- No PAT-in-settings auth — `gh auth login` is the only path in v1.
+- No "Clone for me" against private repos — use Browse instead.
+- No per-commit diffs inside a PR (only the cumulative 3-dot view).
+- No PR metadata (title, author, state) in the window chrome beyond
+  what shows up in the recents dropdown.
+
+[gh-cli]: https://cli.github.com/
 
 ## Requirements
 
