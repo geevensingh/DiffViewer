@@ -340,6 +340,36 @@ public class DiffPaneViewModelTests
     }
 
     [Fact]
+    public void WordWrap_ToolbarChange_PersistsToSettings()
+    {
+        // Issue #11: the WordWrap toolbar toggle must round-trip to disk
+        // the same way SideVisibility does, otherwise the toggle state
+        // doesn't survive a restart.
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { WordWrap = false });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        vm.WordWrap = true;
+
+        settings.Current.WordWrap.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ShowLineNumbers_ToolbarChange_PersistsToSettings()
+    {
+        // Companion to WordWrap_ToolbarChange_PersistsToSettings: line
+        // numbers are also reachable from the toolbar and must persist
+        // the same way. Caught while wiring up word wrap (issue #11).
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { ShowLineNumbers = true });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        vm.ShowLineNumbers = false;
+
+        settings.Current.ShowLineNumbers.Should().BeFalse();
+    }
+
+    [Fact]
     public void SideVisibility_ExternalSettingsChange_PushedToViewModel()
     {
         var repo = new FakeRepository();

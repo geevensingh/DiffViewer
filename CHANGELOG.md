@@ -12,6 +12,29 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Word-wrap toolbar toggle.** A new **Wrap** button next to the
+  **Line #s** toggle wraps long lines at the editor's right edge in
+  both side-by-side and inline modes. Useful for files with very long
+  lines (minified JS, long Markdown paragraphs, generated configs,
+  single-line JSON) where horizontal scrolling becomes the dominant
+  reading cost. Toggle state persists across launches alongside the
+  other diff-pane settings. Keybinding: `Ctrl+Shift+L`. In
+  side-by-side mode each side wraps independently, so paired lines no
+  longer align row-for-row when one side has more wrap points than
+  the other — this is the cost of seeing the full content in-frame.
+  Resolves [#11](https://github.com/geevensingh/DiffViewer/issues/11).
+
+### Fixed
+
+- **Line-numbers toolbar toggle now persists across launches.** The
+  toolbar **Line #s** toggle previously updated the in-memory state
+  and the editors but didn't write back to settings, so the choice
+  was lost on restart. Caught while wiring up the new word-wrap
+  toolbar toggle (issue #11); both toggles now use the same
+  persistence path as every other toolbar toggle.
+
 ## [0.4.0] - 2026-05-17
 
 ### Added

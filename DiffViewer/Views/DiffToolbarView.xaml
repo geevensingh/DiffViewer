@@ -207,6 +207,10 @@
                               IsChecked="{Binding ShowLineNumbers}"
                               Content="Line #s"
                               ToolTip="Show line numbers in the editor gutters"/>
+                <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                              IsChecked="{Binding WordWrap}"
+                              Content="Wrap"
+                              ToolTip="Wrap long lines at the editor's right edge (Ctrl+Shift+L)"/>
 
                 <Separator Margin="6,2" Width="1" Background="#CCC"/>
 

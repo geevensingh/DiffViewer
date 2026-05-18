@@ -357,6 +357,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     [RelayCommand] private void ToggleVisibleWhitespace() => DiffPane.ShowVisibleWhitespace = !DiffPane.ShowVisibleWhitespace;
     [RelayCommand] private void ToggleSideBySide()        => DiffPane.IsSideBySide      = !DiffPane.IsSideBySide;
     [RelayCommand] private void ToggleIntraLineDiff()     => DiffPane.ShowIntraLineDiff = !DiffPane.ShowIntraLineDiff;
+    [RelayCommand] private void ToggleWordWrap()          => DiffPane.WordWrap          = !DiffPane.WordWrap;
 
     [RelayCommand]
     private void ToggleLiveUpdates()

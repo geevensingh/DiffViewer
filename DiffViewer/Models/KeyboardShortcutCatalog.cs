@@ -96,6 +96,10 @@ public static class KeyboardShortcutCatalog
             {
                 XamlBindings = new[] { new KeyChord(Key.W, ModifierKeys.Control | ModifierKeys.Shift) },
             },
+            new("Ctrl+Shift+L", "Toggle word wrap")
+            {
+                XamlBindings = new[] { new KeyChord(Key.L, ModifierKeys.Control | ModifierKeys.Shift) },
+            },
             new("Ctrl+1", "File list: full path")
             {
                 XamlBindings = new[] { new KeyChord(Key.D1, ModifierKeys.Control) },

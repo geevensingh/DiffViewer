@@ -750,6 +750,15 @@ public class MainViewModelKeyboardShortcutTests
     }
 
     [Fact]
+    public void ToggleWordWrap_FlipsDiffPaneState()
+    {
+        using var fixture = new KeyboardFixture();
+        var initial = fixture.Vm.DiffPane.WordWrap;
+        fixture.Vm.ToggleWordWrapCommand.Execute(null);
+        fixture.Vm.DiffPane.WordWrap.Should().Be(!initial);
+    }
+
+    [Fact]
     public void ToggleLiveUpdates_NoOpWhenCommitVsCommit()
     {
         using var fixture = new KeyboardFixture(commitVsCommit: true);

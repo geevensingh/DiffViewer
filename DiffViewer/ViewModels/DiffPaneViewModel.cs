@@ -690,6 +690,10 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         PersistToolbarToSettings();
     }
 
+    partial void OnShowLineNumbersChanged(bool value) => PersistToolbarToSettings();
+
+    partial void OnWordWrapChanged(bool value) => PersistToolbarToSettings();
+
     partial void OnSideVisibilityChanged(DiffSideVisibility value)
     {
         OnPropertyChanged(nameof(ShowLeftSide));
@@ -714,6 +718,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             ShowVisibleWhitespace = ShowVisibleWhitespace,
             LiveUpdates = LiveUpdates,
             SideVisibility = SideVisibility,
+            ShowLineNumbers = ShowLineNumbers,
+            WordWrap = WordWrap,
         });
     }
 

@@ -44,6 +44,7 @@
         <KeyBinding Key="I" Modifiers="Control"        Command="{Binding ToggleSideBySideCommand}"/>
         <KeyBinding Key="D" Modifiers="Control"        Command="{Binding ToggleIntraLineDiffCommand}"/>
         <KeyBinding Key="L" Modifiers="Control"        Command="{Binding ToggleLiveUpdatesCommand}"/>
+        <KeyBinding Key="L" Modifiers="Control+Shift"  Command="{Binding ToggleWordWrapCommand}"/>
 
         <!-- Display modes -->
         <KeyBinding Key="D1" Modifiers="Control" Command="{Binding SetDisplayModeFullPathCommand}"/>
