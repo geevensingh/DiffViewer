@@ -22,6 +22,10 @@ individual hunks.
 - Hunk navigation by F7 (previous) / F8 (next), Shift+F7/F8 to step by
   file, Ctrl+F7/F8 to step by section, or Alt+Up/Down as screen-reader
   aliases. Toolbar Prev / Next buttons fire the same commands.
+- **F1 (or the toolbar `?` button) opens a keyboard cheat sheet**
+  listing every shortcut and right-click action, grouped by category
+  (View, Navigation, App, Mouse actions). F1 again, Esc, or the
+  Close button dismisses it.
 - **Stage hunk**, **unstage hunk**, and **revert hunk** from the
   right-click menu on a diff line. Revert prompts with a "Discard this
   hunk from the working tree" confirmation (suppressible).

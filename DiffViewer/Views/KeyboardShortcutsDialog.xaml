@@ -1,0 +1,80 @@
+<Window x:Class="DiffViewer.Views.KeyboardShortcutsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="clr-namespace:DiffViewer.Models"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Keyboard shortcuts"
+        SizeToContent="Height"
+        Width="560"
+        MaxHeight="700"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner"
+        Background="White"
+        PreviewKeyDown="OnPreviewKeyDown">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="GroupHeaderFg" Color="#222222"/>
+        <SolidColorBrush x:Key="GestureFg"     Color="#1A4480"/>
+        <SolidColorBrush x:Key="ContextNoteFg" Color="#666666"/>
+    </Window.Resources>
+
+    <DockPanel Margin="20">
+        <Button DockPanel.Dock="Bottom"
+                Content="Close"
+                MinWidth="90"
+                Padding="12,4"
+                Margin="0,16,0,0"
+                HorizontalAlignment="Right"
+                IsCancel="True"
+                IsDefault="True"
+                Click="OnCloseClick"/>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding}"
+                          d:DataContext="{d:DesignInstance Type=models:ShortcutGroup, IsDesignTimeCreatable=False}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type models:ShortcutGroup}">
+                        <StackPanel Margin="0,0,0,14">
+                            <TextBlock Text="{Binding Name}"
+                                       FontWeight="SemiBold"
+                                       FontSize="14"
+                                       Foreground="{StaticResource GroupHeaderFg}"
+                                       Margin="0,0,0,6"/>
+
+                            <ItemsControl ItemsSource="{Binding Entries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type models:ShortcutEntry}">
+                                        <Grid Margin="0,2">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="180"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{Binding Gesture}"
+                                                       FontFamily="Consolas"
+                                                       Foreground="{StaticResource GestureFg}"
+                                                       VerticalAlignment="Top"/>
+
+                                            <TextBlock Grid.Column="1"
+                                                       TextWrapping="Wrap"
+                                                       VerticalAlignment="Top">
+                                                <Run Text="{Binding Description, Mode=OneWay}"/><Run Text="{Binding ContextNote, Mode=OneWay, StringFormat=' ({0})', TargetNullValue=''}"
+                                                     Foreground="{StaticResource ContextNoteFg}"
+                                                     FontStyle="Italic"/>
+                                            </TextBlock>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

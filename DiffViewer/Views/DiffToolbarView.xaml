@@ -255,13 +255,33 @@
                               ToolTip="Auto-refresh when the working tree changes (Ctrl+L; greyed for commit-vs-commit)"/>
             </StackPanel>
 
-            <Button Grid.Column="1"
-                    Style="{StaticResource ToolbarButtonStyle}"
-                    Command="{Binding DataContext.ShowSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
-                    Content="&#xE713;"
-                    FontFamily="Segoe MDL2 Assets"
-                    FontSize="14"
-                    ToolTip="Settings (Ctrl+,)"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <Button Style="{StaticResource ToolbarButtonStyle}"
+                        Command="{Binding DataContext.ShowKeyboardShortcutsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        ToolTip="Keyboard shortcuts (F1)">
+                    <Grid Width="18" Height="14">
+                        <TextBlock Text="&#xE765;"
+                                   FontFamily="Segoe MDL2 Assets"
+                                   FontSize="14"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"/>
+                        <TextBlock Text="?"
+                                   FontFamily="Segoe UI"
+                                   FontSize="9"
+                                   FontWeight="Bold"
+                                   Foreground="#0078D4"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Bottom"
+                                   Margin="0,0,-2,-3"/>
+                    </Grid>
+                </Button>
+                <Button Style="{StaticResource ToolbarButtonStyle}"
+                        Command="{Binding DataContext.ShowSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                        Content="&#xE713;"
+                        FontFamily="Segoe MDL2 Assets"
+                        FontSize="14"
+                        ToolTip="Settings (Ctrl+,)"/>
+            </StackPanel>
         </Grid>
     </Border>
 </UserControl>

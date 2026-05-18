@@ -15,6 +15,9 @@
         <!-- Settings -->
         <KeyBinding Key="OemComma" Modifiers="Control" Command="{Binding ShowSettingsCommand}"/>
 
+        <!-- Help / cheat sheet -->
+        <KeyBinding Key="F1" Command="{Binding ShowKeyboardShortcutsCommand}"/>
+
         <!-- Refresh -->
         <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
 

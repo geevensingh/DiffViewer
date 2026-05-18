@@ -73,11 +73,21 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     /// </summary>
     public Action? ShowSettingsHandler { get; set; }
 
+    /// <summary>
+    /// Hook for the View layer to display the modal keyboard cheat
+    /// sheet (F1). Tests / headless contexts leave it null and the
+    /// <see cref="ShowKeyboardShortcutsCommand"/> becomes a no-op.
+    /// </summary>
+    public Action? ShowKeyboardShortcutsHandler { get; set; }
+
     [ObservableProperty]
     private string _windowTitle = "DiffViewer";
 
     [RelayCommand]
     private void ShowSettings() => ShowSettingsHandler?.Invoke();
+
+    [RelayCommand]
+    private void ShowKeyboardShortcuts() => ShowKeyboardShortcutsHandler?.Invoke();
 
     /// <summary>
     /// Settings service the View can use to construct a

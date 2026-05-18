@@ -27,4 +27,16 @@
     <ProjectReference Include="..\DiffViewer\DiffViewer.csproj" />
   </ItemGroup>
 
+  <!-- Copy MainWindow.xaml into the test output so
+       KeyboardShortcutsDriftTests can parse it at runtime and assert
+       a bijection with KeyboardShortcutCatalog. Link rename keeps it
+       away from any *.xaml glob (the SDK's WPF <Page> include is
+       project-dir-relative and won't match an upward-path include
+       anyway, but the rename is belt-and-braces). -->
+  <ItemGroup>
+    <None Include="..\DiffViewer\MainWindow.xaml"
+          Link="TestData\MainWindow.xaml"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

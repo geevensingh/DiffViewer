@@ -14,6 +14,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **F1 opens a keyboard cheat sheet.** A modal dialog lists every
+  keyboard shortcut and right-click action, grouped by category
+  (View, Navigation, App, Mouse actions). A `?` button on the
+  right-hand side of the toolbar opens the same dialog so the
+  cheat sheet is discoverable without already knowing the F1
+  shortcut. F1 again, Esc, or the Close button dismisses it. A
+  drift-detection unit test parses `MainWindow.xaml`'s
+  `<Window.InputBindings>` and asserts a bijection with the cheat
+  sheet's catalog, so the documentation cannot silently go stale
+  relative to the actual key bindings. Resolves
+  [#10](https://github.com/geevensingh/DiffViewer/issues/10).
+
 - **Find-in-diff with Ctrl+F.** Press Ctrl+F in the diff pane to
   open AvalonEdit's find bar with Match-Case / Whole-Words / Regex
   toggles. F3 / Shift+F3 step to the next / previous match; Esc

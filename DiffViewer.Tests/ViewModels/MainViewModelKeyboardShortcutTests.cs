@@ -848,6 +848,52 @@ public class MainViewModelKeyboardShortcutTests
         fixture.Vm.WindowTitle.Should().Contain("HEAD");
     }
 
+    // ===================== F1 cheat sheet (ShowKeyboardShortcuts) =====================
+
+    [Fact]
+    public void ShowKeyboardShortcutsCommand_WhenHandlerSet_InvokesHandler()
+    {
+        using var fixture = new KeyboardFixture();
+        int calls = 0;
+        fixture.Vm.ShowKeyboardShortcutsHandler = () => calls++;
+
+        fixture.Vm.ShowKeyboardShortcutsCommand.Execute(null);
+
+        calls.Should().Be(1);
+    }
+
+    [Fact]
+    public void ShowKeyboardShortcutsCommand_WhenHandlerNull_IsNoOp()
+    {
+        using var fixture = new KeyboardFixture();
+        fixture.Vm.ShowKeyboardShortcutsHandler = null;
+
+        var act = () => fixture.Vm.ShowKeyboardShortcutsCommand.Execute(null);
+
+        act.Should().NotThrow(
+            because: "headless / test contexts construct the VM without a " +
+                     "View attached; the F1 command must be a no-op rather " +
+                     "than NRE");
+    }
+
+    [Fact]
+    public void ShowKeyboardShortcutsCommand_IsIndependentOfShowSettings()
+    {
+        // Two separate handlers, two separate commands. Catches any
+        // future refactor that accidentally collapses them into one
+        // hook.
+        using var fixture = new KeyboardFixture();
+        int settingsCalls = 0;
+        int cheatSheetCalls = 0;
+        fixture.Vm.ShowSettingsHandler = () => settingsCalls++;
+        fixture.Vm.ShowKeyboardShortcutsHandler = () => cheatSheetCalls++;
+
+        fixture.Vm.ShowKeyboardShortcutsCommand.Execute(null);
+
+        cheatSheetCalls.Should().Be(1);
+        settingsCalls.Should().Be(0);
+    }
+
     // ===================== Helpers =====================
 
     private sealed class KeyboardFixture : IDisposable

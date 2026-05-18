@@ -192,6 +192,7 @@ public partial class MainWindow : Window
         if (e.NewValue is MainViewModel vm)
         {
             vm.ShowSettingsHandler = ShowSettingsDialog;
+            vm.ShowKeyboardShortcutsHandler = ShowKeyboardShortcutsDialog;
             vm.ConfirmHandler = ShowConfirmDialog;
             vm.ToastHandler = ShowToast;
             vm.FocusCycleRequested = CycleFocusAcrossPanes;
@@ -432,6 +433,12 @@ public partial class MainWindow : Window
             };
             timer.Start();
         });
+    }
+
+    private void ShowKeyboardShortcutsDialog()
+    {
+        var dialog = new KeyboardShortcutsDialog { Owner = this };
+        dialog.ShowDialog();
     }
 
     private void ShowSettingsDialog()
