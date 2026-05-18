@@ -199,7 +199,8 @@ The binary is unsigned, so Windows SmartScreen may warn on first
 launch — click **"More info"** → **"Run anyway"**. Code signing is
 planned for a later release.
 
-[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/geevensingh/DiffViewer/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/geevensingh/DiffViewer/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/geevensingh/DiffViewer/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/geevensingh/DiffViewer/releases/tag/v0.1.0
