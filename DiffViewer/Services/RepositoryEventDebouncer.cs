@@ -23,7 +23,7 @@ public sealed class RepositoryEventDebouncer : IDisposable
 {
     private readonly TimeSpan _debounceInterval;
     private readonly Action<RepositoryChangeKind> _onFire;
-    private readonly Timer _timer;
+    private readonly ITimer _timer;
     private readonly object _lock = new();
 
     private int _pendingKind;
@@ -31,14 +31,18 @@ public sealed class RepositoryEventDebouncer : IDisposable
     private bool _hasPendingFireDuringSuspend;
     private bool _disposed;
 
-    public RepositoryEventDebouncer(TimeSpan debounceInterval, Action<RepositoryChangeKind> onFire)
+    public RepositoryEventDebouncer(
+        TimeSpan debounceInterval,
+        Action<RepositoryChangeKind> onFire,
+        TimeProvider? timeProvider = null)
     {
         if (debounceInterval <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(debounceInterval), "Must be positive.");
 
         _debounceInterval = debounceInterval;
         _onFire = onFire ?? throw new ArgumentNullException(nameof(onFire));
-        _timer = new Timer(OnTimerTick, state: null, Timeout.Infinite, Timeout.Infinite);
+        _timer = (timeProvider ?? TimeProvider.System).CreateTimer(
+            OnTimerTick, state: null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>
@@ -156,7 +160,7 @@ public sealed class RepositoryEventDebouncer : IDisposable
         {
             if (_disposed) return;
             _disposed = true;
-            _timer.Change(Timeout.Infinite, Timeout.Infinite);
+            _timer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
         _timer.Dispose();
     }
