@@ -93,10 +93,24 @@ public class RecentsJsonSerializerTests
     }
 
     [Fact]
-    public void Deserialize_UnknownFutureVersion_ReturnsEmpty()
+    public void Deserialize_UnknownFutureVersion_PreservesKnownRows()
     {
-        var json = "{\"version\":99,\"items\":[]}";
-        RecentsJsonSerializer.Deserialize(json).Should().Be(RecentsDoc.Empty);
+        // Phase 7 softened the policy from "unknown version = empty" to
+        // "preserve known rows, drop unknown ones" so a downgraded binary
+        // reading a newer file doesn't lose every row. Rows the deserializer
+        // can structurally understand are preserved regardless of the
+        // version stamp; rows that fail the per-row shape check are dropped.
+        var json = """
+        {
+          "version": 99,
+          "items": [
+            { "repoPath": "C:/repos/foo", "left": { "type": "commit", "reference": "main" }, "right": { "type": "workingTree" }, "lastUsedUtc": "2026-05-14T18:00:00Z" }
+          ]
+        }
+        """;
+        var doc = RecentsJsonSerializer.Deserialize(json);
+        doc.Items.Should().HaveCount(1);
+        doc.Items[0].Identity.CanonicalRepoPath.Should().EndWith("foo");
     }
 
     [Fact]
@@ -172,5 +186,119 @@ public class RecentsJsonSerializerTests
     {
         Action act = () => RecentsJsonSerializer.Serialize(null!);
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    // -- Phase 7: PR-review feature ----------------------------------
+
+    [Fact]
+    public void RoundTrip_PreservesPullRequestField()
+    {
+        var pr = new PullRequestRef("github.com", "geevensingh", "diffviewer", 42);
+        var items = new[]
+        {
+            new RecentLaunchContext(
+                ContextIdentityFactory.Create(
+                    @"C:\repos\diffviewer",
+                    new DiffSide.CommitIsh("abc123"),
+                    new DiffSide.CommitIsh("def456")),
+                new DiffSide.CommitIsh("abc123"),
+                new DiffSide.CommitIsh("def456"),
+                new DateTimeOffset(2026, 5, 14, 18, 0, 0, TimeSpan.Zero),
+                pr),
+        };
+        var doc = new RecentsDoc(RecentsDoc.CurrentVersion, items);
+
+        var json = RecentsJsonSerializer.Serialize(doc);
+        var rt = RecentsJsonSerializer.Deserialize(json);
+
+        rt.Items.Should().HaveCount(1);
+        rt.Items[0].PullRequest.Should().Be(pr);
+        // Verify the on-disk shape carries the expected nested object so a
+        // downgraded binary can recognize and either honor or ignore it.
+        json.Should().Contain("\"pullRequest\"");
+        json.Should().Contain("\"host\": \"github.com\"");
+        json.Should().Contain("\"number\": 42");
+    }
+
+    [Fact]
+    public void RoundTrip_OmitsPullRequestField_WhenNull()
+    {
+        var doc = new RecentsDoc(RecentsDoc.CurrentVersion, new[]
+        {
+            new RecentLaunchContext(
+                ContextIdentityFactory.Create(
+                    @"C:\repos\foo", new DiffSide.CommitIsh("main"), new DiffSide.WorkingTree()),
+                new DiffSide.CommitIsh("main"),
+                new DiffSide.WorkingTree(),
+                DateTimeOffset.UtcNow),
+        });
+
+        var json = RecentsJsonSerializer.Serialize(doc);
+
+        // Null PR rows should not bloat the on-disk JSON with the
+        // sibling field; deserialization round-trip is covered by
+        // the existing RoundTrip_PreservesAllFields_ForMixedSides test.
+        json.Should().NotContain("\"pullRequest\"");
+    }
+
+    [Fact]
+    public void Deserialize_OldVersion1_WithoutPullRequest_HydratesNullPullRequest()
+    {
+        // A v1 file written by a pre-Phase-7 binary: no pullRequest
+        // sibling on any row. The new deserializer must load it with
+        // PullRequest = null on each row (no data loss on upgrade).
+        var json = """
+        {
+          "version": 1,
+          "items": [
+            { "repoPath": "C:/repos/foo", "left": { "type": "commit", "reference": "main" }, "right": { "type": "workingTree" }, "lastUsedUtc": "2026-05-14T18:00:00Z" }
+          ]
+        }
+        """;
+
+        var doc = RecentsJsonSerializer.Deserialize(json);
+
+        doc.Items.Should().HaveCount(1);
+        doc.Items[0].PullRequest.Should().BeNull();
+    }
+
+    [Fact]
+    public void Deserialize_PullRequestWithMissingOrEmptyFields_HydratesNullPullRequest()
+    {
+        // Defensive: a corrupted / partially-written pullRequest object
+        // (e.g., a future binary that wrote an extra-field subset) must
+        // not bring down the load. The row's PR is dropped, but the row
+        // itself survives.
+        var json = """
+        {
+          "version": 2,
+          "items": [
+            { "repoPath": "C:/repos/foo", "left": { "type": "commit", "reference": "main" }, "right": { "type": "commit", "reference": "topic" }, "lastUsedUtc": "2026-05-14T18:00:00Z", "pullRequest": { "host": "github.com", "owner": "", "repo": "diffviewer", "number": 1 } }
+          ]
+        }
+        """;
+
+        var doc = RecentsJsonSerializer.Deserialize(json);
+
+        doc.Items.Should().HaveCount(1);
+        doc.Items[0].PullRequest.Should().BeNull();
+    }
+
+    [Fact]
+    public void Deserialize_PullRequestWithZeroOrNegativeNumber_HydratesNullPullRequest()
+    {
+        var json = """
+        {
+          "version": 2,
+          "items": [
+            { "repoPath": "C:/repos/foo", "left": { "type": "commit", "reference": "main" }, "right": { "type": "commit", "reference": "topic" }, "lastUsedUtc": "2026-05-14T18:00:00Z", "pullRequest": { "host": "github.com", "owner": "x", "repo": "y", "number": 0 } }
+          ]
+        }
+        """;
+
+        var doc = RecentsJsonSerializer.Deserialize(json);
+
+        doc.Items.Should().HaveCount(1);
+        doc.Items[0].PullRequest.Should().BeNull();
     }
 }

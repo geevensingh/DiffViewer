@@ -243,7 +243,7 @@ public class MainWindowCoordinatorTests
         public System.Collections.Generic.List<string> RecordedRepoPaths { get; } = new();
         public System.Collections.Generic.List<string> RemovedRepoPaths { get; } = new();
 
-        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, System.Threading.CancellationToken ct = default)
+        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, DiffViewer.Models.PullRequestRef? pullRequest = null, System.Threading.CancellationToken ct = default)
         {
             RecordedRepoPaths.Add(identity.CanonicalRepoPath);
             return Task.CompletedTask;

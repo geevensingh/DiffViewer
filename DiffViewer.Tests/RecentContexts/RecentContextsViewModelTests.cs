@@ -173,7 +173,7 @@ public class RecentContextsViewModelTests
         public FakeService(params RecentLaunchContext[] items) { _items = new List<RecentLaunchContext>(items); }
         public IReadOnlyList<RecentLaunchContext> Current => _items;
         public event EventHandler? Changed;
-        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, DiffViewer.Models.PullRequestRef? pullRequest = null, CancellationToken ct = default) => Task.CompletedTask;
         public Task RemoveAsync(ContextIdentity identity, CancellationToken ct = default) => Task.CompletedTask;
         public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
     }

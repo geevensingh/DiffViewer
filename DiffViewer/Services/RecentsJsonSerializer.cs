@@ -57,11 +57,14 @@ internal static class RecentsJsonSerializer
 
         if (node is not JsonObject obj) return RecentsDoc.Empty;
 
-        var version = TryInt(obj, "version") ?? 0;
-        // Forward compatibility: an unknown future version is treated as
-        // empty so a downgrade can't lose data silently — the writer will
-        // re-stamp it at CurrentVersion next time the user records a launch.
-        if (version != RecentsDoc.CurrentVersion) return RecentsDoc.Empty;
+        // Phase 7 of the PR-review feature softened the "unknown version
+        // = empty" policy to "preserve known rows, drop unknown ones."
+        // A new-binary-reads-old-file path: missing pullRequest field
+        // hydrates to null (safe default). An old-binary-reads-new-file
+        // path: unknown sibling fields are ignored and rows still load.
+        // The result is always re-stamped at CurrentVersion on the next
+        // write, so version drift heals itself over time.
+        _ = TryInt(obj, "version");
 
         if (obj["items"] is not JsonArray rawItems) return RecentsDoc.Empty;
 
@@ -76,8 +79,9 @@ internal static class RecentsJsonSerializer
         return new RecentsDoc(RecentsDoc.CurrentVersion, items);
     }
 
-    private static JsonObject SerializeItem(RecentLaunchContext item) =>
-        new()
+    private static JsonObject SerializeItem(RecentLaunchContext item)
+    {
+        var row = new JsonObject
         {
             ["repoPath"] = item.Identity.CanonicalRepoPath,
             ["left"] = SerializeSide(item.LeftDisplay),
@@ -90,6 +94,18 @@ internal static class RecentsJsonSerializer
             // means a future canonicalization change to identity (e.g.
             // resolving symbolic refs) doesn't invalidate the on-disk file.
         };
+        if (item.PullRequest is { } pr)
+        {
+            row["pullRequest"] = new JsonObject
+            {
+                ["host"] = pr.Host,
+                ["owner"] = pr.Owner,
+                ["repo"] = pr.Repo,
+                ["number"] = pr.Number,
+            };
+        }
+        return row;
+    }
 
     private static JsonObject SerializeSide(DiffSide side) => side switch
     {
@@ -122,8 +138,24 @@ internal static class RecentsJsonSerializer
             return null;
         }
 
+        var pullRequest = TryDeserializePullRequest(obj["pullRequest"]);
         var identity = ContextIdentityFactory.Create(repoPath, left, right);
-        return new RecentLaunchContext(identity, left, right, lastUsed);
+        return new RecentLaunchContext(identity, left, right, lastUsed, pullRequest);
+    }
+
+    private static PullRequestRef? TryDeserializePullRequest(JsonNode? node)
+    {
+        if (node is not JsonObject obj) return null;
+        var host = TryString(obj, "host");
+        var owner = TryString(obj, "owner");
+        var repo = TryString(obj, "repo");
+        var number = TryInt(obj, "number");
+        if (string.IsNullOrEmpty(host) || string.IsNullOrEmpty(owner)
+            || string.IsNullOrEmpty(repo) || number is null || number <= 0)
+        {
+            return null;
+        }
+        return new PullRequestRef(host, owner, repo, number.Value);
     }
 
     private static DiffSide? TryDeserializeSide(JsonNode? node)

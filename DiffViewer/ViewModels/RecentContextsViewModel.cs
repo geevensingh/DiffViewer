@@ -189,12 +189,17 @@ public sealed class RecentContextItem : IEquatable<RecentContextItem>
 
     public RecentLaunchContext Source { get; }
 
-    /// <summary>Primary line. e.g. <c>"DevTools · main → &lt;working-tree&gt;"</c>.</summary>
+    /// <summary>Primary line. e.g. <c>"DevTools · main → &lt;working-tree&gt;"</c>
+    /// for local rows, <c>"DevTools · PR owner/repo#42"</c> for PR-mode rows.</summary>
     public string Title
     {
         get
         {
             var name = SafeBaseName(Source.Identity.CanonicalRepoPath);
+            if (Source.PullRequest is { } pr)
+            {
+                return $"{name} · PR {pr.Owner}/{pr.Repo}#{pr.Number}";
+            }
             return $"{name} · {ShortLabelFor(Source.LeftDisplay)} → {ShortLabelFor(Source.RightDisplay)}";
         }
     }
@@ -207,6 +212,20 @@ public sealed class RecentContextItem : IEquatable<RecentContextItem>
     {
         get
         {
+            if (Source.PullRequest is { } pr)
+            {
+                // For PR-mode rows, surface the PR identity in the tooltip
+                // alongside the resolved (merge-base, head) SHAs so the
+                // user can see both "what PR this row points at" and
+                // "what the diff engine actually compared." The SHAs may
+                // become stale between launches (D8) — they reflect the
+                // last resolved state, not the live PR head.
+                return $"Repository: {Source.Identity.CanonicalRepoPath}{Environment.NewLine}" +
+                       $"Pull request: https://{pr.Host}/{pr.Owner}/{pr.Repo}/pull/{pr.Number}{Environment.NewLine}" +
+                       $"Last resolved base:  {LabelFor(Source.LeftDisplay)}{Environment.NewLine}" +
+                       $"Last resolved head:  {LabelFor(Source.RightDisplay)}{Environment.NewLine}" +
+                       $"Last used: {Source.LastUsedUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
+            }
             return $"Repository: {Source.Identity.CanonicalRepoPath}{Environment.NewLine}" +
                    $"Left:  {LabelFor(Source.LeftDisplay)}{Environment.NewLine}" +
                    $"Right: {LabelFor(Source.RightDisplay)}{Environment.NewLine}" +

@@ -291,6 +291,89 @@ public class RecentContextsServiceTests : IDisposable
             });
     }
 
+    // -- Phase 7: PR-review feature ----------------------------------
+
+    [Fact]
+    public async Task RecordLaunchAsync_PrMode_TwoPrsSharingIdentitySha_AreDistinctRows()
+    {
+        // Two different PRs that happen to share the same (merge-base,
+        // head) SHA pair must NOT collapse to one row — the user needs
+        // to be able to distinguish them in the dropdown. PR-mode dedup
+        // folds the PR number into the key.
+        var svc = new RecentContextsService(_path);
+        var left = new DiffSide.CommitIsh("abc123");
+        var right = new DiffSide.CommitIsh("def456");
+        var id = ContextIdentityFactory.Create(@"C:\repos\foo", left, right);
+        var pr1 = new PullRequestRef("github.com", "owner", "repo", 1);
+        var pr2 = new PullRequestRef("github.com", "owner", "repo", 2);
+
+        await svc.RecordLaunchAsync(id, left, right, pr1);
+        await svc.RecordLaunchAsync(id, left, right, pr2);
+
+        svc.Current.Should().HaveCount(2);
+        svc.Current.Select(i => i.PullRequest!.Number).Should().BeEquivalentTo(new[] { 1, 2 });
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_PrMode_SamePr_DedupsAndMovesToFront()
+    {
+        var svc = new RecentContextsService(_path);
+        var (id, left, right) = MakeIdentity(@"C:\repos\foo", "abc");
+        var pr = new PullRequestRef("github.com", "owner", "repo", 7);
+
+        await svc.RecordLaunchAsync(id, left, right, pr);
+        await svc.RecordLaunchAsync(id, left, right, pr);
+
+        svc.Current.Should().ContainSingle()
+            .Which.PullRequest!.Number.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_PrMode_AndLocalLaunch_SameIdentity_StayDistinct()
+    {
+        // A non-PR row and a PR row that happen to share ContextIdentity
+        // are distinct conceptually: the user might want both "view as
+        // local commits" and "view as PR" entries for the same SHA pair.
+        var svc = new RecentContextsService(_path);
+        var (id, left, right) = MakeIdentity(@"C:\repos\foo", "abc");
+        var pr = new PullRequestRef("github.com", "owner", "repo", 7);
+
+        await svc.RecordLaunchAsync(id, left, right);              // local
+        await svc.RecordLaunchAsync(id, left, right, pr);           // PR-mode
+
+        svc.Current.Should().HaveCount(2);
+        svc.Current.Where(i => i.PullRequest is null).Should().HaveCount(1);
+        svc.Current.Where(i => i.PullRequest is not null).Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_PrMode_PropagatesPullRequestToSnapshot()
+    {
+        var svc = new RecentContextsService(_path);
+        var (id, left, right) = MakeIdentity(@"C:\repos\foo", "abc");
+        var pr = new PullRequestRef("github.com", "geevensingh", "diffviewer", 42);
+
+        await svc.RecordLaunchAsync(id, left, right, pr);
+
+        svc.Current.Should().ContainSingle()
+            .Which.PullRequest.Should().Be(pr);
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_PrMode_PersistsAcrossInstances()
+    {
+        var (id, left, right) = MakeIdentity(@"C:\repos\foo", "abc");
+        var pr = new PullRequestRef("github.com", "owner", "repo", 99);
+
+        var writer = new RecentContextsService(_path);
+        await writer.RecordLaunchAsync(id, left, right, pr);
+
+        var reader = new RecentContextsService(_path);
+        await reader.LoadAsync();
+        reader.Current.Should().ContainSingle()
+            .Which.PullRequest.Should().Be(pr);
+    }
+
     private static RecentLaunchContext MakeContext(string repo, string leftRef, DateTimeOffset stamp)
     {
         var (id, left, right) = MakeIdentity(repo, leftRef);

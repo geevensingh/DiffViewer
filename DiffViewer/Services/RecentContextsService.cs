@@ -75,6 +75,7 @@ public sealed class RecentContextsService : IRecentContextsService
         ContextIdentity identity,
         DiffSide leftDisplay,
         DiffSide rightDisplay,
+        PullRequestRef? pullRequest = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(leftDisplay);
@@ -83,7 +84,8 @@ public sealed class RecentContextsService : IRecentContextsService
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var fresh = new RecentLaunchContext(identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow);
+            var fresh = new RecentLaunchContext(
+                identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow, pullRequest);
 
             var doc = await RecentsStore.ReadAndMutateAsync(
                 _filePath,
@@ -114,16 +116,36 @@ public sealed class RecentContextsService : IRecentContextsService
         IReadOnlyList<RecentLaunchContext> existing,
         RecentLaunchContext fresh)
     {
-        // Drop any entry with the same identity, then prepend the fresh
-        // one (whose LastUsedUtc is now). MRU sort + cap happens in
+        // Drop any entry whose (identity, PR-number-when-PR-mode) tuple
+        // matches the fresh entry's, then prepend the fresh one (whose
+        // LastUsedUtc is now). MRU sort + cap happens in
         // ReplaceSnapshot; this method's job is to produce the merged
         // unsorted list so the on-disk state always contains the union
         // (minus dupes).
+        //
+        // PR-mode rows dedup on (identity, PullRequest.Number) so two
+        // PRs that happen to share (merge-base, head) SHAs stay distinct
+        // rows. Non-PR rows continue to dedup on identity alone (today's
+        // behavior).
         var merged = existing
-            .Where(i => !IsSameIdentity(i.Identity, fresh.Identity))
+            .Where(i => !IsSameRow(i, fresh))
             .Append(fresh);
 
         return SortAndCap(merged);
+    }
+
+    private static bool IsSameRow(RecentLaunchContext a, RecentLaunchContext b)
+    {
+        if (!IsSameIdentity(a.Identity, b.Identity)) return false;
+        // When EITHER side is a PR-mode row, both must be PR-mode rows
+        // for the same PR number; otherwise the rows are distinct (one
+        // is a local-launch row that happens to share the identity, the
+        // other is PR-mode).
+        if (a.PullRequest is not null || b.PullRequest is not null)
+        {
+            return a.PullRequest?.Number == b.PullRequest?.Number;
+        }
+        return true;
     }
 
     private static IReadOnlyList<RecentLaunchContext> SortAndCap(IEnumerable<RecentLaunchContext> items)

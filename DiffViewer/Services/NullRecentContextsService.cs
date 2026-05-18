@@ -25,6 +25,7 @@ public sealed class NullRecentContextsService : IRecentContextsService
         ContextIdentity identity,
         DiffSide leftDisplay,
         DiffSide rightDisplay,
+        PullRequestRef? pullRequest = null,
         CancellationToken ct = default) => Task.CompletedTask;
 
     public Task RemoveAsync(

@@ -25,17 +25,23 @@ public interface IRecentContextsService
 
     /// <summary>
     /// Record a successful launch into the MRU. Dedups by
-    /// <paramref name="identity"/>, bumps the entry's
+    /// <paramref name="identity"/> (plus PR number when
+    /// <paramref name="pullRequest"/> is non-null), bumps the entry's
     /// <see cref="RecentLaunchContext.LastUsedUtc"/> and moves it to the
     /// front, caps total entries at 10. The <paramref name="leftDisplay"/>
     /// / <paramref name="rightDisplay"/> arguments are the user's raw
     /// input and are preserved verbatim for the dropdown render — they
-    /// may differ in casing or alias from the identity's sides.
+    /// may differ in casing or alias from the identity's sides. The
+    /// <paramref name="pullRequest"/> argument, when non-null, marks the
+    /// row as a PR-mode entry so the dropdown can render
+    /// <c>"PR owner/repo#N"</c> and so re-launching the row re-resolves
+    /// the PR (heads can move between launches — see D8).
     /// </summary>
     Task RecordLaunchAsync(
         ContextIdentity identity,
         DiffSide leftDisplay,
         DiffSide rightDisplay,
+        PullRequestRef? pullRequest = null,
         CancellationToken ct = default);
 
     /// <summary>

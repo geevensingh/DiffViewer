@@ -139,7 +139,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         _current = newVm;
         _currentScope = newScope;
         OnCurrentChanged();
-        await TryRecordAsync(parsed, ct).ConfigureAwait(true);
+        await TryRecordAsync(parsed, ct: ct).ConfigureAwait(true);
         return true;
     }
 
@@ -223,7 +223,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
             await DisposeShellAsync(outgoingVm).ConfigureAwait(true);
         }
 
-        await TryRecordAsync(parsed, ct).ConfigureAwait(true);
+        await TryRecordAsync(parsed, ct: ct).ConfigureAwait(true);
         return true;
     }
 
@@ -260,13 +260,16 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         return SwitchContextAsync(parsed, ct);
     }
 
-    private async Task TryRecordAsync(ParsedCommandLine parsed, CancellationToken ct)
+    private async Task TryRecordAsync(
+        ParsedCommandLine parsed,
+        PullRequestRef? pullRequest = null,
+        CancellationToken ct = default)
     {
         try
         {
             var identity = ContextIdentityFactory.Create(parsed.RepoPath, parsed.Left, parsed.Right);
             await _services.RecentContextsService.RecordLaunchAsync(
-                identity, parsed.Left, parsed.Right, ct).ConfigureAwait(true);
+                identity, parsed.Left, parsed.Right, pullRequest, ct).ConfigureAwait(true);
         }
         catch
         {
