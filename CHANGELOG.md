@@ -12,9 +12,11 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-17
+
 ### Added
 
-- **F1 opens a keyboard cheat sheet.** A modal dialog lists every
+- **F1 opens a keyboard cheat sheet.**A modal dialog lists every
   keyboard shortcut and right-click action, grouped by category
   (View, Navigation, App, Mouse actions). A `?` button on the
   right-hand side of the toolbar opens the same dialog so the
@@ -35,10 +37,7 @@ body. Keep section headings exact and write notes in Markdown.
   without an intermediate click into the editor. Resolves
   [#2](https://github.com/geevensingh/DiffViewer/issues/2).
 
-
-### Added
-
-- **Launch directly into a GitHub pull request's diff.** Pass a PR URL
+- **Launch directly into a GitHub pull request's diff.**Pass a PR URL
   on the command line (`DiffViewer.exe https://github.com/owner/repo/pull/123`)
   and DiffViewer resolves the PR's `(merge-base, head)` into a normal
   two-commit comparison — every existing affordance (side-by-side /
