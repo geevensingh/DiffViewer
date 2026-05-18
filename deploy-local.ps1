@@ -1,10 +1,11 @@
-# Developer-loop helper: after publishing DiffViewer from Visual Studio
-# (Folder profile, Release / win-x64), this script
-#   1. stops any running DiffViewer.exe whose image path is C:\Tools\DiffViewer.exe,
-#   2. copies the publish output into C:\Tools, and
-#   3. launches C:\Tools\DiffViewer.exe on three repos.
-#
-# This script does NOT run `dotnet publish` itself; publish from Visual Studio first.
+# Developer-loop helper. This script:
+#   1. runs `dotnet publish DiffViewer\DiffViewer.csproj -c Release`
+#      (single-file/self-contained/win-x64 settings come from the Release
+#      PropertyGroup in DiffViewer.csproj, matching the Visual Studio
+#      Folder profile and the CI release workflow),
+#   2. stops any running DiffViewer.exe whose image path is C:\Tools\DiffViewer.exe,
+#   3. copies the publish output into C:\Tools, and
+#   4. launches C:\Tools\DiffViewer.exe on three repos.
 
 #Requires -Version 5.1
 [CmdletBinding()]
@@ -15,22 +16,37 @@ $ErrorActionPreference = 'Stop'
 $publishDir = Join-Path $PSScriptRoot 'DiffViewer\bin\Release\net8.0-windows\win-x64\publish'
 $destDir    = 'C:\Tools'
 $targetExe  = Join-Path $destDir 'DiffViewer.exe'
+$csproj     = Join-Path $PSScriptRoot 'DiffViewer\DiffViewer.csproj'
 $repos = @(
     'C:\Repos\jotjson',
     'C:\Repos\jotjson-alt',
     'C:\Repos\DiffViewer'
 )
 
-# 0. Validate prereqs BEFORE taking any destructive action (kill / copy).
+# 0. Build + publish BEFORE taking any destructive action (kill / copy).
+#    The Release PropertyGroup in DiffViewer.csproj pins
+#    PublishSingleFile / SelfContained / win-x64 /
+#    IncludeNativeLibrariesForSelfExtract, so a bare `dotnet publish -c
+#    Release` matches the Visual Studio Folder profile and CI publish.
 #    Repo paths are intentionally NOT pre-validated; missing repos are
 #    skipped with a warning at launch time so a partial deploy still
 #    benefits the repos that do exist.
+if (-not (Test-Path -LiteralPath $csproj)) {
+    throw "DiffViewer.csproj not found at '$csproj'."
+}
+
+Write-Host "Publishing DiffViewer (Release / win-x64) from '$csproj'"
+& dotnet publish $csproj -c Release --nologo
+if ($LASTEXITCODE -ne 0) {
+    throw "dotnet publish failed with exit code $LASTEXITCODE."
+}
+
 $publishedExe = Join-Path $publishDir 'DiffViewer.exe'
 if (-not (Test-Path -LiteralPath $publishDir)) {
-    throw "Publish output directory not found at '$publishDir'. Publish from Visual Studio (Release / Folder profile) first."
+    throw "Publish output directory not found at '$publishDir' after publish."
 }
 if (-not (Test-Path -LiteralPath $publishedExe)) {
-    throw "Publish output is missing DiffViewer.exe at '$publishedExe'. Republish from Visual Studio."
+    throw "Publish output is missing DiffViewer.exe at '$publishedExe' after publish."
 }
 
 # 1. Kill running DiffViewer instances whose image path matches $targetExe.
