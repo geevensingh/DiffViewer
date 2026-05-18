@@ -14,6 +14,14 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- PR fetches no longer fail with a spurious 403 ("GitHub refused the
+  request… your token lacks `repo` scope, or your org requires SSO
+  authorization"). DiffViewer now sends the `User-Agent` header that
+  GitHub's REST API requires; without it, every request was rejected
+  regardless of token validity or repo visibility. The 403 error path
+  also now includes GitHub's own response-body `message`, so the next
+  legitimate 403 (real SSO requirement, IP allowlist, secondary rate
+  limit, etc.) self-diagnoses instead of always blaming token scope.
 - GitHub PR launches now find the local clone for a repo you already
   have open in DiffViewer, even when its parent directory isn't in
   the Repo roots setting. Previously, switching to a PR for the

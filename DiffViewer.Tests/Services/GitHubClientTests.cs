@@ -39,6 +39,8 @@ public sealed class GitHubClientTests
         {
             req.RequestUri.Should().Be("https://api.github.com/repos/octocat/hello-world/pulls/1");
             req.Headers.Accept.ToString().Should().Contain("application/vnd.github+json");
+            req.Headers.UserAgent.ToString().Should().StartWith("DiffViewer/",
+                because: "GitHub rejects requests without a User-Agent");
             req.Headers.Authorization!.Scheme.Should().Be("Bearer");
             req.Headers.Authorization.Parameter.Should().Be("ghp_test");
             return JsonOk(SampleJson);
@@ -136,6 +138,48 @@ public sealed class GitHubClientTests
         var ex = await act.Should().ThrowAsync<GitHubException>();
         ex.Which.Message.Should().Contain("repo", because: "we hint at the `repo` scope");
         ex.Which.Message.Should().NotContain("rate limit");
+    }
+
+    [Fact]
+    public async Task GetPullRequestAsync_403WithJsonMessage_SurfacesGitHubMessage()
+    {
+        var handler = new FakeHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = new StringContent(
+                """{"message":"Resource protected by org SAML enforcement.","documentation_url":"https://example"}""",
+                Encoding.UTF8,
+                "application/json"),
+        });
+        var client = new GitHubClient(new HttpClient(handler), new FakeAuth("ghp_test"));
+
+        var act = () => client.GetPullRequestAsync(SamplePr, default);
+        var ex = await act.Should().ThrowAsync<GitHubException>();
+        ex.Which.Message.Should().Contain("GitHub said:");
+        ex.Which.Message.Should().Contain("Resource protected by org SAML enforcement.");
+        ex.Which.Message.Should().NotContain("documentation_url",
+            because: "we extract the message field, not the raw JSON");
+    }
+
+    [Fact]
+    public async Task GetPullRequestAsync_403WithPlaintextBody_SurfacesPlaintext()
+    {
+        // GitHub's real-world response when the User-Agent header is missing
+        // is plaintext, not the JSON error envelope.
+        const string PlainTextBody =
+            "Request forbidden by administrative rules. Please make sure your "
+            + "request has a User-Agent header (https://docs.github.com/...).";
+        var handler = new FakeHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = new StringContent(PlainTextBody, Encoding.UTF8, "text/plain"),
+        });
+        var client = new GitHubClient(new HttpClient(handler), new FakeAuth("ghp_test"));
+
+        var act = () => client.GetPullRequestAsync(SamplePr, default);
+        var ex = await act.Should().ThrowAsync<GitHubException>();
+        ex.Which.Message.Should().Contain("GitHub said:");
+        ex.Which.Message.Should().Contain("User-Agent header");
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DiffViewer.Models;
@@ -29,6 +30,9 @@ internal sealed class GitHubClient : IGitHubClient
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private static readonly ProductInfoHeaderValue UserAgentHeader =
+        new("DiffViewer", ResolveAssemblyVersion());
+
     private readonly HttpClient _http;
     private readonly IGitHubAuthProvider _auth;
 
@@ -36,6 +40,23 @@ internal sealed class GitHubClient : IGitHubClient
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _auth = auth ?? throw new ArgumentNullException(nameof(auth));
+    }
+
+    private static string ResolveAssemblyVersion()
+    {
+        var assembly = typeof(GitHubClient).Assembly;
+        var informational = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            // Strip "+commit-sha" SourceLink metadata so the User-Agent stays
+            // a clean "DiffViewer/<semver>"; the suffix is debug-only data
+            // and not interesting to upstream.
+            var plusIndex = informational.IndexOf('+');
+            return plusIndex >= 0 ? informational[..plusIndex] : informational;
+        }
+        return assembly.GetName().Version?.ToString(3) ?? "0.0.0";
     }
 
     public async Task<PullRequestInfo> GetPullRequestAsync(PullRequestRef pr, CancellationToken ct)
@@ -92,6 +113,11 @@ internal sealed class GitHubClient : IGitHubClient
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         request.Headers.TryAddWithoutValidation("X-GitHub-Api-Version", "2022-11-28");
 
+        // GitHub's REST API rejects requests without a User-Agent with a 403
+        // and a "Request forbidden by administrative rules" body; missing
+        // this header is *not* an auth problem despite the status code.
+        request.Headers.UserAgent.Add(UserAgentHeader);
+
         var token = await _auth.TryGetTokenAsync(pr.Host, ct).ConfigureAwait(false);
         if (!string.IsNullOrEmpty(token))
         {
@@ -127,10 +153,18 @@ internal sealed class GitHubClient : IGitHubClient
                     $"GitHub API rate limit hit. Try again in {retry} seconds.");
             }
 
-            return new GitHubException(
+            // Read the body so the *actual* GitHub reason (missing User-Agent,
+            // secondary rate limit, IP allowlist, etc.) lands in the error
+            // dialog instead of always blaming token scope or SSO.
+            var githubReason = await TryReadGitHubReasonAsync(response, ct).ConfigureAwait(false);
+            var baseMessage =
                 "GitHub refused the request (403). The PR may be private and your " +
                 "token lacks `repo` scope, or your org requires SSO authorization for " +
-                "this token.");
+                "this token.";
+            return new GitHubException(
+                string.IsNullOrEmpty(githubReason)
+                    ? baseMessage
+                    : $"{baseMessage} GitHub said: {githubReason}");
         }
 
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -161,6 +195,53 @@ internal sealed class GitHubClient : IGitHubClient
         return new GitHubException(
             $"GitHub returned an unexpected response ({status} {response.ReasonPhrase}). " +
             (string.IsNullOrWhiteSpace(body) ? string.Empty : $"Details: {body.Trim()}"));
+    }
+
+    private static async Task<string?> TryReadGitHubReasonAsync(
+        HttpResponseMessage response, CancellationToken ct)
+    {
+        string body;
+        try
+        {
+            body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        // The standard GitHub error envelope is {"message":"...",
+        // "documentation_url":"..."}; the User-Agent rejection is plaintext.
+        // Try JSON first, fall back to the raw (trimmed) body.
+        var trimmed = body.TrimStart();
+        if (trimmed.StartsWith('{'))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("message", out var messageElement)
+                    && messageElement.ValueKind == JsonValueKind.String)
+                {
+                    var message = messageElement.GetString();
+                    if (!string.IsNullOrWhiteSpace(message))
+                    {
+                        return message.Trim();
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Body claimed JSON but wasn't — fall through to raw text.
+            }
+        }
+
+        return body.Trim();
     }
 
     private static PullRequestInfo Project(int number, PullRequestDto dto)
