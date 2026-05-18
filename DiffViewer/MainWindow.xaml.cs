@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using DiffViewer.Models;
 using DiffViewer.Services;
 using DiffViewer.Utility;
@@ -101,6 +102,45 @@ public partial class MainWindow : Window
         // and (b) because restoring to Minimized would be user-hostile.
         if (WindowState == System.Windows.WindowState.Minimized) return;
         SaveCurrentGeometry();
+    }
+
+    /// <summary>
+    /// Sent by Windows once at the end of each move/resize sizing loop —
+    /// i.e. when the user releases the mouse after drag-moving or
+    /// drag-resizing the window. There is no CLR-level equivalent
+    /// (<see cref="Window.SizeChanged"/> and <see cref="Window.LocationChanged"/>
+    /// fire continuously during the drag, not at the end of it).
+    /// </summary>
+    private const int WM_EXITSIZEMOVE = 0x0232;
+
+    /// <summary>
+    /// Wire the <see cref="WM_EXITSIZEMOVE"/> hook after the HWND exists
+    /// so drag-resize / drag-move are persisted immediately on mouse
+    /// release rather than waiting for the next state change or close.
+    /// This matches the file-list-splitter convention of persisting on
+    /// drag completion so a crash mid-session never loses the user's
+    /// most recent drag. The earlier <see cref="StateChanged"/> and
+    /// <see cref="Closing"/> subscriptions still cover the no-drag
+    /// state-transition and close-without-drag paths.
+    /// </summary>
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        if (_settingsService is null) return;
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        HwndSource.FromHwnd(hwnd)?.AddHook(OnWindowMessage);
+    }
+
+    /// <summary>
+    /// HwndSource hook. Observes <see cref="WM_EXITSIZEMOVE"/> to persist
+    /// geometry; never marks the message handled so the default window
+    /// proc still runs.
+    /// </summary>
+    private IntPtr OnWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg == WM_EXITSIZEMOVE) SaveCurrentGeometry();
+        return IntPtr.Zero;
     }
 
     private void OnWindowClosing(object? sender, CancelEventArgs e)

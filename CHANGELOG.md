@@ -39,6 +39,12 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- **Window size and position now persist immediately on drag-release.**
+  Previously, dragging the window to a new size or location was only
+  persisted on the next Normal↔Maximized state change or on close, so
+  a crash or hard kill mid-session lost the most recent drag. The
+  window now writes the new geometry as soon as the user releases the
+  mouse, matching how the file-list splitter has always behaved.
 - **Line-numbers toolbar toggle now persists across launches.** The
   toolbar **Line #s** toggle previously updated the in-memory state
   and the editors but didn't write back to settings, so the choice
