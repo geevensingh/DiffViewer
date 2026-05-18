@@ -630,6 +630,7 @@ public class MainViewModelContextMenuTests : IDisposable
         public string RightText { get; set; } = string.Empty;
 
         public string? ResolveCommitIsh(string reference) => "0".PadLeft(40, '0');
+        public CommitMetadata? GetCommitMetadata(string commitIsh) => null;
         public bool ValidateRevisions(string leftRef, string rightRef) => true;
 
         public IReadOnlyList<FileChange> EnumerateChanges(DiffSide left, DiffSide right) => CurrentChanges;

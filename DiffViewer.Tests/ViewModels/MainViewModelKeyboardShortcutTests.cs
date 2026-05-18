@@ -1040,7 +1040,18 @@ public class MainViewModelKeyboardShortcutTests
         public string RightText { get; set; } = string.Empty;
 
         public string? ResolveCommitIsh(string reference) => "0".PadLeft(40, '0');
+        public CommitMetadata? GetCommitMetadata(string commitIsh) =>
+            CommitMetadataByRef.TryGetValue(commitIsh, out var meta) ? meta : null;
         public bool ValidateRevisions(string leftRef, string rightRef) => true;
+
+        /// <summary>
+        /// Per-ref commit metadata stub. Tests that exercise MainViewModel's
+        /// commit-metadata panel wiring populate this dictionary before
+        /// constructing the VM; everything else leaves it empty and
+        /// <see cref="GetCommitMetadata"/> returns null (which is what the
+        /// production code paths under test expect for working-tree sides).
+        /// </summary>
+        public Dictionary<string, CommitMetadata> CommitMetadataByRef { get; } = new();
 
         public IReadOnlyList<FileChange> EnumerateChanges(DiffSide left, DiffSide right) => _changes;
 

@@ -63,8 +63,52 @@ public sealed class RepositoryService : IRepositoryService
         }
     }
 
+    public CommitMetadata? GetCommitMetadata(string commitIsh)
+    {
+        if (string.IsNullOrWhiteSpace(commitIsh)) return null;
+        lock (_lock)
+        {
+            try
+            {
+                var commit = _repo.Lookup<Commit>(commitIsh);
+                if (commit is null) return null;
+
+                var author = commit.Author;
+                return new CommitMetadata(
+                    Sha: commit.Sha,
+                    ShortSha: ShortenSha(commit.Sha),
+                    AuthorName: author?.Name ?? string.Empty,
+                    AuthorEmail: author?.Email ?? string.Empty,
+                    AuthorDate: author?.When ?? default,
+                    MessageSubject: commit.MessageShort ?? string.Empty,
+                    MessageBody: ExtractMessageBody(commit.Message ?? string.Empty));
+            }
+            catch (LibGit2SharpException)
+            {
+                return null;
+            }
+        }
+    }
+
     public bool ValidateRevisions(string leftRef, string rightRef) =>
         ResolveCommitIsh(leftRef) is not null && ResolveCommitIsh(rightRef) is not null;
+
+    private static string ShortenSha(string sha) =>
+        sha.Length >= 7 ? sha[..7] : sha;
+
+    /// <summary>
+    /// Git convention: subject paragraph, blank line, body. Returns everything
+    /// after the first <c>\n\n</c>; empty string for subject-only messages.
+    /// LibGit2Sharp normalises CRLF to LF on read, so a single <c>\n\n</c>
+    /// probe covers both Windows-authored and Unix-authored commits.
+    /// </summary>
+    private static string ExtractMessageBody(string fullMessage)
+    {
+        if (string.IsNullOrEmpty(fullMessage)) return string.Empty;
+        var idx = fullMessage.IndexOf("\n\n", StringComparison.Ordinal);
+        if (idx < 0) return string.Empty;
+        return fullMessage[(idx + 2)..].TrimEnd('\n');
+    }
 
     public void RefreshIndex()
     {

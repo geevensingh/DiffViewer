@@ -1112,6 +1112,7 @@ public class DiffPaneViewModelTests
         public event EventHandler<RepositoryLostEventArgs>? RepositoryLost { add { } remove { } }
 
         public string? ResolveCommitIsh(string reference) => reference;
+        public CommitMetadata? GetCommitMetadata(string commitIsh) => null;
         public bool ValidateRevisions(string leftRef, string rightRef) => true;
         public IReadOnlyList<FileChange> EnumerateChanges(DiffSide left, DiffSide right) => Array.Empty<FileChange>();
 

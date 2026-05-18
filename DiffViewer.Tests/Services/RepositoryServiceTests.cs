@@ -222,6 +222,103 @@ public class RepositoryServiceTests
     }
 
     [Fact]
+    public void GetCommitMetadata_ResolvesValidSha()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("initial commit");
+
+        using var svc = new RepositoryService(t.Path);
+        var meta = svc.GetCommitMetadata(c1.Sha);
+
+        meta.Should().NotBeNull();
+        meta!.Sha.Should().Be(c1.Sha);
+        meta.ShortSha.Should().Be(c1.Sha[..7]);
+        meta.AuthorName.Should().Be(t.Author.Name);
+        meta.AuthorEmail.Should().Be(t.Author.Email);
+        meta.AuthorDate.Should().BeCloseTo(t.Author.When, TimeSpan.FromSeconds(2));
+        meta.MessageSubject.Should().Be("initial commit");
+        meta.MessageBody.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetCommitMetadata_ResolvesBranchName()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("first");
+
+        using var svc = new RepositoryService(t.Path);
+        var meta = svc.GetCommitMetadata("HEAD");
+
+        meta.Should().NotBeNull();
+        meta!.Sha.Should().Be(c1.Sha);
+        meta.MessageSubject.Should().Be("first");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_ReturnsNullForUnresolved()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        t.InitialCommit("c1");
+
+        using var svc = new RepositoryService(t.Path);
+
+        svc.GetCommitMetadata("does-not-exist").Should().BeNull();
+        svc.GetCommitMetadata("").Should().BeNull();
+        svc.GetCommitMetadata("   ").Should().BeNull();
+    }
+
+    [Fact]
+    public void GetCommitMetadata_SeparatesSubjectAndBody()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("subject line\n\nbody paragraph one\n\nbody paragraph two\n");
+
+        using var svc = new RepositoryService(t.Path);
+        var meta = svc.GetCommitMetadata(c1.Sha);
+
+        meta.Should().NotBeNull();
+        meta!.MessageSubject.Should().Be("subject line");
+        meta.MessageBody.Should().Be("body paragraph one\n\nbody paragraph two");
+    }
+
+    [Fact]
+    public void GetCommitMetadata_HandlesEmptyBody()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("subject only, no body");
+
+        using var svc = new RepositoryService(t.Path);
+        var meta = svc.GetCommitMetadata(c1.Sha);
+
+        meta.Should().NotBeNull();
+        meta!.MessageSubject.Should().Be("subject only, no body");
+        meta.MessageBody.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetCommitMetadata_FoldsMultiLineSubject()
+    {
+        // libgit2's MessageShort folds multi-line subject paragraphs into one
+        // line. Document this behavior so reviewers don't expect it to preserve
+        // newlines.
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("subject line one\nsubject line two\n\nactual body\n");
+
+        using var svc = new RepositoryService(t.Path);
+        var meta = svc.GetCommitMetadata(c1.Sha);
+
+        meta.Should().NotBeNull();
+        meta!.MessageSubject.Should().NotContain("\n");
+        meta.MessageBody.Should().Be("actual body");
+    }
+
+    [Fact]
     public void ReadSide_AppliesEncodingDetection_ForUtf8WithBom()
     {
         using var t = new TempRepo();

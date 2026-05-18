@@ -25,6 +25,13 @@ public interface IRepositoryService : IDisposable
     /// <summary>Resolve a commit-ish reference; returns <c>null</c> if it doesn't resolve.</summary>
     string? ResolveCommitIsh(string reference);
 
+    /// <summary>
+    /// Resolve a commit-ish reference to its full <see cref="CommitMetadata"/>
+    /// (sha, short sha, author, date, subject, body). Returns <c>null</c> if
+    /// the reference doesn't resolve or doesn't point at a commit object.
+    /// </summary>
+    CommitMetadata? GetCommitMetadata(string commitIsh);
+
     /// <summary>Both refs resolve to commits and are reachable.</summary>
     bool ValidateRevisions(string leftRef, string rightRef);
 
