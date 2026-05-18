@@ -12,6 +12,70 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-18
+
+DiffViewer 1.0 marks the stable cut of the side-by-side Git diff
+viewer for Windows. No functional changes since 0.6.0; this release
+is the promotion-to-1.0 milestone. From this release onward, breaking
+changes to the user-facing surface require a major version bump
+(standard SemVer post-1.0).
+
+### What DiffViewer is
+
+A side-by-side / inline Git diff viewer for Windows. Single-file
+unsigned `DiffViewer.exe` for Windows 10+ (x64); no .NET install
+needed. Compares two `DiffSide` values — `CommitIsh` or `WorkingTree`
+— so the supported pairings are working tree vs HEAD, working tree
+vs a commit, or commit vs commit. Two derived launch modes layer on
+top: **Branch vs merge-base** for "what did this branch add", and
+**GitHub PR URL** for one-shot pull-request review. LibGit2Sharp
+powers in-process Git access — no `git.exe` shell-out and no auth
+plumbing of its own.
+
+### Highlights since 0.1.0
+
+Rolling up the 0.x line (0.1.0 → 0.6.0, 2026-05-14 → 2026-05-18):
+
+- **Launch contexts.** Working-tree-vs-HEAD, working-tree-vs-commit,
+  commit-vs-commit, Branch-vs-merge-base, GitHub PR URL. Ref picker
+  popup with local + remote-tracking branches, tags, recent refs, and
+  an inline merge-base composer. + New Diff button on the recents bar.
+- **File list.** Three display modes (full / repo-relative / grouped);
+  per-file Viewed checkbox with auto-clear-on-content-change;
+  case-insensitive substring filter (`Ctrl+/`); Hide-viewed toggle;
+  per-file stage / unstage / revert from the right-click menu; unified
+  expand/collapse chrome across modes.
+- **Diff pane.** Line-numbers, side-visibility (left / right / both),
+  and word-wrap toolbar toggles; per-hunk stage / unstage / revert
+  with preview; hunk overview bar; find-in-diff (`Ctrl+F`) with
+  case / whole-words / regex.
+- **Navigation.** F1 cheat sheet (drift-tested against the actual
+  bindings); F7/F8 hunk navigation; F3 / Shift+F3 next / prev match;
+  cross-section file-list selection; current-hunk position preserved
+  across refreshes; same-file refreshes skip the re-read cycle.
+- **Commit metadata.** Per-side header row in the file-list column
+  with short SHA / author / relative date / subject; click for a
+  modal with full message / absolute date / Copy SHA. Friendly ref
+  name badge (`master` / `v0.4.0`) when a ref points exactly at the
+  commit, ordered by `git log --decorate` semantics.
+- **PR-review feature.** Pass a `github.com` PR URL on the command
+  line to resolve the PR's `(merge-base, head)` and launch a normal
+  two-commit diff. Auto-detects the local clone (configurable repo
+  roots in Settings); prompts to clone if missing. Auth via
+  `gh auth token`. Read-only and `github.com`-only.
+- **Persistence.** Window size / position / maximized state, splitter
+  position, every toolbar toggle, repo roots, remembered clones, and
+  recent launch contexts all survive restarts. Drag-release writes
+  geometry immediately, so a crash mid-session doesn't lose the most
+  recent drag.
+
+### Install
+
+Same story as the 0.x line: single-file unsigned `DiffViewer.exe`
+for Windows 10+ (x64). SmartScreen may warn on first launch —
+click **"More info"** → **"Run anyway"**. The exe extracts bundled
+native libraries to `%TEMP%` on first run.
+
 ## [0.6.0] - 2026-05-18
 
 ### Added
