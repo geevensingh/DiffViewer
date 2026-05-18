@@ -1,0 +1,217 @@
+<UserControl x:Class="DiffViewer.Views.RefPicker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:RefPickerViewModel}"
+             mc:Ignorable="d"
+             x:Name="Self">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <vm:PositiveCountToVisibleConverter x:Key="CountToVisibility"/>
+        <vm:FalseToVisibleConverter x:Key="FalseToVisibility"/>
+        <vm:NonEmptyStringToVisibleConverter x:Key="StringToVisibility"/>
+
+        <!-- Section header shared by the four ref groups. -->
+        <Style TargetType="TextBlock" x:Key="GroupHeader">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#444"/>
+            <Setter Property="Margin" Value="0,8,0,3"/>
+        </Style>
+        <!-- One row in a ref-list ItemsControl: a clickable button
+             whose Command runs PickRefCommand. -->
+        <Style TargetType="Button" x:Key="RefRow">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="8,3"/>
+            <Setter Property="Margin" Value="0,1,0,0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E8F0FE"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <!-- The control's only visible payload is a Popup. The trigger
+         (a ToggleButton in the host form) drives IsOpen; when the
+         popup opens, the code-behind kicks off EnsureLoadedAsync on
+         the bound RefPickerViewModel. StaysOpen=False auto-dismisses
+         on click-outside or Esc. -->
+    <Popup x:Name="PickerPopup"
+           IsOpen="{Binding IsOpen, ElementName=Self, Mode=TwoWay}"
+           PlacementTarget="{Binding PlacementTarget, ElementName=Self}"
+           Placement="Bottom"
+           StaysOpen="False"
+           AllowsTransparency="True"
+           PopupAnimation="Fade"
+           Opened="OnPopupOpened">
+        <Border Background="White"
+                BorderBrush="#BBB"
+                BorderThickness="1"
+                Padding="10"
+                MinWidth="360"
+                MaxHeight="420"
+                SnapsToDevicePixels="True">
+            <Border.Effect>
+                <DropShadowEffect ShadowDepth="2" Color="#333" Opacity="0.25" BlurRadius="8"/>
+            </Border.Effect>
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Filter box. -->
+                <Grid Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             x:Name="FilterBox"
+                             Padding="4,3"
+                             Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}"/>
+                    <TextBlock Grid.Column="1"
+                               Text="Loading…"
+                               Margin="8,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="#888"
+                               Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}"/>
+                </Grid>
+
+                <!-- Four ref groups (Recent / Local / Remote / Tags). -->
+                <ScrollViewer Grid.Row="1"
+                              VerticalScrollBarVisibility="Auto"
+                              Margin="0,8,0,0">
+                    <StackPanel>
+                        <!-- Recent refs in this repo. -->
+                        <StackPanel Visibility="{Binding VisibleRecentRefs.Count, Converter={StaticResource CountToVisibility}}">
+                            <TextBlock Text="Recent in this repo" Style="{StaticResource GroupHeader}"/>
+                            <ItemsControl ItemsSource="{Binding VisibleRecentRefs}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource RefRow}"
+                                                Content="{Binding}"
+                                                Command="{Binding DataContext.PickRefCommand, ElementName=Self}"
+                                                CommandParameter="{Binding}"
+                                                Click="OnRefRowClicked"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Local branches. -->
+                        <StackPanel Visibility="{Binding VisibleLocalBranches.Count, Converter={StaticResource CountToVisibility}}">
+                            <TextBlock Text="Local branches" Style="{StaticResource GroupHeader}"/>
+                            <ItemsControl ItemsSource="{Binding VisibleLocalBranches}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource RefRow}"
+                                                Command="{Binding DataContext.PickRefCommand, ElementName=Self}"
+                                                CommandParameter="{Binding FriendlyName}"
+                                                Click="OnRefRowClicked">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding FriendlyName}"/>
+                                                <TextBlock Text="{Binding TipShortSha, StringFormat=' · {0}'}"
+                                                           Foreground="#888" Margin="6,0,0,0"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Remote-tracking branches. -->
+                        <StackPanel Visibility="{Binding VisibleRemoteBranches.Count, Converter={StaticResource CountToVisibility}}">
+                            <TextBlock Text="Remote-tracking branches" Style="{StaticResource GroupHeader}"/>
+                            <ItemsControl ItemsSource="{Binding VisibleRemoteBranches}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource RefRow}"
+                                                Command="{Binding DataContext.PickRefCommand, ElementName=Self}"
+                                                CommandParameter="{Binding FriendlyName}"
+                                                Click="OnRefRowClicked">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding FriendlyName}"/>
+                                                <TextBlock Text="{Binding TipShortSha, StringFormat=' · {0}'}"
+                                                           Foreground="#888" Margin="6,0,0,0"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Tags. -->
+                        <StackPanel Visibility="{Binding VisibleTags.Count, Converter={StaticResource CountToVisibility}}">
+                            <TextBlock Text="Tags" Style="{StaticResource GroupHeader}"/>
+                            <ItemsControl ItemsSource="{Binding VisibleTags}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource RefRow}"
+                                                Command="{Binding DataContext.PickRefCommand, ElementName=Self}"
+                                                CommandParameter="{Binding FriendlyName}"
+                                                Click="OnRefRowClicked">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding FriendlyName}"/>
+                                                <TextBlock Text="{Binding TipShortSha, StringFormat=' · {0}'}"
+                                                           Foreground="#888" Margin="6,0,0,0"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Empty state (only when loaded + no visible rows). -->
+                        <TextBlock Margin="0,8,0,0"
+                                   Foreground="#999"
+                                   FontStyle="Italic"
+                                   Text="No refs match."
+                                   Visibility="{Binding HasAnyVisibleRefs, Converter={StaticResource FalseToVisibility}}"/>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- Merge-base composer. Always visible at the bottom so
+                     the user can opt in without scrolling. -->
+                <Border Grid.Row="2"
+                        BorderBrush="#DDD" BorderThickness="0,1,0,0"
+                        Margin="0,10,0,0" Padding="0,8,0,0">
+                    <StackPanel>
+                        <TextBlock Text="Or compose a merge-base of two refs" Style="{StaticResource GroupHeader}"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBox Grid.Column="0"
+                                     Padding="4,3" Margin="0,0,4,0"
+                                     Text="{Binding MergeBaseRefA, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="First ref (e.g. main)"/>
+                            <TextBox Grid.Column="1"
+                                     Padding="4,3" Margin="4,0,4,0"
+                                     Text="{Binding MergeBaseRefB, UpdateSourceTrigger=PropertyChanged}"
+                                     ToolTip="Second ref (e.g. feature-branch)"/>
+                            <Button Grid.Column="2"
+                                    Content="Compute &amp; use"
+                                    Padding="10,3"
+                                    Command="{Binding UseMergeBaseCommand}"
+                                    Click="OnRefRowClicked"/>
+                        </Grid>
+                        <TextBlock Text="{Binding MergeBaseError}"
+                                   Foreground="DarkRed"
+                                   TextWrapping="Wrap"
+                                   Margin="0,4,0,0"
+                                   Visibility="{Binding MergeBaseError, Converter={StaticResource StringToVisibility}}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+    </Popup>
+</UserControl>

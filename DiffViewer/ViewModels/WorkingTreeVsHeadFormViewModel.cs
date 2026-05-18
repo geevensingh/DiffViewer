@@ -20,10 +20,10 @@ public sealed partial class WorkingTreeVsHeadFormViewModel : NewDiffFormViewMode
     [ObservableProperty]
     private string _repoPath;
 
-    public WorkingTreeVsHeadFormViewModel(IDiffLaunchValidator validator, string? prefilledRepoPath = null)
-        : base(validator)
+    public WorkingTreeVsHeadFormViewModel(FormDependencies deps)
+        : base(deps.Validator)
     {
-        _repoPath = prefilledRepoPath ?? string.Empty;
+        _repoPath = deps.PrefilledRepoPath ?? string.Empty;
         Validate();
     }
 

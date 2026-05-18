@@ -9,8 +9,10 @@ namespace DiffViewer.ViewModels;
 /// commit-ish, compare commit-ish. Builds a <see cref="ParsedCommandLine"/>
 /// matching the CLI's <c>[repoPath, base, compare]</c> argv.
 ///
-/// <para>v1 = plain text inputs only. A "pick from log" dropdown /
-/// picker is deferred to v2 per plan §3.</para>
+/// <para>Each commit-ish input gets an independent ref-picker popup
+/// (<see cref="BaseCommitPicker"/> / <see cref="CompareCommitPicker"/>);
+/// they share the form's canonical repo path so both target the same
+/// repository's branches / tags / recent refs.</para>
 /// </summary>
 public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBase
 {
@@ -25,16 +27,31 @@ public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBa
     [ObservableProperty]
     private string _compareCommit;
 
-    public CommitVsCommitFormViewModel(IDiffLaunchValidator validator, string? prefilledRepoPath = null)
-        : base(validator)
+    public RefPickerViewModel BaseCommitPicker { get; }
+    public RefPickerViewModel CompareCommitPicker { get; }
+
+    public CommitVsCommitFormViewModel(FormDependencies deps)
+        : base(deps.Validator)
     {
-        _repoPath = prefilledRepoPath ?? string.Empty;
+        _repoPath = deps.PrefilledRepoPath ?? string.Empty;
         _baseCommit = string.Empty;
         _compareCommit = string.Empty;
+        BaseCommitPicker = new RefPickerViewModel(
+            deps.RefEnumerator, deps.RecentContexts,
+            writeBack: value => BaseCommit = value);
+        CompareCommitPicker = new RefPickerViewModel(
+            deps.RefEnumerator, deps.RecentContexts,
+            writeBack: value => CompareCommit = value);
         Validate();
+        SyncPickerRepoPath();
     }
 
-    partial void OnRepoPathChanged(string value) => Validate();
+    partial void OnRepoPathChanged(string value)
+    {
+        Validate();
+        SyncPickerRepoPath();
+    }
+
     partial void OnBaseCommitChanged(string value) => Validate();
     partial void OnCompareCommitChanged(string value) => Validate();
 
@@ -82,5 +99,11 @@ public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBa
             new DiffSide.CommitIsh(BaseCommit),
             new DiffSide.CommitIsh(CompareCommit));
         return new DiffLaunchSource.Local(parsed);
+    }
+
+    private void SyncPickerRepoPath()
+    {
+        BaseCommitPicker.CanonicalRepoPath = _canonicalRepoPath;
+        CompareCommitPicker.CanonicalRepoPath = _canonicalRepoPath;
     }
 }

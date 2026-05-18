@@ -22,23 +22,31 @@ public sealed class NewDiffDialogHost : INewDiffDialogHost
 {
     private readonly DiffModeRegistry _registry;
     private readonly IDiffLaunchValidator _validator;
+    private readonly IGitRefEnumerator _refEnumerator;
+    private readonly IRecentContextsService _recentContexts;
     private readonly Func<Window?> _ownerLookup;
     private string? _lastProviderId;
 
     public NewDiffDialogHost(
         DiffModeRegistry registry,
         IDiffLaunchValidator validator,
+        IGitRefEnumerator refEnumerator,
+        IRecentContextsService recentContexts,
         Func<Window?> ownerLookup)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
+        _refEnumerator = refEnumerator ?? throw new ArgumentNullException(nameof(refEnumerator));
+        _recentContexts = recentContexts ?? throw new ArgumentNullException(nameof(recentContexts));
         _ownerLookup = ownerLookup ?? throw new ArgumentNullException(nameof(ownerLookup));
     }
 
     public Task<DiffLaunchSource?> ShowAsync(string? prefilledRepoPath, CancellationToken ct = default)
     {
         var owner = _ownerLookup();
-        var vm = new NewDiffDialogViewModel(_registry, _validator, prefilledRepoPath, _lastProviderId);
+        var vm = new NewDiffDialogViewModel(
+            _registry, _validator, _refEnumerator, _recentContexts,
+            prefilledRepoPath, _lastProviderId);
         var dialog = new NewDiffDialog(vm);
         if (owner is not null) dialog.Owner = owner;
 

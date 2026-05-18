@@ -31,11 +31,39 @@ public interface IDiffModeProvider
     /// caches the form across selection changes so partial input
     /// survives switching modes and switching back.
     /// </summary>
-    /// <param name="validator">Shared validator seam — same one every
-    /// form uses, so validation matches CLI-parser semantics.</param>
-    /// <param name="prefilledRepoPath">When non-null, the form should
-    /// pre-fill its repo-path input with this canonical path so
-    /// "compare another two commits in this repo" is one-field-away.
-    /// PR-URL forms typically ignore this.</param>
-    NewDiffFormViewModelBase CreateForm(IDiffLaunchValidator validator, string? prefilledRepoPath);
+    /// <param name="dependencies">Form-level services: the shared
+    /// validator (so every form validates the same way the CLI parser
+    /// does), the ref enumerator (powering the per-input ref picker),
+    /// the recents service (for the picker's "Recent in this repo"
+    /// group), and the optional prefilled repo path.</param>
+    NewDiffFormViewModelBase CreateForm(FormDependencies dependencies);
 }
+
+/// <summary>
+/// Services + seed state every "New diff" form may consume. Passed
+/// by <see cref="NewDiffDialogViewModel"/> into
+/// <see cref="IDiffModeProvider.CreateForm"/> so individual form VMs
+/// don't grow their own constructor signatures every time the dialog
+/// gains a new cross-form capability (today: the ref picker).
+///
+/// <para>Forms that don't use a particular dependency simply ignore
+/// it. Adding a new shared seam later is one extra positional record
+/// member; existing forms keep compiling.</para>
+/// </summary>
+/// <param name="Validator">Shared validator seam — same one every
+/// form uses, so validation matches CLI-parser semantics.</param>
+/// <param name="RefEnumerator">Powers the per-input ref picker
+/// popup. Forms with commit-ish inputs construct one
+/// <see cref="RefPickerViewModel"/> per input from this.</param>
+/// <param name="RecentContexts">Source of "Recent refs in this repo"
+/// for the picker (filtered + deduped per repo path; see
+/// <see cref="RefPickerViewModel"/>).</param>
+/// <param name="PrefilledRepoPath">When non-null, the form should
+/// pre-fill its repo-path input with this canonical path so
+/// "compare another two commits in this repo" is one-field-away.
+/// PR-URL forms typically ignore this.</param>
+public sealed record FormDependencies(
+    IDiffLaunchValidator Validator,
+    IGitRefEnumerator RefEnumerator,
+    IRecentContextsService RecentContexts,
+    string? PrefilledRepoPath = null);

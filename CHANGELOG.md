@@ -14,6 +14,30 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **New Diff dialog: ref picker for commit-ish inputs.** The
+  "Working tree vs commit" and "Commit vs commit" forms now have a
+  **Pick…** button next to each commit-ish field that opens a popup
+  listing the repo's local branches, remote-tracking branches, tags,
+  and refs you've recently used in this repo. A live case-insensitive
+  filter box narrows every group as you type; each row shows the
+  ref's friendly name plus its tip's short SHA. The popup also
+  includes an inline merge-base composer — fill two refs and click
+  **Compute & use** to substitute the resulting SHA into the field —
+  for ad-hoc "what did this branch add since it forked" comparisons
+  without leaving the dialog. Freeform typing still works as a
+  fallback. Enumeration happens off the UI thread so opening the
+  picker on a large repo doesn't freeze the dialog. Resolves
+  [#4](https://github.com/geevensingh/DiffViewer/issues/4).
+- **New Diff dialog: "Branch vs merge-base" mode.** A new top-level
+  mode in the left rail wires the dominant PR-style review workflow
+  ("what did this branch add since it forked from main") into a
+  one-click form. Takes a branch and a merge-base partner, resolves
+  their most recent common ancestor on submit, and launches a diff
+  with the merge-base on the left and the branch tip on the right —
+  so additions land in the right pane the same way every other form
+  produces. Surfaces "No common ancestor" inline when the two refs
+  have unrelated histories, rather than silently disabling **OK**.
+  Both commit-ish inputs get the same ref picker described above.
 - **File-list filter + per-file viewed checkbox.** A new bar above
   the display-mode toggle adds a case-insensitive substring filter
   (slash-insensitive: `foo/bar.cs` and `foo\bar.cs` both match) that

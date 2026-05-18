@@ -120,3 +120,51 @@ public sealed class ZeroToVisibleConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>XAML helper: an <see cref="int"/> <c>Count</c> &gt; 0 maps
+/// to <see cref="Visibility.Visible"/>, otherwise
+/// <see cref="Visibility.Collapsed"/>. Used by the ref-picker popup
+/// to hide a group's header + list when the filtered collection is
+/// empty without flickering an empty header row.</summary>
+public sealed class PositiveCountToVisibleConverter : IValueConverter
+{
+    public static readonly PositiveCountToVisibleConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is int i && i > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>XAML helper: a <see cref="bool"/> <c>false</c> maps to
+/// <see cref="Visibility.Visible"/>, otherwise
+/// <see cref="Visibility.Collapsed"/>. Used by the ref-picker popup
+/// to show the "no refs match" empty-state hint only when none of
+/// the four groups have visible entries.</summary>
+public sealed class FalseToVisibleConverter : IValueConverter
+{
+    public static readonly FalseToVisibleConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is false ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>XAML helper: any non-null, non-empty string maps to
+/// <see cref="Visibility.Visible"/>, otherwise
+/// <see cref="Visibility.Collapsed"/>. Used by the ref-picker popup's
+/// merge-base composer to surface error text only when a real error
+/// is present.</summary>
+public sealed class NonEmptyStringToVisibleConverter : IValueConverter
+{
+    public static readonly NonEmptyStringToVisibleConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is string s && !string.IsNullOrEmpty(s) ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

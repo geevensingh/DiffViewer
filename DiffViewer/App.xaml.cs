@@ -63,9 +63,12 @@ public partial class App : Application
         // pattern.
         var diffLaunchValidator = new DiffLaunchValidator(new ProcessCommandLineEnvironment());
         var diffModeRegistry = DiffModeRegistry.BuildDefault();
+        var refEnumerator = new LibGit2GitRefEnumerator();
         var newDiffDialogHost = new NewDiffDialogHost(
             diffModeRegistry,
             diffLaunchValidator,
+            refEnumerator,
+            recents,
             ownerLookup: () => Application.Current?.MainWindow);
 
         var services = new AppServices(

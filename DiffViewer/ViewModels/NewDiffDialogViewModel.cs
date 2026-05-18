@@ -29,6 +29,8 @@ namespace DiffViewer.ViewModels;
 public sealed partial class NewDiffDialogViewModel : ObservableObject
 {
     private readonly IDiffLaunchValidator _validator;
+    private readonly IGitRefEnumerator _refEnumerator;
+    private readonly IRecentContextsService _recentContexts;
     private readonly string? _prefilledRepoPath;
     private readonly Dictionary<IDiffModeProvider, NewDiffFormViewModelBase> _formCache = new();
     private readonly TaskCompletionSource<DiffLaunchSource?> _tcs;
@@ -40,11 +42,15 @@ public sealed partial class NewDiffDialogViewModel : ObservableObject
     public NewDiffDialogViewModel(
         DiffModeRegistry registry,
         IDiffLaunchValidator validator,
+        IGitRefEnumerator refEnumerator,
+        IRecentContextsService recentContexts,
         string? prefilledRepoPath = null,
         string? initialProviderId = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
+        _refEnumerator = refEnumerator ?? throw new ArgumentNullException(nameof(refEnumerator));
+        _recentContexts = recentContexts ?? throw new ArgumentNullException(nameof(recentContexts));
         _prefilledRepoPath = prefilledRepoPath;
         Providers = registry.Providers;
 
@@ -104,7 +110,9 @@ public sealed partial class NewDiffDialogViewModel : ObservableObject
         {
             if (!_formCache.TryGetValue(SelectedProvider, out var form))
             {
-                form = SelectedProvider.CreateForm(_validator, _prefilledRepoPath);
+                var deps = new FormDependencies(
+                    _validator, _refEnumerator, _recentContexts, _prefilledRepoPath);
+                form = SelectedProvider.CreateForm(deps);
                 _formCache[SelectedProvider] = form;
             }
             return form;

@@ -9,8 +9,8 @@ public sealed class WorkingTreeVsHeadProvider : IDiffModeProvider
     public string Id => ProviderId;
     public string DisplayName => "Working tree vs HEAD";
 
-    public NewDiffFormViewModelBase CreateForm(IDiffLaunchValidator validator, string? prefilledRepoPath)
-        => new WorkingTreeVsHeadFormViewModel(validator, prefilledRepoPath);
+    public NewDiffFormViewModelBase CreateForm(FormDependencies deps)
+        => new WorkingTreeVsHeadFormViewModel(deps);
 }
 
 /// <summary>"Working tree vs commit" provider — single commit-ish input.</summary>
@@ -20,8 +20,8 @@ public sealed class WorkingTreeVsCommitProvider : IDiffModeProvider
     public string Id => ProviderId;
     public string DisplayName => "Working tree vs commit";
 
-    public NewDiffFormViewModelBase CreateForm(IDiffLaunchValidator validator, string? prefilledRepoPath)
-        => new WorkingTreeVsCommitFormViewModel(validator, prefilledRepoPath);
+    public NewDiffFormViewModelBase CreateForm(FormDependencies deps)
+        => new WorkingTreeVsCommitFormViewModel(deps);
 }
 
 /// <summary>"Commit vs commit" provider — base + compare commit-ish inputs.</summary>
@@ -31,8 +31,21 @@ public sealed class CommitVsCommitProvider : IDiffModeProvider
     public string Id => ProviderId;
     public string DisplayName => "Commit vs commit";
 
-    public NewDiffFormViewModelBase CreateForm(IDiffLaunchValidator validator, string? prefilledRepoPath)
-        => new CommitVsCommitFormViewModel(validator, prefilledRepoPath);
+    public NewDiffFormViewModelBase CreateForm(FormDependencies deps)
+        => new CommitVsCommitFormViewModel(deps);
+}
+
+/// <summary>"Branch vs merge-base" provider — branch + merge-base
+/// partner inputs. One-click setup for the dominant PR-style
+/// "what did this branch add since it forked from main" workflow.</summary>
+public sealed class BranchVsMergeBaseProvider : IDiffModeProvider
+{
+    public const string ProviderId = "local.branch-vs-merge-base";
+    public string Id => ProviderId;
+    public string DisplayName => "Branch vs merge-base";
+
+    public NewDiffFormViewModelBase CreateForm(FormDependencies deps)
+        => new BranchVsMergeBaseFormViewModel(deps);
 }
 
 /// <summary>"GitHub pull request" provider — single PR-URL input.</summary>
@@ -42,6 +55,6 @@ public sealed class GitHubPullRequestProvider : IDiffModeProvider
     public string Id => ProviderId;
     public string DisplayName => "GitHub pull request";
 
-    public NewDiffFormViewModelBase CreateForm(IDiffLaunchValidator validator, string? prefilledRepoPath)
-        => new GitHubPullRequestFormViewModel(validator);
+    public NewDiffFormViewModelBase CreateForm(FormDependencies deps)
+        => new GitHubPullRequestFormViewModel(deps);
 }

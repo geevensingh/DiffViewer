@@ -2,12 +2,13 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+        xmlns:vw="clr-namespace:DiffViewer.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         d:DataContext="{d:DesignInstance Type=vm:NewDiffDialogViewModel}"
         mc:Ignorable="d"
         Title="{Binding Title}"
-        Width="640" Height="380"
+        Width="640" Height="420"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False"
         ResizeMode="NoResize">
@@ -18,6 +19,15 @@
         </Style>
         <Style TargetType="TextBox" x:Key="FieldInput">
             <Setter Property="Padding" Value="4,3"/>
+        </Style>
+        <!-- "Pick…" ToggleButton next to each commit-ish input. Looks
+             like a small button; its IsChecked state drives the
+             adjacent RefPicker.IsOpen so click toggles the popup. -->
+        <Style TargetType="ToggleButton" x:Key="PickToggle">
+            <Setter Property="Margin" Value="6,0,0,0"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Content" Value="Pick…"/>
+            <Setter Property="MinWidth" Value="60"/>
         </Style>
 
         <!-- "Working tree vs HEAD" form. -->
@@ -68,8 +78,23 @@
 
                 <TextBlock Text="Commit-ish (e.g. main, HEAD~3, &lt;sha&gt;)"
                            Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource FieldInput}"
-                         Text="{Binding CommitIsh, UpdateSourceTrigger=PropertyChanged}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource FieldInput}"
+                             Text="{Binding CommitIsh, UpdateSourceTrigger=PropertyChanged}"/>
+                    <ToggleButton Grid.Column="1"
+                                  x:Name="CommitIshPickToggle"
+                                  Style="{StaticResource PickToggle}"
+                                  IsEnabled="{Binding CommitIshPicker.IsEnabled}"/>
+                    <vw:RefPicker Grid.Column="1"
+                                  DataContext="{Binding CommitIshPicker}"
+                                  IsOpen="{Binding IsChecked, ElementName=CommitIshPickToggle, Mode=TwoWay}"
+                                  PlacementTarget="{Binding ElementName=CommitIshPickToggle}"/>
+                </Grid>
 
                 <TextBlock Text="Compares the working tree against the given commit."
                            Margin="0,10,0,0" Foreground="#888" TextWrapping="Wrap"/>
@@ -99,13 +124,111 @@
 
                 <TextBlock Text="Base commit-ish"
                            Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource FieldInput}"
-                         Text="{Binding BaseCommit, UpdateSourceTrigger=PropertyChanged}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource FieldInput}"
+                             Text="{Binding BaseCommit, UpdateSourceTrigger=PropertyChanged}"/>
+                    <ToggleButton Grid.Column="1"
+                                  x:Name="BasePickToggle"
+                                  Style="{StaticResource PickToggle}"
+                                  IsEnabled="{Binding BaseCommitPicker.IsEnabled}"/>
+                    <vw:RefPicker Grid.Column="1"
+                                  DataContext="{Binding BaseCommitPicker}"
+                                  IsOpen="{Binding IsChecked, ElementName=BasePickToggle, Mode=TwoWay}"
+                                  PlacementTarget="{Binding ElementName=BasePickToggle}"/>
+                </Grid>
 
                 <TextBlock Text="Compare commit-ish"
                            Style="{StaticResource FieldLabel}"/>
-                <TextBox Style="{StaticResource FieldInput}"
-                         Text="{Binding CompareCommit, UpdateSourceTrigger=PropertyChanged}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource FieldInput}"
+                             Text="{Binding CompareCommit, UpdateSourceTrigger=PropertyChanged}"/>
+                    <ToggleButton Grid.Column="1"
+                                  x:Name="ComparePickToggle"
+                                  Style="{StaticResource PickToggle}"
+                                  IsEnabled="{Binding CompareCommitPicker.IsEnabled}"/>
+                    <vw:RefPicker Grid.Column="1"
+                                  DataContext="{Binding CompareCommitPicker}"
+                                  IsOpen="{Binding IsChecked, ElementName=ComparePickToggle, Mode=TwoWay}"
+                                  PlacementTarget="{Binding ElementName=ComparePickToggle}"/>
+                </Grid>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- "Branch vs merge-base" form. One-click setup for the
+             dominant PR-style "what did this branch add since it
+             forked from main" review workflow. -->
+        <DataTemplate DataType="{x:Type vm:BranchVsMergeBaseFormViewModel}">
+            <StackPanel>
+                <TextBlock Text="Repository path"
+                           Style="{StaticResource FieldLabel}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource FieldInput}"
+                             Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"
+                             Tag="RepoPath"/>
+                    <Button Grid.Column="1"
+                            Content="Browse…"
+                            Margin="6,0,0,0" Padding="10,4"
+                            Click="OnBrowseRepoPathClick"
+                            Tag="RepoPath"/>
+                </Grid>
+
+                <TextBlock Text="Branch (e.g. feature/x)"
+                           Style="{StaticResource FieldLabel}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource FieldInput}"
+                             Text="{Binding Branch, UpdateSourceTrigger=PropertyChanged}"/>
+                    <ToggleButton Grid.Column="1"
+                                  x:Name="BranchPickToggle"
+                                  Style="{StaticResource PickToggle}"
+                                  IsEnabled="{Binding BranchPicker.IsEnabled}"/>
+                    <vw:RefPicker Grid.Column="1"
+                                  DataContext="{Binding BranchPicker}"
+                                  IsOpen="{Binding IsChecked, ElementName=BranchPickToggle, Mode=TwoWay}"
+                                  PlacementTarget="{Binding ElementName=BranchPickToggle}"/>
+                </Grid>
+
+                <TextBlock Text="Merge-base partner (e.g. origin/main, master)"
+                           Style="{StaticResource FieldLabel}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource FieldInput}"
+                             Text="{Binding MergeBasePartner, UpdateSourceTrigger=PropertyChanged}"/>
+                    <ToggleButton Grid.Column="1"
+                                  x:Name="PartnerPickToggle"
+                                  Style="{StaticResource PickToggle}"
+                                  IsEnabled="{Binding MergeBasePartnerPicker.IsEnabled}"/>
+                    <vw:RefPicker Grid.Column="1"
+                                  DataContext="{Binding MergeBasePartnerPicker}"
+                                  IsOpen="{Binding IsChecked, ElementName=PartnerPickToggle, Mode=TwoWay}"
+                                  PlacementTarget="{Binding ElementName=PartnerPickToggle}"/>
+                </Grid>
+
+                <TextBlock Text="Compares the branch tip against the most recent common ancestor it shares with the partner ref. Additions show as right-only — the standard PR-review shape."
+                           Margin="0,10,0,0" Foreground="#888" TextWrapping="Wrap"/>
             </StackPanel>
         </DataTemplate>
 

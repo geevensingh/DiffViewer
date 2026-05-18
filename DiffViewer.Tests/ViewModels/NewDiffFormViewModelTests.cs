@@ -36,13 +36,30 @@ public class NewDiffFormViewModelTests
                 : new PullRequestUrlValidation.Invalid($"unstubbed url: {url}");
     }
 
+    /// <summary>
+    /// No-op ref enumerator used by form-VM tests that don't exercise
+    /// the picker's enumeration path — every call returns an empty
+    /// result so the picker stays in its zero-state and nothing
+    /// validates the repo path against a real LibGit2 repo.
+    /// </summary>
+    private sealed class StubRefEnumerator : IGitRefEnumerator
+    {
+        public RefEnumerationResult Enumerate(string canonicalRepoPath) => RefEnumerationResult.Empty;
+        public string? TryComputeMergeBase(string canonicalRepoPath, string refA, string refB) => null;
+    }
+
+    /// <summary>Build a <see cref="FormDependencies"/> bundle for tests
+    /// that only care about the validator.</summary>
+    private static FormDependencies Deps(IDiffLaunchValidator validator, string? prefilledRepoPath = null)
+        => new(validator, new StubRefEnumerator(), new NullRecentContextsService(), prefilledRepoPath);
+
     // === WorkingTreeVsHeadFormViewModel ===
 
     [Fact]
     public void WorkingTreeVsHead_EmptyPath_IsNotValid_NoError()
     {
         var v = new FakeValidator();
-        var form = new WorkingTreeVsHeadFormViewModel(v);
+        var form = new WorkingTreeVsHeadFormViewModel(Deps(v));
 
         form.IsValid.Should().BeFalse("required field is empty");
         form.ValidationError.Should().BeNull("empty field shows no error message");
@@ -54,7 +71,7 @@ public class NewDiffFormViewModelTests
         var v = new FakeValidator();
         v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
 
-        var form = new WorkingTreeVsHeadFormViewModel(v) { RepoPath = @"C:\repo" };
+        var form = new WorkingTreeVsHeadFormViewModel(Deps(v)) { RepoPath = @"C:\repo" };
 
         form.IsValid.Should().BeTrue();
         form.ValidationError.Should().BeNull();
@@ -66,7 +83,7 @@ public class NewDiffFormViewModelTests
         var v = new FakeValidator();
         v.RepoResults[@"C:\nope"] = new RepoPathValidation.Invalid("not a repo");
 
-        var form = new WorkingTreeVsHeadFormViewModel(v) { RepoPath = @"C:\nope" };
+        var form = new WorkingTreeVsHeadFormViewModel(Deps(v)) { RepoPath = @"C:\nope" };
 
         form.IsValid.Should().BeFalse();
         form.ValidationError.Should().Be("not a repo");
@@ -79,7 +96,7 @@ public class NewDiffFormViewModelTests
         // left = CommitIsh("HEAD"), right = WorkingTree.
         var v = new FakeValidator();
         v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
-        var form = new WorkingTreeVsHeadFormViewModel(v) { RepoPath = @"C:\repo" };
+        var form = new WorkingTreeVsHeadFormViewModel(Deps(v)) { RepoPath = @"C:\repo" };
 
         var source = form.BuildLaunchSource();
 
@@ -95,7 +112,7 @@ public class NewDiffFormViewModelTests
         var v = new FakeValidator();
         v.RepoResults[@"C:\already"] = new RepoPathValidation.Valid(@"C:\already");
 
-        var form = new WorkingTreeVsHeadFormViewModel(v, prefilledRepoPath: @"C:\already");
+        var form = new WorkingTreeVsHeadFormViewModel(Deps(v, prefilledRepoPath: @"C:\already"));
 
         form.RepoPath.Should().Be(@"C:\already");
         form.IsValid.Should().BeTrue("pre-fill should pass validation on construction");
@@ -109,7 +126,7 @@ public class NewDiffFormViewModelTests
         var v = new FakeValidator();
         v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
 
-        var form = new WorkingTreeVsCommitFormViewModel(v) { RepoPath = @"C:\repo" };
+        var form = new WorkingTreeVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\repo" };
         form.IsValid.Should().BeFalse("commit-ish is empty");
 
         form.CommitIsh = "main";
@@ -124,13 +141,31 @@ public class NewDiffFormViewModelTests
         v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
         v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Valid();
 
-        var form = new WorkingTreeVsCommitFormViewModel(v) { RepoPath = @"C:\repo", CommitIsh = "main" };
+        var form = new WorkingTreeVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\repo", CommitIsh = "main" };
 
         form.IsValid.Should().BeTrue();
         var source = form.BuildLaunchSource();
         var local = source.Should().BeOfType<DiffLaunchSource.Local>().Subject;
         local.Parsed.Left.Should().BeOfType<DiffSide.CommitIsh>().Which.Reference.Should().Be("main");
         local.Parsed.Right.Should().BeOfType<DiffSide.WorkingTree>();
+    }
+
+    [Fact]
+    public void WorkingTreeVsCommit_PickerWriteBack_PushesValueIntoCommitIshAndRevalidates()
+    {
+        // The "Pick…" popup's PickRefCommand writes back to the form
+        // via the callback passed into RefPickerViewModel. End-to-end
+        // smoke: simulate a selection and verify CommitIsh updates and
+        // IsValid re-evaluates against the new value.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        v.CommitResults[(@"C:\repo", "feature")] = new CommitIshValidation.Valid();
+        var form = new WorkingTreeVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\repo" };
+
+        form.CommitIshPicker.PickRefCommand.Execute("feature");
+
+        form.CommitIsh.Should().Be("feature");
+        form.IsValid.Should().BeTrue("picker write-back should re-trigger validation");
     }
 
     // === CommitVsCommitFormViewModel ===
@@ -142,7 +177,7 @@ public class NewDiffFormViewModelTests
         v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
         v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Valid();
 
-        var form = new CommitVsCommitFormViewModel(v)
+        var form = new CommitVsCommitFormViewModel(Deps(v))
         {
             RepoPath = @"C:\repo",
             BaseCommit = "main",
@@ -159,7 +194,7 @@ public class NewDiffFormViewModelTests
         v.CommitResults[(@"C:\repo", "bogus")] = new CommitIshValidation.Invalid("Cannot resolve `bogus`.");
         v.CommitResults[(@"C:\repo", "feature")] = new CommitIshValidation.Valid();
 
-        var form = new CommitVsCommitFormViewModel(v)
+        var form = new CommitVsCommitFormViewModel(Deps(v))
         {
             RepoPath = @"C:\repo",
             BaseCommit = "bogus",
@@ -183,7 +218,7 @@ public class NewDiffFormViewModelTests
         v.CommitResults[(@"C:\repo", "main~1")] = new CommitIshValidation.Invalid("Cannot resolve `main~1`.");
         v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Invalid("Cannot resolve `main`.");
 
-        var form = new CommitVsCommitFormViewModel(v)
+        var form = new CommitVsCommitFormViewModel(Deps(v))
         {
             RepoPath = @"C:\repo",
             BaseCommit = "main~1",
@@ -206,7 +241,7 @@ public class NewDiffFormViewModelTests
         v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Valid();
         v.CommitResults[(@"C:\repo", "bogus")] = new CommitIshValidation.Invalid("Cannot resolve `bogus`.");
 
-        var form = new CommitVsCommitFormViewModel(v)
+        var form = new CommitVsCommitFormViewModel(Deps(v))
         {
             RepoPath = @"C:\repo",
             BaseCommit = "main",
@@ -225,7 +260,7 @@ public class NewDiffFormViewModelTests
         v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Valid();
         v.CommitResults[(@"C:\repo", "feature")] = new CommitIshValidation.Valid();
 
-        var form = new CommitVsCommitFormViewModel(v)
+        var form = new CommitVsCommitFormViewModel(Deps(v))
         {
             RepoPath = @"C:\repo",
             BaseCommit = "main",
@@ -239,13 +274,32 @@ public class NewDiffFormViewModelTests
         local.Parsed.Right.Should().BeOfType<DiffSide.CommitIsh>().Which.Reference.Should().Be("feature");
     }
 
+    [Fact]
+    public void CommitVsCommit_BaseAndComparePickers_WriteBackIndependently()
+    {
+        // Each commit-ish input gets its own picker; selecting a ref in
+        // the Base picker must NOT also bump Compare (and vice versa).
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        v.CommitResults[(@"C:\repo", "main")] = new CommitIshValidation.Valid();
+        v.CommitResults[(@"C:\repo", "feature")] = new CommitIshValidation.Valid();
+        var form = new CommitVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\repo" };
+
+        form.BaseCommitPicker.PickRefCommand.Execute("main");
+        form.CompareCommitPicker.PickRefCommand.Execute("feature");
+
+        form.BaseCommit.Should().Be("main");
+        form.CompareCommit.Should().Be("feature");
+        form.IsValid.Should().BeTrue();
+    }
+
     // === GitHubPullRequestFormViewModel ===
 
     [Fact]
     public void GitHubPr_EmptyUrl_IsNotValid_NoError()
     {
         var v = new FakeValidator();
-        var form = new GitHubPullRequestFormViewModel(v);
+        var form = new GitHubPullRequestFormViewModel(Deps(v));
         form.IsValid.Should().BeFalse();
         form.ValidationError.Should().BeNull();
     }
@@ -257,7 +311,7 @@ public class NewDiffFormViewModelTests
         var pr = new PullRequestRef("github.com", "octocat", "hello-world", 17);
         v.PrResults["https://github.com/octocat/hello-world/pull/17"] = new PullRequestUrlValidation.Valid(pr);
 
-        var form = new GitHubPullRequestFormViewModel(v)
+        var form = new GitHubPullRequestFormViewModel(Deps(v))
         {
             PullRequestUrl = "https://github.com/octocat/hello-world/pull/17",
         };
@@ -274,7 +328,7 @@ public class NewDiffFormViewModelTests
         var v = new FakeValidator();
         v.PrResults["garbage"] = new PullRequestUrlValidation.Invalid("not a URL");
 
-        var form = new GitHubPullRequestFormViewModel(v) { PullRequestUrl = "garbage" };
+        var form = new GitHubPullRequestFormViewModel(Deps(v)) { PullRequestUrl = "garbage" };
 
         form.IsValid.Should().BeFalse();
         form.ValidationError.Should().Be("not a URL");
@@ -287,7 +341,7 @@ public class NewDiffFormViewModelTests
         // forgets that contract, surface a clear exception rather than
         // NullReference.
         var v = new FakeValidator();
-        var form = new GitHubPullRequestFormViewModel(v);
+        var form = new GitHubPullRequestFormViewModel(Deps(v));
 
         Action act = () => form.BuildLaunchSource();
         act.Should().Throw<InvalidOperationException>();

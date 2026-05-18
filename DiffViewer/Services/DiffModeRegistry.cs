@@ -24,16 +24,19 @@ public sealed class DiffModeRegistry
     }
 
     /// <summary>
-    /// Production composition: the four built-in providers in the order
-    /// they appear in the dialog's left rail. Order is intentional —
-    /// "Working tree vs HEAD" is the cheapest interaction (one field,
-    /// no commit-ish typing) so it leads.
+    /// Production composition: the five built-in providers in the
+    /// order they appear in the dialog's left rail. Order is
+    /// intentional — "Working tree vs HEAD" is the cheapest
+    /// interaction (one field, no commit-ish typing) so it leads,
+    /// the local-comparison family stays grouped, and the
+    /// "GitHub pull request" mode (cross-network) trails.
     /// </summary>
     public static DiffModeRegistry BuildDefault() => new(new IDiffModeProvider[]
     {
         new WorkingTreeVsHeadProvider(),
         new WorkingTreeVsCommitProvider(),
         new CommitVsCommitProvider(),
+        new BranchVsMergeBaseProvider(),
         new GitHubPullRequestProvider(),
     });
 }

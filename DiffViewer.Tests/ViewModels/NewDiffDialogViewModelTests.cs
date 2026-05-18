@@ -21,6 +21,12 @@ public class NewDiffDialogViewModelTests
                 : new PullRequestUrlValidation.Invalid(error);
     }
 
+    private sealed class StubRefEnumerator : IGitRefEnumerator
+    {
+        public RefEnumerationResult Enumerate(string canonicalRepoPath) => RefEnumerationResult.Empty;
+        public string? TryComputeMergeBase(string canonicalRepoPath, string refA, string refB) => null;
+    }
+
     private static NewDiffDialogViewModel MakeVm(
         IDiffLaunchValidator? validator = null,
         string? prefilledRepoPath = null,
@@ -30,6 +36,8 @@ public class NewDiffDialogViewModelTests
         return new NewDiffDialogViewModel(
             registry,
             validator ?? new FakeValidator(),
+            new StubRefEnumerator(),
+            new NullRecentContextsService(),
             prefilledRepoPath,
             initialProviderId);
     }

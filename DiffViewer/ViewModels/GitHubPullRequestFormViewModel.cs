@@ -18,8 +18,8 @@ public sealed partial class GitHubPullRequestFormViewModel : NewDiffFormViewMode
     [ObservableProperty]
     private string _pullRequestUrl;
 
-    public GitHubPullRequestFormViewModel(IDiffLaunchValidator validator)
-        : base(validator)
+    public GitHubPullRequestFormViewModel(FormDependencies deps)
+        : base(deps.Validator)
     {
         _pullRequestUrl = string.Empty;
         Validate();
