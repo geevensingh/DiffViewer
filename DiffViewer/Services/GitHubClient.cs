@@ -72,7 +72,7 @@ internal sealed class GitHubClient : IGitHubClient
                         "GitHub returned an empty response for the PR. Try again, " +
                         "or open the PR in a browser to confirm it exists.");
 
-                return Project(dto);
+                return Project(pr.Number, dto);
             }
 
             throw await BuildErrorAsync(response, ct).ConfigureAwait(false);
@@ -163,7 +163,7 @@ internal sealed class GitHubClient : IGitHubClient
             (string.IsNullOrWhiteSpace(body) ? string.Empty : $"Details: {body.Trim()}"));
     }
 
-    private static PullRequestInfo Project(PullRequestDto dto)
+    private static PullRequestInfo Project(int number, PullRequestDto dto)
     {
         if (dto.Base is null || dto.Head is null)
         {
@@ -187,6 +187,7 @@ internal sealed class GitHubClient : IGitHubClient
         }
 
         return new PullRequestInfo(
+            Number: number,
             Title: dto.Title ?? string.Empty,
             State: dto.State ?? "unknown",
             Merged: dto.Merged,

@@ -33,6 +33,7 @@ public interface IGitHubClient
 /// fetcher work for fork PRs: <c>refs/pull/N/head</c> is published on the
 /// upstream (base) repo, not the fork.
 /// </summary>
+/// <param name="Number">PR number, echoed from the request — used by the local fetcher to build the refspec.</param>
 /// <param name="Title">PR title.</param>
 /// <param name="State">GitHub's literal API value: <c>"open"</c> or <c>"closed"</c>.</param>
 /// <param name="Merged">
@@ -59,6 +60,7 @@ public interface IGitHubClient
 /// anonymous-remote form so it doesn't mutate the user's remote config.
 /// </param>
 public sealed record PullRequestInfo(
+    int Number,
     string Title,
     string State,
     bool Merged,
