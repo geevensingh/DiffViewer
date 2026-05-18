@@ -75,7 +75,7 @@ public sealed class RecentContextsService : IRecentContextsService
         ContextIdentity identity,
         DiffSide leftDisplay,
         DiffSide rightDisplay,
-        PullRequestRef? pullRequest = null,
+        IReviewRef? review = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(leftDisplay);
@@ -85,7 +85,7 @@ public sealed class RecentContextsService : IRecentContextsService
         try
         {
             var fresh = new RecentLaunchContext(
-                identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow, pullRequest);
+                identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow, review);
 
             var doc = await RecentsStore.ReadAndMutateAsync(
                 _filePath,
@@ -116,17 +116,19 @@ public sealed class RecentContextsService : IRecentContextsService
         IReadOnlyList<RecentLaunchContext> existing,
         RecentLaunchContext fresh)
     {
-        // Drop any entry whose (identity, PR-number-when-PR-mode) tuple
-        // matches the fresh entry's, then prepend the fresh one (whose
-        // LastUsedUtc is now). MRU sort + cap happens in
-        // ReplaceSnapshot; this method's job is to produce the merged
-        // unsorted list so the on-disk state always contains the union
-        // (minus dupes).
+        // Drop any entry whose (identity, review-provider-and-number-
+        // when-review-mode) tuple matches the fresh entry's, then
+        // prepend the fresh one (whose LastUsedUtc is now). MRU sort +
+        // cap happens in ReplaceSnapshot; this method's job is to
+        // produce the merged unsorted list so the on-disk state always
+        // contains the union (minus dupes).
         //
-        // PR-mode rows dedup on (identity, PullRequest.Number) so two
-        // PRs that happen to share (merge-base, head) SHAs stay distinct
-        // rows. Non-PR rows continue to dedup on identity alone (today's
-        // behavior).
+        // Review-mode rows dedup on (identity, Review.ProviderId,
+        // Review.IdentityNumber) so two reviews that happen to share
+        // (merge-base, head) SHAs stay distinct rows — including the
+        // ADO-vs-GitHub case where both could have a #42. Non-review
+        // rows continue to dedup on identity alone (today's
+        // behaviour).
         var merged = existing
             .Where(i => !IsSameRow(i, fresh))
             .Append(fresh);
@@ -137,13 +139,18 @@ public sealed class RecentContextsService : IRecentContextsService
     private static bool IsSameRow(RecentLaunchContext a, RecentLaunchContext b)
     {
         if (!IsSameIdentity(a.Identity, b.Identity)) return false;
-        // When EITHER side is a PR-mode row, both must be PR-mode rows
-        // for the same PR number; otherwise the rows are distinct (one
-        // is a local-launch row that happens to share the identity, the
-        // other is PR-mode).
-        if (a.PullRequest is not null || b.PullRequest is not null)
+        // When EITHER side is a review-mode row, both must be review-
+        // mode rows with the same (ProviderId, IdentityNumber) tuple
+        // for the rows to collapse. Otherwise the rows are distinct
+        // (one is a local-launch row that happens to share the
+        // identity, the other is review-mode; or they're rows from
+        // different providers that happen to share an identity
+        // number).
+        if (a.Review is not null || b.Review is not null)
         {
-            return a.PullRequest?.Number == b.PullRequest?.Number;
+            if (a.Review is null || b.Review is null) return false;
+            return string.Equals(a.Review.ProviderId, b.Review.ProviderId, StringComparison.Ordinal)
+                && a.Review.IdentityNumber == b.Review.IdentityNumber;
         }
         return true;
     }

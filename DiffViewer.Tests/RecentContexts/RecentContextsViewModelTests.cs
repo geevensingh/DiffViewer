@@ -173,7 +173,7 @@ public class RecentContextsViewModelTests
         public FakeService(params RecentLaunchContext[] items) { _items = new List<RecentLaunchContext>(items); }
         public IReadOnlyList<RecentLaunchContext> Current => _items;
         public event EventHandler? Changed;
-        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, DiffViewer.Models.PullRequestRef? pullRequest = null, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, DiffViewer.Models.IReviewRef? review = null, CancellationToken ct = default) => Task.CompletedTask;
         public Task RemoveAsync(ContextIdentity identity, CancellationToken ct = default) => Task.CompletedTask;
         public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -182,12 +182,20 @@ public class RecentContextsViewModelTests
     {
         public int SwitchCalls { get; private set; }
         public RecentLaunchContext? LastSwitched { get; private set; }
+        public int SwitchToCalls { get; private set; }
+        public DiffViewer.Models.DiffLaunchSource? LastLaunched { get; private set; }
         public bool IsSwitching { get; private set; }
         public event PropertyChangedEventHandler? PropertyChanged;
         public Task<bool> SwitchToRecentAsync(RecentLaunchContext recent, CancellationToken ct = default)
         {
             SwitchCalls++;
             LastSwitched = recent;
+            return Task.FromResult(true);
+        }
+        public Task<bool> SwitchToAsync(DiffViewer.Models.DiffLaunchSource source, CancellationToken ct = default)
+        {
+            SwitchToCalls++;
+            LastLaunched = source;
             return Task.FromResult(true);
         }
         public void RaiseIsSwitching(bool value)

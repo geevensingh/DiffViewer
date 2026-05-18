@@ -209,7 +209,7 @@ public class MainWindowCoordinatorTests
         ok.Should().BeTrue();
         coordinator.Current.Should().BeOfType<DiffViewer.ViewModels.MainViewModel>();
         recents.RecordedRepoPaths.Should().ContainSingle();
-        recents.RecordedPullRequests.Should().ContainSingle()
+        recents.RecordedReviews.Should().ContainSingle()
             .Which.Should().Be(pr);
 
         await coordinator.DisposeCurrentAsync();
@@ -302,7 +302,7 @@ public class MainWindowCoordinatorTests
 
         coordinator.Current.Should().NotBeNull().And.NotBeSameAs(firstVm);
         prResolver.CallCount.Should().Be(1, "PR-mode rows always re-resolve on click");
-        recents.RecordedPullRequests.Should().Contain(pr,
+        recents.RecordedReviews.Should().Contain(pr,
             "the re-resolved row must be re-stamped with the PR ref so subsequent clicks also re-resolve");
 
         await coordinator.DisposeCurrentAsync();
@@ -429,13 +429,13 @@ public class MainWindowCoordinatorTests
         public System.Collections.Generic.IReadOnlyList<RecentLaunchContext> Current => SeededItems;
         public event System.EventHandler? Changed { add { } remove { } }
         public System.Collections.Generic.List<string> RecordedRepoPaths { get; } = new();
-        public System.Collections.Generic.List<DiffViewer.Models.PullRequestRef?> RecordedPullRequests { get; } = new();
+        public System.Collections.Generic.List<DiffViewer.Models.IReviewRef?> RecordedReviews { get; } = new();
         public System.Collections.Generic.List<string> RemovedRepoPaths { get; } = new();
 
-        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, DiffViewer.Models.PullRequestRef? pullRequest = null, System.Threading.CancellationToken ct = default)
+        public Task RecordLaunchAsync(ContextIdentity identity, DiffSide leftDisplay, DiffSide rightDisplay, DiffViewer.Models.IReviewRef? review = null, System.Threading.CancellationToken ct = default)
         {
             RecordedRepoPaths.Add(identity.CanonicalRepoPath);
-            RecordedPullRequests.Add(pullRequest);
+            RecordedReviews.Add(review);
             return Task.CompletedTask;
         }
         public Task RemoveAsync(ContextIdentity identity, System.Threading.CancellationToken ct = default)

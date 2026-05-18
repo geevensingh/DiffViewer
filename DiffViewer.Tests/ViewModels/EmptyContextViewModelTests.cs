@@ -47,7 +47,7 @@ public class EmptyContextViewModelTests
     {
         public System.Collections.Generic.IReadOnlyList<DiffViewer.Models.RecentLaunchContext> Current { get; } = Array.Empty<DiffViewer.Models.RecentLaunchContext>();
         public event EventHandler? Changed;
-        public System.Threading.Tasks.Task RecordLaunchAsync(DiffViewer.Models.ContextIdentity identity, DiffViewer.Models.DiffSide leftDisplay, DiffViewer.Models.DiffSide rightDisplay, DiffViewer.Models.PullRequestRef? pullRequest = null, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
+        public System.Threading.Tasks.Task RecordLaunchAsync(DiffViewer.Models.ContextIdentity identity, DiffViewer.Models.DiffSide leftDisplay, DiffViewer.Models.DiffSide rightDisplay, DiffViewer.Models.IReviewRef? review = null, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
         public System.Threading.Tasks.Task RemoveAsync(DiffViewer.Models.ContextIdentity identity, System.Threading.CancellationToken ct = default) => System.Threading.Tasks.Task.CompletedTask;
         public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
     }

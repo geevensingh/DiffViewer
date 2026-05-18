@@ -94,18 +94,31 @@ internal static class RecentsJsonSerializer
             // means a future canonicalization change to identity (e.g.
             // resolving symbolic refs) doesn't invalidate the on-disk file.
         };
-        if (item.PullRequest is { } pr)
+        if (item.Review is { } review)
         {
-            row["pullRequest"] = new JsonObject
-            {
-                ["host"] = pr.Host,
-                ["owner"] = pr.Owner,
-                ["repo"] = pr.Repo,
-                ["number"] = pr.Number,
-            };
+            // Wire-key remains "pullRequest" so old binaries can still
+            // read GitHub PR rows: the introduction of IReviewRef added
+            // a "provider" discriminator inside the object, but a v2
+            // file written before that discriminator existed
+            // deserialises correctly (missing provider = "github").
+            row["pullRequest"] = SerializeReview(review);
         }
         return row;
     }
+
+    private static JsonObject SerializeReview(IReviewRef review) => review switch
+    {
+        PullRequestRef pr => new JsonObject
+        {
+            ["provider"] = pr.ProviderId,
+            ["host"] = pr.Host,
+            ["owner"] = pr.Owner,
+            ["repo"] = pr.Repo,
+            ["number"] = pr.Number,
+        },
+        _ => throw new InvalidOperationException(
+            $"Cannot serialize unknown IReviewRef type: {review.GetType().Name}"),
+    };
 
     private static JsonObject SerializeSide(DiffSide side) => side switch
     {
@@ -138,14 +151,30 @@ internal static class RecentsJsonSerializer
             return null;
         }
 
-        var pullRequest = TryDeserializePullRequest(obj["pullRequest"]);
+        var pullRequest = TryDeserializeReview(obj["pullRequest"]);
         var identity = ContextIdentityFactory.Create(repoPath, left, right);
         return new RecentLaunchContext(identity, left, right, lastUsed, pullRequest);
     }
 
-    private static PullRequestRef? TryDeserializePullRequest(JsonNode? node)
+    private static IReviewRef? TryDeserializeReview(JsonNode? node)
     {
         if (node is not JsonObject obj) return null;
+
+        // Provider tag controls which concrete IReviewRef to materialise.
+        // Missing tag = "github" (back-compat with v2 files written
+        // before the IReviewRef discriminator existed). An unknown
+        // provider is dropped — the row keeps its repo identity but
+        // loses its review-ness rather than failing the whole load.
+        var provider = TryString(obj, "provider") ?? PullRequestRef.GitHubProviderId;
+        return provider switch
+        {
+            PullRequestRef.GitHubProviderId => TryDeserializeGitHubPullRequest(obj),
+            _ => null,
+        };
+    }
+
+    private static PullRequestRef? TryDeserializeGitHubPullRequest(JsonObject obj)
+    {
         var host = TryString(obj, "host");
         var owner = TryString(obj, "owner");
         var repo = TryString(obj, "repo");

@@ -311,7 +311,7 @@ public class RecentContextsServiceTests : IDisposable
         await svc.RecordLaunchAsync(id, left, right, pr2);
 
         svc.Current.Should().HaveCount(2);
-        svc.Current.Select(i => i.PullRequest!.Number).Should().BeEquivalentTo(new[] { 1, 2 });
+        svc.Current.Select(i => ((PullRequestRef)i.Review!).Number).Should().BeEquivalentTo(new[] { 1, 2 });
     }
 
     [Fact]
@@ -325,7 +325,8 @@ public class RecentContextsServiceTests : IDisposable
         await svc.RecordLaunchAsync(id, left, right, pr);
 
         svc.Current.Should().ContainSingle()
-            .Which.PullRequest!.Number.Should().Be(7);
+            .Which.Review.Should().BeOfType<PullRequestRef>()
+            .Which.Number.Should().Be(7);
     }
 
     [Fact]
@@ -342,8 +343,8 @@ public class RecentContextsServiceTests : IDisposable
         await svc.RecordLaunchAsync(id, left, right, pr);           // PR-mode
 
         svc.Current.Should().HaveCount(2);
-        svc.Current.Where(i => i.PullRequest is null).Should().HaveCount(1);
-        svc.Current.Where(i => i.PullRequest is not null).Should().HaveCount(1);
+        svc.Current.Where(i => i.Review is null).Should().HaveCount(1);
+        svc.Current.Where(i => i.Review is not null).Should().HaveCount(1);
     }
 
     [Fact]
@@ -356,7 +357,7 @@ public class RecentContextsServiceTests : IDisposable
         await svc.RecordLaunchAsync(id, left, right, pr);
 
         svc.Current.Should().ContainSingle()
-            .Which.PullRequest.Should().Be(pr);
+            .Which.Review.Should().Be(pr);
     }
 
     [Fact]
@@ -371,7 +372,7 @@ public class RecentContextsServiceTests : IDisposable
         var reader = new RecentContextsService(_path);
         await reader.LoadAsync();
         reader.Current.Should().ContainSingle()
-            .Which.PullRequest.Should().Be(pr);
+            .Which.Review.Should().Be(pr);
     }
 
     private static RecentLaunchContext MakeContext(string repo, string leftRef, DateTimeOffset stamp)

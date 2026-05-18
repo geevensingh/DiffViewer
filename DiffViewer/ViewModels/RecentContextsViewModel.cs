@@ -190,15 +190,15 @@ public sealed class RecentContextItem : IEquatable<RecentContextItem>
     public RecentLaunchContext Source { get; }
 
     /// <summary>Primary line. e.g. <c>"DevTools · main → &lt;working-tree&gt;"</c>
-    /// for local rows, <c>"DevTools · PR owner/repo#42"</c> for PR-mode rows.</summary>
+    /// for local rows, <c>"DevTools · PR owner/repo#42"</c> for review-mode rows.</summary>
     public string Title
     {
         get
         {
             var name = SafeBaseName(Source.Identity.CanonicalRepoPath);
-            if (Source.PullRequest is { } pr)
+            if (Source.Review is { } review)
             {
-                return $"{name} · PR {pr.Owner}/{pr.Repo}#{pr.Number}";
+                return $"{name} · PR {review.Slug}";
             }
             return $"{name} · {ShortLabelFor(Source.LeftDisplay)} → {ShortLabelFor(Source.RightDisplay)}";
         }
@@ -212,16 +212,17 @@ public sealed class RecentContextItem : IEquatable<RecentContextItem>
     {
         get
         {
-            if (Source.PullRequest is { } pr)
+            if (Source.Review is { } review)
             {
-                // For PR-mode rows, surface the PR identity in the tooltip
-                // alongside the resolved (merge-base, head) SHAs so the
-                // user can see both "what PR this row points at" and
-                // "what the diff engine actually compared." The SHAs may
-                // become stale between launches (D8) — they reflect the
-                // last resolved state, not the live PR head.
+                // For review-mode rows, surface the review identity in
+                // the tooltip alongside the resolved (merge-base, head)
+                // SHAs so the user can see both "what review this row
+                // points at" and "what the diff engine actually
+                // compared." The SHAs may become stale between
+                // launches (D8) — they reflect the last resolved
+                // state, not the live review head.
                 return $"Repository: {Source.Identity.CanonicalRepoPath}{Environment.NewLine}" +
-                       $"Pull request: https://{pr.Host}/{pr.Owner}/{pr.Repo}/pull/{pr.Number}{Environment.NewLine}" +
+                       $"Pull request: {review.WebUrl}{Environment.NewLine}" +
                        $"Last resolved base:  {LabelFor(Source.LeftDisplay)}{Environment.NewLine}" +
                        $"Last resolved head:  {LabelFor(Source.RightDisplay)}{Environment.NewLine}" +
                        $"Last used: {Source.LastUsedUtc.ToLocalTime():yyyy-MM-dd HH:mm}";

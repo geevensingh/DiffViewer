@@ -212,7 +212,7 @@ public class RecentsJsonSerializerTests
         var rt = RecentsJsonSerializer.Deserialize(json);
 
         rt.Items.Should().HaveCount(1);
-        rt.Items[0].PullRequest.Should().Be(pr);
+        rt.Items[0].Review.Should().Be(pr);
         // Verify the on-disk shape carries the expected nested object so a
         // downgraded binary can recognize and either honor or ignore it.
         json.Should().Contain("\"pullRequest\"");
@@ -246,7 +246,7 @@ public class RecentsJsonSerializerTests
     {
         // A v1 file written by a pre-Phase-7 binary: no pullRequest
         // sibling on any row. The new deserializer must load it with
-        // PullRequest = null on each row (no data loss on upgrade).
+        // Review = null on each row (no data loss on upgrade).
         var json = """
         {
           "version": 1,
@@ -259,7 +259,7 @@ public class RecentsJsonSerializerTests
         var doc = RecentsJsonSerializer.Deserialize(json);
 
         doc.Items.Should().HaveCount(1);
-        doc.Items[0].PullRequest.Should().BeNull();
+        doc.Items[0].Review.Should().BeNull();
     }
 
     [Fact]
@@ -281,7 +281,7 @@ public class RecentsJsonSerializerTests
         var doc = RecentsJsonSerializer.Deserialize(json);
 
         doc.Items.Should().HaveCount(1);
-        doc.Items[0].PullRequest.Should().BeNull();
+        doc.Items[0].Review.Should().BeNull();
     }
 
     [Fact]
@@ -299,6 +299,78 @@ public class RecentsJsonSerializerTests
         var doc = RecentsJsonSerializer.Deserialize(json);
 
         doc.Items.Should().HaveCount(1);
-        doc.Items[0].PullRequest.Should().BeNull();
+        doc.Items[0].Review.Should().BeNull();
+    }
+
+    [Fact]
+    public void Serialize_PullRequestRow_EmitsProviderDiscriminator()
+    {
+        // The IReviewRef abstraction is keyed on a "provider" tag inside
+        // the pullRequest object. v1 of the feature only knows "github",
+        // but emitting the tag now means a future ADO row will read
+        // back on this binary without conditional logic in the loader.
+        var pr = new PullRequestRef("github.com", "geevensingh", "diffviewer", 42);
+        var doc = new RecentsDoc(RecentsDoc.CurrentVersion, new[]
+        {
+            new RecentLaunchContext(
+                ContextIdentityFactory.Create(
+                    @"C:\repos\diffviewer",
+                    new DiffSide.CommitIsh("abc"),
+                    new DiffSide.CommitIsh("def")),
+                new DiffSide.CommitIsh("abc"),
+                new DiffSide.CommitIsh("def"),
+                DateTimeOffset.UtcNow,
+                pr),
+        });
+
+        var json = RecentsJsonSerializer.Serialize(doc);
+
+        json.Should().Contain("\"provider\": \"github\"");
+    }
+
+    [Fact]
+    public void Deserialize_PullRequestWithoutProviderField_DefaultsToGithub()
+    {
+        // Back-compat: a v2 file written by a pre-IReviewRef binary
+        // has no "provider" field. Loader must assume "github" so
+        // existing recents.json files keep working unchanged.
+        var json = """
+        {
+          "version": 2,
+          "items": [
+            { "repoPath": "C:/repos/foo", "left": { "type": "commit", "reference": "main" }, "right": { "type": "commit", "reference": "topic" }, "lastUsedUtc": "2026-05-14T18:00:00Z", "pullRequest": { "host": "github.com", "owner": "octocat", "repo": "hello-world", "number": 17 } }
+          ]
+        }
+        """;
+
+        var doc = RecentsJsonSerializer.Deserialize(json);
+
+        doc.Items.Should().HaveCount(1);
+        doc.Items[0].Review.Should().BeOfType<PullRequestRef>()
+            .Which.Should().Be(new PullRequestRef("github.com", "octocat", "hello-world", 17));
+    }
+
+    [Fact]
+    public void Deserialize_PullRequestWithUnknownProvider_KeepsRowDropsReview()
+    {
+        // Forward-compat: a future binary may write a row with a
+        // provider value this binary doesn't understand (e.g.,
+        // "ado"). The row's repo identity is still valid — keep it,
+        // just drop the review-ness so the recents bar stays usable
+        // on the older binary.
+        var json = """
+        {
+          "version": 2,
+          "items": [
+            { "repoPath": "C:/repos/foo", "left": { "type": "commit", "reference": "main" }, "right": { "type": "commit", "reference": "topic" }, "lastUsedUtc": "2026-05-14T18:00:00Z", "pullRequest": { "provider": "ado", "organization": "myorg", "project": "myproj", "repo": "myrepo", "number": 99 } }
+          ]
+        }
+        """;
+
+        var doc = RecentsJsonSerializer.Deserialize(json);
+
+        doc.Items.Should().HaveCount(1);
+        doc.Items[0].Review.Should().BeNull();
+        doc.Items[0].Identity.CanonicalRepoPath.Should().NotBeNullOrEmpty();
     }
 }

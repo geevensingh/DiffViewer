@@ -9,8 +9,29 @@ namespace DiffViewer.Models;
 /// case-insensitively and we want record equality (dedup, dictionary keys)
 /// to behave the same way when users copy-paste mixed-case URLs.
 /// </summary>
-public sealed record PullRequestRef(string Host, string Owner, string Repo, int Number)
+public sealed record PullRequestRef(string Host, string Owner, string Repo, int Number) : IReviewRef
 {
+    /// <summary>
+    /// Stable provider tag persisted in <c>recents.json</c>. The recents
+    /// deserializer treats a missing tag as <c>"github"</c> for
+    /// back-compat with files written before <see cref="IReviewRef"/>
+    /// existed, so changing this string is a forward-incompatible
+    /// migration — don't.
+    /// </summary>
+    public const string GitHubProviderId = "github";
+
+    /// <inheritdoc />
+    public string ProviderId => GitHubProviderId;
+
+    /// <inheritdoc />
+    public string Slug => $"{Owner}/{Repo}#{Number}";
+
+    /// <inheritdoc />
+    public string WebUrl => $"https://{Host}/{Owner}/{Repo}/pull/{Number}";
+
+    /// <inheritdoc />
+    public int IdentityNumber => Number;
+
     /// <summary>
     /// Parses a GitHub pull request URL of the form
     /// <c>https://github.com/{owner}/{repo}/pull/{number}</c>. Accepts

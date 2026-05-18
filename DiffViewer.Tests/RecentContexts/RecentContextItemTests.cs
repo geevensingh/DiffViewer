@@ -8,7 +8,7 @@ namespace DiffViewer.Tests.RecentContexts;
 
 /// <summary>
 /// Phase 7 of the PR-review feature: <see cref="RecentContextItem"/>
-/// branches on <see cref="RecentLaunchContext.PullRequest"/> to render
+/// branches on <see cref="RecentLaunchContext.Review"/> to render
 /// PR-mode rows distinctly in the dropdown. These tests pin the
 /// presentation contract so future label refactors don't regress it.
 /// </summary>
