@@ -18,4 +18,5 @@ public enum ImageFormat
     Jpeg,
     Gif,
     Bmp,
+    Ico,
 }

@@ -16,6 +16,8 @@ public class ImageFormatDetectorTests
     private static readonly byte[] Gif87aSignature = "GIF87a"u8.ToArray();
     private static readonly byte[] Gif89aSignature = "GIF89a"u8.ToArray();
     private static readonly byte[] BmpSignature = "BM"u8.ToArray();
+    // ICO header: 00 00 (reserved) + 01 00 (type=icon, little-endian).
+    private static readonly byte[] IcoSignature = { 0x00, 0x00, 0x01, 0x00 };
 
     [Fact]
     public void Detect_PngMagic_ReturnsPng()
@@ -36,6 +38,19 @@ public class ImageFormatDetectorTests
     [Fact]
     public void Detect_BmpMagic_ReturnsBmp()
         => ImageFormatDetector.Detect(BmpSignature, "drawing.bmp").Should().Be(ImageFormat.Bmp);
+
+    [Fact]
+    public void Detect_IcoMagic_ReturnsIco()
+        => ImageFormatDetector.Detect(IcoSignature, "favicon.ico").Should().Be(ImageFormat.Ico);
+
+    [Fact]
+    public void Detect_IcoMagicWrongType_DoesNotMatch()
+    {
+        // CUR files use 00 00 02 00 (type=cursor). They are out of scope
+        // in v1, so a CUR-shaped header must not classify as Ico.
+        var curHeader = new byte[] { 0x00, 0x00, 0x02, 0x00 };
+        ImageFormatDetector.Detect(curHeader, "pointer.cur").Should().Be(ImageFormat.NotAnImage);
+    }
 
     [Fact]
     public void Detect_MagicBytesWinOverExtension_PngLabelledAsJpg()
@@ -88,6 +103,7 @@ public class ImageFormatDetectorTests
     [InlineData("photo.Png", ImageFormat.Png)]
     [InlineData("anim.GIF", ImageFormat.Gif)]
     [InlineData("draw.BMP", ImageFormat.Bmp)]
+    [InlineData("favicon.ICO", ImageFormat.Ico)]
     public void DetectByExtension_IsCaseInsensitive(string path, ImageFormat expected)
         => ImageFormatDetector.DetectByExtension(path).Should().Be(expected);
 
@@ -97,6 +113,7 @@ public class ImageFormatDetectorTests
     [InlineData(".jpeg", ImageFormat.Jpeg)]
     [InlineData(".gif", ImageFormat.Gif)]
     [InlineData(".bmp", ImageFormat.Bmp)]
+    [InlineData(".ico", ImageFormat.Ico)]
     public void DetectByExtension_BareExtensionDotPrefix_Resolves(string path, ImageFormat expected)
         => ImageFormatDetector.DetectByExtension(path).Should().Be(expected);
 
@@ -108,6 +125,7 @@ public class ImageFormatDetectorTests
     [InlineData(".svg")]
     [InlineData(".webp")]
     [InlineData(".tiff")]
+    [InlineData(".cur")]
     public void DetectByExtension_UnsupportedOrMissing_ReturnsNotAnImage(string? path)
         => ImageFormatDetector.DetectByExtension(path).Should().Be(ImageFormat.NotAnImage);
 

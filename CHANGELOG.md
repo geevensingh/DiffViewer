@@ -60,18 +60,23 @@ body. Keep section headings exact and write notes in Markdown.
   language coloring, so changed-line signal isn't masked. Some
   pathological constructs may mis-color (notably TypeScript JSX
   attributes and Ruby heredocs); patch reports welcome.
-- Image diff for binary image blobs. PNG, JPEG, GIF, and BMP files
-  now render as an actual image-diff view instead of the generic
-  "Binary file - diff not displayed." placeholder. Three viewing
-  modes are exposed via toolbar radio buttons that replace the
-  text-only toggles when an image is shown: **Side-by-side** (two
-  fit-to-frame panes on a checkerboard background), **Swipe**
+- Image diff for binary image blobs. PNG, JPEG, GIF, BMP, and ICO
+  files now render as an actual image-diff view instead of the
+  generic "Binary file - diff not displayed." placeholder. Three
+  viewing modes are exposed via toolbar radio buttons that replace
+  the text-only toggles when an image is shown: **Side-by-side**
+  (two fit-to-frame panes on a checkerboard background), **Swipe**
   (overlay both images with a draggable divider — drag anywhere
   over the canvas), and **Onion-skin** (stack both images with an
-  opacity slider to blend between them). A header strip shows each
-  side's dimensions, byte size, and the byte delta (e.g.
-  `512 x 512 / 18.3 KB -> 1024 x 1024 / 64.1 KB  (+45.8 KB)`), with
-  an `(animated, first frame)` suffix when either side is a
+  opacity slider to blend between them). For added/deleted files
+  the single available image fills the full canvas and the mode
+  controls are hidden, since the three modes have no meaningful
+  semantics when one side is absent. ICO files render the largest
+  embedded resolution (a 256x256 frame is preferred over the 16x16
+  frame when both are present). A header strip shows each side's
+  dimensions, byte size, and the byte delta (e.g.
+  `512 x 512 / 18.3 KB -> 1024 x 1024 / 64.1 KB  (+45.8 KB)`),
+  with an `(animated, first frame)` suffix when either side is a
   multi-frame GIF. The size gate reuses the existing
   `LargeFileThresholdBytes` setting; over-threshold images still
   fall back to the binary placeholder. Format and mode state is

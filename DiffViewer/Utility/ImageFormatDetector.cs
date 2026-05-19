@@ -36,10 +36,20 @@ internal static class ImageFormatDetector
     private static ReadOnlySpan<byte> Gif87aSignature => "GIF87a"u8;
     private static ReadOnlySpan<byte> Gif89aSignature => "GIF89a"u8;
 
-    // BMP — 2-byte "BM" header. Weakest signature of the four; we still
-    // accept it on bytes alone because no other common format starts with
-    // those two ASCII letters.
+    // BMP — 2-byte "BM" header. Weakest of the magic-byte signatures;
+    // we still accept it on bytes alone because no other common format
+    // starts with those two ASCII letters.
     private static ReadOnlySpan<byte> BmpSignature => "BM"u8;
+
+    // ICO — 4-byte header: 00 00 (reserved) + 01 00 (image type = icon,
+    // little-endian). CUR files use 02 00 in the type field and are not
+    // supported. The signature is short and not particularly distinctive,
+    // but combined with the extension fallback in DetectByExtension this
+    // is enough for practical use.
+    private static ReadOnlySpan<byte> IcoSignature => new byte[]
+    {
+        0x00, 0x00, 0x01, 0x00,
+    };
 
     /// <summary>
     /// Identify the image format of <paramref name="bytes"/>. Falls back
@@ -54,6 +64,7 @@ internal static class ImageFormatDetector
         if (StartsWith(bytes, Gif87aSignature) ||
             StartsWith(bytes, Gif89aSignature)) return ImageFormat.Gif;
         if (StartsWith(bytes, BmpSignature)) return ImageFormat.Bmp;
+        if (StartsWith(bytes, IcoSignature)) return ImageFormat.Ico;
 
         return path is null ? ImageFormat.NotAnImage : DetectByExtension(path);
     }
@@ -77,6 +88,7 @@ internal static class ImageFormatDetector
             ".jpeg" => ImageFormat.Jpeg,
             ".gif" => ImageFormat.Gif,
             ".bmp" => ImageFormat.Bmp,
+            ".ico" => ImageFormat.Ico,
             _ => ImageFormat.NotAnImage,
         };
     }

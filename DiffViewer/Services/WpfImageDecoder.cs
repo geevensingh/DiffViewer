@@ -60,7 +60,15 @@ public sealed class WpfImageDecoder : IImageDecoder
                     Error: "Decoder reported zero frames.");
             }
 
-            var frame = decoder.Frames[0];
+            // ICOs embed the same icon at multiple resolutions (16x16,
+            // 32x32, 48x48, 256x256). Frames[0] is typically the
+            // smallest and looks blurry when fit-to-canvas, so pick the
+            // largest frame by area for icons. For animated GIFs and
+            // single-frame formats Frames[0] is correct, so the
+            // selector is gated on format.
+            BitmapFrame frame = format == ImageFormat.Ico
+                ? PickLargestFrame(decoder.Frames)
+                : decoder.Frames[0];
             // Freeze so the bitmap can cross threads. Required because
             // the production decode runs on a Task.Run worker and the
             // bitmap is handed off to the UI thread for binding.
@@ -88,5 +96,29 @@ public sealed class WpfImageDecoder : IImageDecoder
                 Image: null, Metadata: null,
                 Error: $"{ex.GetType().Name}: {ex.Message}");
         }
+    }
+
+    // Picks the largest frame by pixel area, with bit depth as a
+    // tiebreaker so a 256x256 32bpp icon beats a 256x256 4bpp icon.
+    // WIC exposes Format.BitsPerPixel; for unknown formats it returns
+    // 0 which sorts last, also fine.
+    private static BitmapFrame PickLargestFrame(IReadOnlyList<BitmapFrame> frames)
+    {
+        BitmapFrame best = frames[0];
+        long bestArea = (long)best.PixelWidth * best.PixelHeight;
+        int bestDepth = best.Format.BitsPerPixel;
+        for (int i = 1; i < frames.Count; i++)
+        {
+            var f = frames[i];
+            long area = (long)f.PixelWidth * f.PixelHeight;
+            int depth = f.Format.BitsPerPixel;
+            if (area > bestArea || (area == bestArea && depth > bestDepth))
+            {
+                best = f;
+                bestArea = area;
+                bestDepth = depth;
+            }
+        }
+        return best;
     }
 }
