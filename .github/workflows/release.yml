@@ -18,13 +18,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout (with full history + tags)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.x
 
@@ -81,7 +81,7 @@ jobs:
           "RELEASE_BODY<<EOF`n$section`nEOF" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: publish/DiffViewer.exe
           body: ${{ env.RELEASE_BODY }}
