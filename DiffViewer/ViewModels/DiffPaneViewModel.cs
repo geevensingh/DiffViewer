@@ -113,6 +113,17 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// </summary>
     public event EventHandler<ScrollRequestedEventArgs>? ScrollRequested;
 
+    /// <summary>
+    /// Raised when the user spins the scroll wheel over the hunk overview
+    /// bar. Carries a signed line count (positive = scroll the editor down
+    /// toward later lines, negative = scroll up). The view converts this
+    /// to a <see cref="ICSharpCode.AvalonEdit.TextEditor.ScrollToVerticalOffset(double)"/>
+    /// call so the wheel feels identical to wheeling the editor itself.
+    /// <para>Same scroll-only semantics as <see cref="ScrollRequested"/>:
+    /// no caret move, no <see cref="CurrentHunkIndex"/> update.</para>
+    /// </summary>
+    public event EventHandler<ScrollByLineDeltaRequestedEventArgs>? ScrollByLineDeltaRequested;
+
     [ObservableProperty]
     private bool _isWhitespaceOnlyBannerVisible;
 
@@ -1132,6 +1143,25 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         ScrollRequested?.Invoke(this, new ScrollRequestedEventArgs(leftLine, rightLine));
     }
 
+    /// <summary>
+    /// Request a wheel-style incremental scroll on the active editor(s).
+    /// <paramref name="lineDelta"/> is signed (positive = scroll toward
+    /// later lines; negative = scroll toward earlier lines) and is fed
+    /// straight through to <see cref="ScrollByLineDeltaRequested"/> — the
+    /// view layer is responsible for converting it to a pixel offset
+    /// using the editor's current line height. No clamping happens here;
+    /// the editor handles its own min/max via
+    /// <c>ScrollToVerticalOffset</c>.
+    /// <para>Same scroll-only semantics as
+    /// <see cref="RequestScrollByFraction"/>: caret stays put and
+    /// <see cref="CurrentHunkIndex"/> is untouched.</para>
+    /// </summary>
+    public void RequestScrollByLineDelta(int lineDelta)
+    {
+        if (lineDelta == 0) return;
+        ScrollByLineDeltaRequested?.Invoke(this, new ScrollByLineDeltaRequestedEventArgs(lineDelta));
+    }
+
     public void Dispose()
     {
         if (_settingsService is not null)
@@ -1224,3 +1254,10 @@ public sealed record HunkNavigationEventArgs(int HunkIndex, int LeftLine, int Ri
 /// viewport indicator is independent of hunk navigation.
 /// </summary>
 public sealed record ScrollRequestedEventArgs(int LeftLine, int RightLine);
+
+/// <summary>
+/// Args for <see cref="DiffPaneViewModel.ScrollByLineDeltaRequested"/>.
+/// Signed line count; sign convention matches editor-scrolling intuition
+/// (positive = scroll toward later lines).
+/// </summary>
+public sealed record ScrollByLineDeltaRequestedEventArgs(int LineDelta);

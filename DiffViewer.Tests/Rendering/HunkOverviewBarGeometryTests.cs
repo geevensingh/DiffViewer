@@ -586,4 +586,40 @@ public class HunkOverviewBarGeometryTests
         // Well above the band.
         HunkOverviewBarGeometry.IsInsideBand(band, new Point(2, 5)).Should().BeFalse();
     }
+
+    // ---------- GetBandCenterY ----------
+
+    [Fact]
+    public void GetBandCenterY_SymmetricBand_ReturnsMidpoint()
+    {
+        var state = new DiffViewer.Models.ViewportState(10, 30, 10, 30);
+        var band = HunkOverviewBarGeometry.ComputeViewport(
+            state, 100, 100, BarWidth, 200, ColumnWidth)!;
+        // Both rects: y in [18, 60]. Midpoint = 39.
+        HunkOverviewBarGeometry.GetBandCenterY(band).Should().BeApproximately(39, 0.001);
+    }
+
+    [Fact]
+    public void GetBandCenterY_AsymmetricBand_UsesCombinedRange()
+    {
+        // Left side spans 50 lines of a 100-line file (50% → y in [0, 100]).
+        // Right side spans 10 lines of a 50-line file (20% → y in [0, 40]).
+        // Combined range: [0, 100], so center = 50.
+        var state = new DiffViewer.Models.ViewportState(1, 50, 1, 10);
+        var band = HunkOverviewBarGeometry.ComputeViewport(
+            state, 100, 50, BarWidth, 200, ColumnWidth)!;
+        HunkOverviewBarGeometry.GetBandCenterY(band).Should().BeApproximately(50, 0.001);
+    }
+
+    [Fact]
+    public void GetBandCenterY_SingleSideBand_UsesThatRectsMidpoint()
+    {
+        // Inline mode "right-only" band: LeftFirstLine/LastLine = 0
+        // (sentinel for "no representation on this side").
+        var state = new DiffViewer.Models.ViewportState(0, 0, 20, 60);
+        var band = HunkOverviewBarGeometry.ComputeViewport(
+            state, 100, 100, BarWidth, 200, ColumnWidth)!;
+        // Right rect only: y in [38, 120]. Midpoint = 79.
+        HunkOverviewBarGeometry.GetBandCenterY(band).Should().BeApproximately(79, 0.001);
+    }
 }

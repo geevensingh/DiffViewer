@@ -320,6 +320,7 @@ public partial class DiffPaneView : UserControl
         _vm.HighlightMapChanged += OnHighlightMapChanged;
         _vm.HunkNavigationRequested += OnHunkNavigationRequested;
         _vm.ScrollRequested += OnScrollRequested;
+        _vm.ScrollByLineDeltaRequested += OnScrollByLineDeltaRequested;
         _vm.ColorSchemeChanged += OnColorSchemeChanged;
         _vm.PropertyChanged += OnVmPropertyChanged;
 
@@ -334,6 +335,7 @@ public partial class DiffPaneView : UserControl
         _vm.HighlightMapChanged -= OnHighlightMapChanged;
         _vm.HunkNavigationRequested -= OnHunkNavigationRequested;
         _vm.ScrollRequested -= OnScrollRequested;
+        _vm.ScrollByLineDeltaRequested -= OnScrollByLineDeltaRequested;
         _vm.ColorSchemeChanged -= OnColorSchemeChanged;
         _vm.PropertyChanged -= OnVmPropertyChanged;
         _vm = null;
@@ -551,6 +553,50 @@ public partial class DiffPaneView : UserControl
         if (line > editor.Document.LineCount) line = editor.Document.LineCount;
         if (line < 1) return;
         editor.ScrollToLine(line);
+    }
+
+    /// <summary>
+    /// Apply a wheel-style incremental scroll to the active editor.
+    /// Computed in pixels (line-count × <see cref="ICSharpCode.AvalonEdit.Rendering.TextView.DefaultLineHeight"/>)
+    /// rather than line numbers because <see cref="TextEditor.ScrollToLine(int)"/>
+    /// is discrete (it only scrolls when the line isn't already visible),
+    /// which would make small wheel ticks feel unresponsive. Pixel-offset
+    /// scrolling gives the same buttery feel as wheeling the editor
+    /// directly.
+    /// <para>In side-by-side mode we only scroll one editor on purpose:
+    /// <see cref="TextEditorScrollSync"/> mirrors the pixel offset to
+    /// the other side, so scrolling both here would double-apply the
+    /// delta (the second call reads the already-synced offset and adds
+    /// the delta a second time).</para>
+    /// </summary>
+    private void OnScrollByLineDeltaRequested(object? sender, ScrollByLineDeltaRequestedEventArgs e)
+    {
+        if (_vm is null || e.LineDelta == 0) return;
+        if (_vm.IsSideBySide)
+        {
+            ScrollEditorByLines(RightEditor, e.LineDelta);
+        }
+        else
+        {
+            ScrollEditorByLines(InlineEditor, e.LineDelta);
+        }
+    }
+
+    private static void ScrollEditorByLines(TextEditor editor, int lineDelta)
+    {
+        if (lineDelta == 0) return;
+        if (editor.Document is null) return;
+        double lineHeight = editor.TextArea?.TextView?.DefaultLineHeight ?? 0;
+        // Fall back to FontSize-derived line height before the visual
+        // tree has laid out (DefaultLineHeight returns 0 in that case).
+        // 1.3 mirrors AvalonEdit's own default lineSpacing factor.
+        if (lineHeight <= 0) lineHeight = Math.Max(1.0, editor.FontSize * 1.3);
+        double newOffset = editor.VerticalOffset + lineDelta * lineHeight;
+        if (newOffset < 0) newOffset = 0;
+        double maxOffset = editor.ExtentHeight - editor.ViewportHeight;
+        if (maxOffset < 0) maxOffset = 0;
+        if (newOffset > maxOffset) newOffset = maxOffset;
+        editor.ScrollToVerticalOffset(newOffset);
     }
 
     private static void ScrollEditorToLine(TextEditor editor, int line)

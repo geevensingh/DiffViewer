@@ -281,6 +281,37 @@ internal static class HunkOverviewBarGeometry
         ContainsInRectsOrRibbon(band.LeftRect, band.RightRect, p);
 
     /// <summary>
+    /// Vertical center of the viewport band, in bar coordinates. Used as
+    /// the anchor for sticky-thumb drag: at MouseDown we record the
+    /// click's pixel offset from this center, then on each MouseMove we
+    /// place the band's center back at <c>mouseY − offset</c> so the
+    /// click point "sticks" to the band.
+    /// <para>For mixed bands (both rects present) this is the midpoint
+    /// of the combined Y-range. For single-side bands it's the rect's
+    /// own midpoint. Returns the bar's vertical midpoint as a fallback
+    /// when both rects are <c>null</c> — shouldn't happen because
+    /// <see cref="ComputeViewport"/> never returns a band in that case,
+    /// but the fallback keeps callers from having to special-case.</para>
+    /// </summary>
+    public static double GetBandCenterY(ViewportBand band)
+    {
+        double top = double.MaxValue;
+        double bottom = double.MinValue;
+        if (band.LeftRect is Rect L)
+        {
+            top = Math.Min(top, L.Top);
+            bottom = Math.Max(bottom, L.Bottom);
+        }
+        if (band.RightRect is Rect R)
+        {
+            top = Math.Min(top, R.Top);
+            bottom = Math.Max(bottom, R.Bottom);
+        }
+        if (top > bottom) return 0;
+        return (top + bottom) / 2.0;
+    }
+
+    /// <summary>
     /// Classifies a hunk's content for color selection — pure-add (all
     /// inserted lines), pure-delete (all removed lines), or mixed.
     /// </summary>

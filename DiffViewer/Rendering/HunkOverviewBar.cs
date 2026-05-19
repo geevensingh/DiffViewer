@@ -45,6 +45,23 @@ public sealed class HunkOverviewBar : FrameworkElement
 
     private DiffPaneViewModel? _vm;
 
+    /// <summary>
+    /// True while the user is dragging the viewport band. Captured on
+    /// <see cref="OnMouseLeftButtonDown"/> when the click lands inside
+    /// the band; released on mouse-up / lost capture. While true,
+    /// <see cref="OnMouseMove"/> drives <see cref="DiffPaneViewModel.RequestScrollByFraction"/>
+    /// instead of updating the hover tooltip.
+    /// </summary>
+    private bool _isDraggingBand;
+
+    /// <summary>
+    /// Pixel offset from the click point to the band's vertical center,
+    /// recorded at mouse-down. Replayed on every <see cref="OnMouseMove"/>
+    /// during a drag so the cursor "sticks" to whichever part of the
+    /// band the user grabbed (scrollbar-thumb feel).
+    /// </summary>
+    private double _bandDragOffsetFromCenter;
+
     public HunkOverviewBar()
     {
         Cursor = Cursors.Hand;
@@ -294,15 +311,95 @@ public sealed class HunkOverviewBar : FrameworkElement
             _vm.Viewport, leftTotal, rightTotal, ActualWidth, ActualHeight, ColumnWidth);
         if (band is not null && HunkOverviewBarGeometry.IsInsideBand(band, p))
         {
-            double frac = ActualHeight <= 0 ? 0 : p.Y / ActualHeight;
-            _vm.RequestScrollByFraction(frac);
+            // Start a sticky-thumb drag: record where in the band the user
+            // grabbed (offset from band center) and capture the mouse so
+            // we keep getting moves even when the cursor strays off the
+            // bar. We deliberately do NOT call RequestScrollByFraction on
+            // the down stroke — sticky-thumb means "don't move the band
+            // until the user actually drags".
+            double bandCenterY = HunkOverviewBarGeometry.GetBandCenterY(band);
+            _bandDragOffsetFromCenter = p.Y - bandCenterY;
+            _isDraggingBand = true;
+            ToolTip = null;
+            CaptureMouse();
             e.Handled = true;
         }
+    }
+
+    protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonUp(e);
+        if (_isDraggingBand)
+        {
+            EndBandDrag();
+            e.Handled = true;
+        }
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        // Captures can be lost without a corresponding MouseUp (e.g. the
+        // user Alt-Tabs away). Clear drag state so we don't get stuck.
+        _isDraggingBand = false;
+    }
+
+    private void EndBandDrag()
+    {
+        _isDraggingBand = false;
+        if (IsMouseCaptured) ReleaseMouseCapture();
+    }
+
+    /// <summary>
+    /// Wheel scrolling over the bar mirrors wheel scrolling over the
+    /// editor itself: one notch (<see cref="MouseWheelEventArgs.Delta"/>
+    /// of 120) moves the editor by
+    /// <see cref="SystemParameters.WheelScrollLines"/> lines. Sign is
+    /// inverted from <c>Delta</c> because a positive <c>Delta</c> means
+    /// the wheel rolled away from the user (scroll up = decrease line
+    /// number), and our line-delta convention is "positive = scroll
+    /// toward later lines".
+    /// </summary>
+    protected override void OnMouseWheel(MouseWheelEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        if (_vm is null || e.Delta == 0) return;
+
+        // Whole-notch math — fractional wheel deltas (high-precision
+        // trackpads) accumulate into MouseWheelEventArgs.Delta as integer
+        // multiples of 120, so integer division is safe and matches
+        // editor scroll behaviour exactly.
+        int linesPerNotch = Math.Max(1, SystemParameters.WheelScrollLines);
+        int notches = e.Delta / 120;
+        if (notches == 0)
+        {
+            // Sub-notch wheel events (rare on Windows; mostly Mac magic
+            // mice via remote desktop). Round away from zero so a small
+            // flick still scrolls at least one line in the right
+            // direction.
+            notches = e.Delta > 0 ? 1 : -1;
+        }
+        int lineDelta = -notches * linesPerNotch;
+        _vm.RequestScrollByLineDelta(lineDelta);
+        e.Handled = true;
     }
 
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
         if (_vm is null) return;
+
+        // Drag in progress: drive the editor scroll from the cursor's
+        // current Y, preserving the click-offset captured at MouseDown.
+        // No tooltip / no hunk hover during drag — it's a noisy
+        // distraction and would fight the cursor for attention.
+        if (_isDraggingBand)
+        {
+            double targetBandCenterY = e.GetPosition(this).Y - _bandDragOffsetFromCenter;
+            double fraction = ActualHeight <= 0 ? 0 : targetBandCenterY / ActualHeight;
+            _vm.RequestScrollByFraction(fraction);
+            return;
+        }
+
         var hunks = _vm.CurrentHunks;
         if (hunks.Count == 0)
         {

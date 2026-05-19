@@ -901,6 +901,77 @@ public class DiffPaneViewModelTests
     }
 
     [Fact]
+    public void RequestScrollByLineDelta_RaisesEventWithSignedDelta()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo);
+
+        var deltas = new List<int>();
+        vm.ScrollByLineDeltaRequested += (_, args) => deltas.Add(args.LineDelta);
+
+        vm.RequestScrollByLineDelta(3);
+        vm.RequestScrollByLineDelta(-5);
+
+        deltas.Should().Equal(3, -5);
+    }
+
+    [Fact]
+    public void RequestScrollByLineDelta_WithZeroDelta_DoesNotFire()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo);
+
+        bool fired = false;
+        vm.ScrollByLineDeltaRequested += (_, _) => fired = true;
+
+        vm.RequestScrollByLineDelta(0);
+
+        fired.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RequestScrollByFraction_RaisesScrollRequestedWithMappedLines()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo);
+
+        // Seed both documents so the mapping has a non-trivial denominator.
+        vm.LeftDocument.Text = string.Join("\n", Enumerable.Range(1, 100));
+        vm.RightDocument.Text = string.Join("\n", Enumerable.Range(1, 200));
+
+        ScrollRequestedEventArgs? last = null;
+        vm.ScrollRequested += (_, args) => last = args;
+
+        vm.RequestScrollByFraction(0.5);
+
+        last.Should().NotBeNull();
+        last!.LeftLine.Should().Be(50);
+        last.RightLine.Should().Be(100);
+    }
+
+    [Fact]
+    public void RequestScrollByFraction_ClampsOutOfRangeFractions()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo);
+        vm.LeftDocument.Text = string.Join("\n", Enumerable.Range(1, 50));
+        vm.RightDocument.Text = string.Join("\n", Enumerable.Range(1, 50));
+
+        var events = new List<ScrollRequestedEventArgs>();
+        vm.ScrollRequested += (_, args) => events.Add(args);
+
+        vm.RequestScrollByFraction(-0.1);
+        vm.RequestScrollByFraction(1.5);
+        vm.RequestScrollByFraction(double.NaN);
+
+        events.Should().HaveCount(2);
+        events[0].LeftLine.Should().Be(1);
+        events[0].RightLine.Should().Be(1);
+        events[1].LeftLine.Should().Be(50);
+        events[1].RightLine.Should().Be(50);
+    }
+
+    [Fact]
     public async Task LoadAsync_TextFile_PopulatesInlineDocument()
     {
         var repo = new FakeRepository

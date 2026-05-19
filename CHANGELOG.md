@@ -14,6 +14,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- Hunk overview bar is now interactive for scrolling. Drag the
+  viewport indicator (the soft blue outline that shows the editors'
+  currently-visible window) up or down to scroll both editors —
+  sticky-thumb behaviour, so whichever part of the indicator you
+  grab stays under the cursor for the whole drag. The scroll wheel
+  also works anywhere over the bar and moves the editors at the same
+  rate as wheeling the editor surface itself (one notch =
+  `SystemParameters.WheelScrollLines` lines). Neither interaction
+  moves the caret or selects a hunk — they're pure scroll, leaving
+  the editor caret and the active-hunk highlight unchanged. Clicking
+  a hunk marker still jumps to that hunk; that behaviour is
+  unchanged.
 - Language-aware syntax highlighting for TypeScript (`.ts`, `.tsx`),
   YAML (`.yaml`, `.yml`), Go (`.go`), Rust (`.rs`), Ruby (`.rb`),
   Bash / shell (`.sh`, `.bash`, `.zsh`), and TOML (`.toml`). Combined
