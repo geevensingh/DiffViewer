@@ -187,55 +187,82 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Orientation="Horizontal">
-                <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
-                              IsChecked="{Binding IgnoreWhitespace}"
-                              Content="Ignore WS"
-                              ToolTip="Ignore whitespace differences (Ctrl+W)"/>
-                <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
-                              IsChecked="{Binding ShowIntraLineDiff}"
-                              Content="Intra-line"
-                              ToolTip="Show word-level highlights inside modified lines (Ctrl+D)"/>
-                <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
-                              IsChecked="{Binding IsSideBySide}"
-                              Content="Side-by-side"
-                              ToolTip="Toggle between side-by-side and inline diff layout (Ctrl+I)"/>
-                <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
-                              IsChecked="{Binding ShowVisibleWhitespace}"
-                              Content="Show WS"
-                              ToolTip="Render spaces, tabs, and end-of-line markers (Ctrl+Shift+W)"/>
-                <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
-                              IsChecked="{Binding ShowLineNumbers}"
-                              Content="Line #s"
-                              ToolTip="Show line numbers in the editor gutters"/>
-                <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
-                              IsChecked="{Binding WordWrap}"
-                              Content="Wrap"
-                              ToolTip="Wrap long lines at the editor's right edge (Ctrl+Shift+L)"/>
+                <!-- Text-diff toggles and side-visibility group. Collapsed
+                     for image files (no notion of whitespace, intra-line,
+                     wrap, etc.). All bindings target DiffPaneViewModel. -->
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding ShowImageDiff, Converter={x:Static vm:FalseToVisibleConverter.Instance}}">
+                    <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                                  IsChecked="{Binding IgnoreWhitespace}"
+                                  Content="Ignore WS"
+                                  ToolTip="Ignore whitespace differences (Ctrl+W)"/>
+                    <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                                  IsChecked="{Binding ShowIntraLineDiff}"
+                                  Content="Intra-line"
+                                  ToolTip="Show word-level highlights inside modified lines (Ctrl+D)"/>
+                    <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                                  IsChecked="{Binding IsSideBySide}"
+                                  Content="Side-by-side"
+                                  ToolTip="Toggle between side-by-side and inline diff layout (Ctrl+I)"/>
+                    <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                                  IsChecked="{Binding ShowVisibleWhitespace}"
+                                  Content="Show WS"
+                                  ToolTip="Render spaces, tabs, and end-of-line markers (Ctrl+Shift+W)"/>
+                    <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                                  IsChecked="{Binding ShowLineNumbers}"
+                                  Content="Line #s"
+                                  ToolTip="Show line numbers in the editor gutters"/>
+                    <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                                  IsChecked="{Binding WordWrap}"
+                                  Content="Wrap"
+                                  ToolTip="Wrap long lines at the editor's right edge (Ctrl+Shift+L)"/>
 
-                <Separator Margin="6,2" Width="1" Background="#CCC"/>
+                    <Separator Margin="6,2" Width="1" Background="#CCC"/>
 
-                <!-- Side-visibility radio group: RadioButton.OnToggle only
-                     ever sets IsChecked = true, so clicking the active one
-                     is a true no-op (the user can't end up with all three
-                     off). Mutual exclusion is driven by the shared source
-                     property — when one click flips the enum, the other
-                     two bindings re-evaluate Convert and uncheck themselves.
-                     The group is greyed in inline mode since it only
-                     affects the side-by-side layout. -->
-                <RadioButton Style="{StaticResource ToolbarRadioStyle}"
-                             IsChecked="{Binding SideVisibility, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:DiffSideVisibility.LeftOnly}}"
-                             Content="Left"
-                             ToolTip="Show only the left (old) side"/>
-                <RadioButton Style="{StaticResource ToolbarRadioStyle}"
-                             IsChecked="{Binding SideVisibility, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:DiffSideVisibility.Both}}"
-                             Content="Both"
-                             ToolTip="Show both sides"/>
-                <RadioButton Style="{StaticResource ToolbarRadioStyle}"
-                             IsChecked="{Binding SideVisibility, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:DiffSideVisibility.RightOnly}}"
-                             Content="Right"
-                             ToolTip="Show only the right (new) side"/>
+                    <!-- Side-visibility radio group: RadioButton.OnToggle only
+                         ever sets IsChecked = true, so clicking the active one
+                         is a true no-op (the user can't end up with all three
+                         off). Mutual exclusion is driven by the shared source
+                         property — when one click flips the enum, the other
+                         two bindings re-evaluate Convert and uncheck themselves.
+                         The group is greyed in inline mode since it only
+                         affects the side-by-side layout. -->
+                    <RadioButton Style="{StaticResource ToolbarRadioStyle}"
+                                 IsChecked="{Binding SideVisibility, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:DiffSideVisibility.LeftOnly}}"
+                                 Content="Left"
+                                 ToolTip="Show only the left (old) side"/>
+                    <RadioButton Style="{StaticResource ToolbarRadioStyle}"
+                                 IsChecked="{Binding SideVisibility, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:DiffSideVisibility.Both}}"
+                                 Content="Both"
+                                 ToolTip="Show both sides"/>
+                    <RadioButton Style="{StaticResource ToolbarRadioStyle}"
+                                 IsChecked="{Binding SideVisibility, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:DiffSideVisibility.RightOnly}}"
+                                 Content="Right"
+                                 ToolTip="Show only the right (new) side"/>
 
-                <Separator Margin="6,2" Width="1" Background="#CCC"/>
+                    <Separator Margin="6,2" Width="1" Background="#CCC"/>
+                </StackPanel>
+
+                <!-- Image-mode radio group: visible only when an image is
+                     dispatched. RadioButtons bind to ImageDiff.Mode via the
+                     shared EnumToBoolConverter pattern. -->
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding ShowImageDiff, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
+                    <RadioButton Style="{StaticResource ToolbarRadioStyle}"
+                                 IsChecked="{Binding ImageDiff.Mode, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.SideBySide}}"
+                                 Content="Side-by-side"
+                                 ToolTip="Show both images in adjacent panes"/>
+                    <RadioButton Style="{StaticResource ToolbarRadioStyle}"
+                                 IsChecked="{Binding ImageDiff.Mode, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.Swipe}}"
+                                 Content="Swipe"
+                                 ToolTip="Overlay both images with a draggable divider"/>
+                    <RadioButton Style="{StaticResource ToolbarRadioStyle}"
+                                 IsChecked="{Binding ImageDiff.Mode, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.OnionSkin}}"
+                                 Content="Onion-skin"
+                                 ToolTip="Stack both images with an opacity slider to blend between them"/>
+
+                    <Separator Margin="6,2" Width="1" Background="#CCC"/>
+                </StackPanel>
 
                 <!-- Bound to the MainViewModel commands (same ones F7/F8 fire)
                      so toolbar clicks and keyboard shortcuts share one

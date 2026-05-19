@@ -1,0 +1,151 @@
+<UserControl x:Class="DiffViewer.Views.ImageDiffView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+             xmlns:models="clr-namespace:DiffViewer.Models"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:ImageDiffViewModel}"
+             mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <!-- Checkerboard tile that lives behind transparent pixels so the
+             user can tell true transparency apart from a solid background.
+             Two-tone gray, 16 px tiles to match the convention in most
+             image editors. -->
+        <DrawingBrush x:Key="CheckerboardBrush"
+                      TileMode="Tile"
+                      Viewport="0,0,16,16"
+                      ViewportUnits="Absolute">
+            <DrawingBrush.Drawing>
+                <DrawingGroup>
+                    <GeometryDrawing Brush="#F0F0F0">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,16,16"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <GeometryDrawing Brush="#D0D0D0">
+                        <GeometryDrawing.Geometry>
+                            <GeometryGroup>
+                                <RectangleGeometry Rect="0,0,8,8"/>
+                                <RectangleGeometry Rect="8,8,8,8"/>
+                            </GeometryGroup>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingBrush.Drawing>
+        </DrawingBrush>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header strip: per-side dimensions + byte size + delta. -->
+        <Border Grid.Row="0"
+                Background="#F8F8F8"
+                BorderBrush="#DDD"
+                BorderThickness="0,0,0,1"
+                Padding="12,6">
+            <TextBlock Text="{Binding DimensionsSummary}"
+                       FontFamily="Consolas"
+                       FontSize="12"
+                       Foreground="#333"/>
+        </Border>
+
+        <!-- Image canvas (checkerboard background). Three mutually
+             exclusive layout overlays, switched by Mode. -->
+        <Border Grid.Row="1" Background="{StaticResource CheckerboardBrush}">
+            <Grid>
+                <!-- SideBySide: two columns with a thin gap. -->
+                <Grid Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.SideBySide}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="2"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Image Grid.Column="0"
+                           Source="{Binding LeftImage}"
+                           Stretch="Uniform"
+                           Margin="4"/>
+                    <Border Grid.Column="1" Background="#DDD"/>
+                    <Image Grid.Column="2"
+                           Source="{Binding RightImage}"
+                           Stretch="Uniform"
+                           Margin="4"/>
+                </Grid>
+
+                <!-- Swipe: both images stacked, left image clipped to the
+                     area left of the draggable divider. Clip + divider
+                     position are updated from code-behind in response to
+                     SizeChanged + SwipePosition / Mode property changes. -->
+                <Grid x:Name="SwipeCanvas"
+                      Background="Transparent"
+                      Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.Swipe}}">
+                    <Image Source="{Binding RightImage}" Stretch="Uniform"/>
+                    <Image x:Name="SwipeLeftImage"
+                           Source="{Binding LeftImage}"
+                           Stretch="Uniform">
+                        <Image.Clip>
+                            <RectangleGeometry x:Name="SwipeLeftClip" Rect="0,0,0,0"/>
+                        </Image.Clip>
+                    </Image>
+                    <Line x:Name="SwipeDividerLine"
+                          Stroke="White"
+                          StrokeThickness="2"
+                          Y1="0" Y2="0"
+                          X1="0" X2="0"
+                          IsHitTestVisible="False"/>
+                </Grid>
+
+                <!-- OnionSkin: left image full opacity, right image overlay
+                     with user-controllable opacity. -->
+                <Grid Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.OnionSkin}}">
+                    <Image Source="{Binding LeftImage}" Stretch="Uniform"/>
+                    <Image Source="{Binding RightImage}"
+                           Stretch="Uniform"
+                           Opacity="{Binding OnionOpacity}"/>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- Bottom controls row. Slider is mode-specific: Swipe uses the
+             whole-canvas divider position; OnionSkin uses the right-side
+             opacity. SideBySide gets nothing. -->
+        <Border Grid.Row="2"
+                Background="#F8F8F8"
+                BorderBrush="#DDD"
+                BorderThickness="0,1,0,0"
+                Padding="12,6">
+            <Grid>
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.Swipe}}">
+                    <TextBlock Text="Divider:"
+                               FontFamily="Segoe UI"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"/>
+                    <Slider Width="240"
+                            Minimum="0" Maximum="1"
+                            SmallChange="0.01" LargeChange="0.1"
+                            Value="{Binding SwipePosition, Mode=TwoWay}"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.OnionSkin}}">
+                    <TextBlock Text="Opacity:"
+                               FontFamily="Segoe UI"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0"/>
+                    <Slider Width="240"
+                            Minimum="0" Maximum="1"
+                            SmallChange="0.01" LargeChange="0.1"
+                            Value="{Binding OnionOpacity, Mode=TwoWay}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

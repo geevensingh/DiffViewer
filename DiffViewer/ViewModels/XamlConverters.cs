@@ -168,3 +168,44 @@ public sealed class NonEmptyStringToVisibleConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>
+/// XAML helper: maps an enum value to <see cref="Visibility.Visible"/>
+/// when it equals <c>ConverterParameter</c>, otherwise
+/// <see cref="Visibility.Collapsed"/>. Used by the image-diff view to
+/// switch between SideBySide / Swipe / OnionSkin layouts without
+/// declaring three DataTriggers per layout. Mirrors
+/// <see cref="EnumToBoolConverter"/>'s parameter-resolution logic so
+/// callers can pass either a typed enum value (via <c>x:Static</c>)
+/// or a case-insensitive string.
+/// </summary>
+public sealed class EnumToVisibilityConverter : IValueConverter
+{
+    public static readonly EnumToVisibilityConverter Instance = new();
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+    {
+        if (value is null || parameter is null) return Visibility.Collapsed;
+        var target = ResolveParameter(value.GetType(), parameter);
+        return target is not null && value.Equals(target)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+
+    private static object? ResolveParameter(Type enumType, object parameter)
+    {
+        if (!enumType.IsEnum)
+        {
+            var underlying = Nullable.GetUnderlyingType(enumType);
+            if (underlying is null || !underlying.IsEnum) return null;
+            enumType = underlying;
+        }
+        if (parameter.GetType() == enumType) return parameter;
+        if (parameter is string s && Enum.TryParse(enumType, s, ignoreCase: true, out var parsed))
+            return parsed;
+        return null;
+    }
+}
