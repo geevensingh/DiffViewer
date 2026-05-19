@@ -25,7 +25,10 @@ namespace DiffViewer.Rendering;
 ///   <item>Hover tooltip shows the hunk's old- and new-side line ranges so
 ///   the user can scan without clicking. Clicking a marker (or the ribbon
 ///   between two markers) jumps the editors to that hunk via
-///   <see cref="DiffPaneViewModel.JumpToHunk"/>.</item>
+///   <see cref="DiffPaneViewModel.JumpToHunk"/>. Clicking empty bar space
+///   recenters the viewport band on the cursor (minimap-style "jump to
+///   here") and immediately enters a sticky-thumb drag so the same press
+///   can continue scrubbing without releasing the button.</item>
 ///   <item>Cluster markers, popups, and keyboard focus are listed in the
 ///   plan but deferred to a follow-up — the hit-test still falls through
 ///   to the nearest marker when two rects overlap.</item>
@@ -359,8 +362,30 @@ public sealed class HunkOverviewBar : FrameworkElement
             _vm.Viewport, leftTotal, rightTotal, ActualWidth, ActualHeight, ColumnWidth);
         bool inBand = band is not null && HunkOverviewBarGeometry.IsInsideBand(band, p);
 
-        // Empty press — let it bubble.
-        if (idx < 0 && !inBand) return;
+        // Empty press: minimap-style "click anywhere to jump there".
+        // The band's center snaps to the cursor immediately, then any
+        // continued motion drags from there — empty-space press and
+        // empty-space-press-then-drag are the same gesture, sharing
+        // the existing sticky-thumb path. Skipping PendingClick and
+        // going straight to Dragging means the first scroll fires on
+        // MouseDown (so a quick click lands the band on the cursor
+        // even without any mouse movement). If there's no band yet
+        // (no file loaded / pre-layout) we bubble instead — nothing
+        // to center on.
+        if (idx < 0 && !inBand)
+        {
+            if (band is null) return;
+            _bandDragOffsetFromTop = HunkOverviewBarGeometry.GetBandHeight(band) / 2.0;
+            _interactionStartPoint = p;
+            _pendingHunkIndex = -1;
+            _bandWasUnderClick = false;
+            _interaction = BarInteractionState.Dragging;
+            ToolTip = null;
+            CaptureMouse();
+            EmitDragScroll(p);
+            e.Handled = true;
+            return;
+        }
 
         // Defer both the JumpToHunk commit and the drag start to
         // MouseMove/MouseUp so a click that lands on a hunk marker

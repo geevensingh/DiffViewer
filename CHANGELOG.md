@@ -36,7 +36,12 @@ body. Keep section headings exact and write notes in Markdown.
   position on every mouse-move frame instead of waiting for the
   editor's scroll + layout pass to round-trip — keeps the indicator
   truly stuck to the cursor even on large files where the editor
-  scroll can't quite keep up at fast drag speeds.
+  scroll can't quite keep up at fast drag speeds. Clicking empty
+  bar space (anywhere that isn't a hunk marker or the viewport
+  indicator) recenters the indicator on the cursor and starts a
+  drag in the same gesture — minimap-style "click anywhere to jump
+  there", and a press-and-drag from empty space scrubs without
+  needing a second click.
 - Language-aware syntax highlighting for TypeScript (`.ts`, `.tsx`),
   YAML (`.yaml`, `.yml`), Go (`.go`), Rust (`.rs`), Ruby (`.rb`),
   Bash / shell (`.sh`, `.bash`, `.zsh`), and TOML (`.toml`). Combined
