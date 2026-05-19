@@ -363,15 +363,26 @@ public sealed class HunkOverviewBar : FrameworkElement
         bool inBand = band is not null && HunkOverviewBarGeometry.IsInsideBand(band, p);
 
         // Empty press: minimap-style "click anywhere to jump there".
-        // The band's center snaps to the cursor immediately, then any
-        // continued motion drags from there — empty-space press and
-        // empty-space-press-then-drag are the same gesture, sharing
-        // the existing sticky-thumb path. Skipping PendingClick and
-        // going straight to Dragging means the first scroll fires on
-        // MouseDown (so a quick click lands the band on the cursor
-        // even without any mouse movement). If there's no band yet
-        // (no file loaded / pre-layout) we bubble instead — nothing
-        // to center on.
+        // Send the scroll request immediately so the band lands at the
+        // cursor, but do NOT set the optimistic ghost band — let the
+        // natural ViewportState propagation paint the band at its
+        // actual settled (line-snapped) position on the next frame.
+        // Using the ghost path here would lock the band visually to
+        // the cursor's exact Y, then snap to the line-snapped position
+        // on MouseUp when the ghost clears — visible as a jiggle on
+        // smaller files where one line of editor scroll spans several
+        // bar pixels. The ghost's value-add is smoothing fast drag
+        // (decoupling the bar paint from editor scroll lag); a
+        // stationary click has nothing to smooth.
+        //
+        // If the user follows up with motion, the first MouseMove
+        // activates the ghost via EmitDragScroll and we're back on
+        // the smooth-drag path. The transition is a small one-time
+        // snap to cursor, masked by the motion that caused it.
+        //
+        // Still go directly into Dragging (skipping PendingClick) so
+        // MouseUp doesn't try to fire a JumpToHunk — there's no hunk
+        // to commit to, and the scroll has already been sent.
         if (idx < 0 && !inBand)
         {
             if (band is null) return;
@@ -382,7 +393,9 @@ public sealed class HunkOverviewBar : FrameworkElement
             _interaction = BarInteractionState.Dragging;
             ToolTip = null;
             CaptureMouse();
-            EmitDragScroll(p);
+            double targetBandTopY = p.Y - _bandDragOffsetFromTop;
+            double fraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
+            _vm.RequestScrollByVerticalFraction(fraction);
             e.Handled = true;
             return;
         }
