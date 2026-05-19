@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-19
+
 ### Added
 
 - **Command-line flags for direct launch**: `DiffViewer.exe --repo
