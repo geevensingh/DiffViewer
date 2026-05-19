@@ -135,6 +135,10 @@ internal static class CompositionRoot
 
         var clipboardService = new WpfClipboardService();
 
+        // Stateless decoder; constructed per-context for simplicity.
+        // Could be hoisted to AppServices later if it ever grows state.
+        var imageDecoder = new WpfImageDecoder();
+
         var vm = new MainViewModel(
             repo, parsed.Left, parsed.Right,
             services.DiffService, watcher,
@@ -146,7 +150,8 @@ internal static class CompositionRoot
             recentContextsService: services.RecentContextsService,
             contextSwitcher: services.ContextSwitcher,
             newDiffDialogHost: services.NewDiffDialogHost,
-            clipboardService: clipboardService);
+            clipboardService: clipboardService,
+            imageDecoder: imageDecoder);
 
         await vm.LoadInitialChangesAsync(ct).ConfigureAwait(true);
         return vm;

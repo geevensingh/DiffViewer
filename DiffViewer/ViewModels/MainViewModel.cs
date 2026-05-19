@@ -611,7 +611,8 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         IRecentContextsService? recentContextsService = null,
         IContextSwitcher? contextSwitcher = null,
         INewDiffDialogHost? newDiffDialogHost = null,
-        IClipboardService? clipboardService = null)
+        IClipboardService? clipboardService = null,
+        IImageDecoder? imageDecoder = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _left = left ?? throw new ArgumentNullException(nameof(left));
@@ -643,7 +644,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         _scope = scope ?? new ContextScope();
 
         FileList = new FileListViewModel(settingsService);
-        DiffPane = new DiffPaneViewModel(_repository, diffService, _isCommitVsCommit, settingsService);
+        DiffPane = new DiffPaneViewModel(_repository, diffService, _isCommitVsCommit, settingsService, imageDecoder);
 
         WindowTitle = $"DiffViewer — {repository.Shape.RepoRoot} ({FormatSideForTitle(left)} ⇢ {FormatSideForTitle(right)})";
 

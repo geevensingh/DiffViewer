@@ -21,6 +21,7 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="FluentAssertions" Version="6.12.1" />
+    <PackageReference Include="Xunit.StaFact" Version="1.1.11" />
   </ItemGroup>
 
   <ItemGroup>
@@ -34,9 +35,7 @@
        project-dir-relative and won't match an upward-path include
        anyway, but the rename is belt-and-braces). -->
   <ItemGroup>
-    <None Include="..\DiffViewer\MainWindow.xaml"
-          Link="TestData\MainWindow.xaml"
-          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\DiffViewer\MainWindow.xaml" Link="TestData\MainWindow.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

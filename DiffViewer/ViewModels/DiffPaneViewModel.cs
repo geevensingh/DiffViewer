@@ -20,6 +20,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     private readonly IRepositoryService _repository;
     private readonly IDiffService? _diffService;
     private readonly ISettingsService? _settingsService;
+    private readonly IImageDecoder? _imageDecoder;
     private readonly bool _isCommitVsCommit;
     private bool _suppressSettingsWrite;
     private CancellationTokenSource? _loadCts;
@@ -185,16 +186,26 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private ViewportState? _viewport;
 
+    /// <summary>
+    /// The image decoder this VM was constructed with, or <c>null</c>
+    /// when the consumer (e.g. some tests) wasn't interested in image
+    /// dispatch. Exposed only so Phase 4 dispatch logic and wiring
+    /// tests can read it; not part of the binding surface.
+    /// </summary>
+    internal IImageDecoder? ImageDecoder => _imageDecoder;
+
     public DiffPaneViewModel(
         IRepositoryService repository,
         IDiffService? diffService = null,
         bool isCommitVsCommit = false,
-        ISettingsService? settingsService = null)
+        ISettingsService? settingsService = null,
+        IImageDecoder? imageDecoder = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _diffService = diffService;
         _isCommitVsCommit = isCommitVsCommit;
         _settingsService = settingsService;
+        _imageDecoder = imageDecoder;
 
         // Seed toolbar state from persisted settings if present. Suppress
         // the OnXxxChanged callbacks during the seed so we don't immediately
