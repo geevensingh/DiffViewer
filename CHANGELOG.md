@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-18
+
 ### Added
 
 - Loading overlay during context switches. Opening a GitHub PR, a
