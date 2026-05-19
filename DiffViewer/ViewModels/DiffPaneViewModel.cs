@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using DiffViewer.Models;
 using DiffViewer.Rendering;
 using DiffViewer.Services;
+using DiffViewer.Utility;
 using ICSharpCode.AvalonEdit.Document;
 
 namespace DiffViewer.ViewModels;
@@ -121,8 +122,20 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isLoading;
 
-    public bool ShowPlaceholder => PlaceholderMessage is not null;
-    public bool ShowEditors => PlaceholderMessage is null;
+    /// <summary>
+    /// Image-diff sibling view-model. Non-null when the currently
+    /// loaded entry has been dispatched to the image-diff pane;
+    /// <c>null</c> for text-diff, placeholder, and pre-load states.
+    /// </summary>
+    [ObservableProperty]
+    private ImageDiffViewModel? _imageDiff;
+
+    /// <summary>Standard binary-file placeholder text. Exposed for the image-diff dispatch path so it can fall back to the same string when an image-shaped blob fails to decode.</summary>
+    internal const string BinaryPlaceholderMessage = "Binary file - diff not displayed.";
+
+    public bool ShowImageDiff => ImageDiff is not null;
+    public bool ShowPlaceholder => PlaceholderMessage is not null && ImageDiff is null;
+    public bool ShowEditors => PlaceholderMessage is null && ImageDiff is null;
     public bool ShowSideBySide => ShowEditors && IsSideBySide;
     public bool ShowInline => ShowEditors && !IsSideBySide;
 
@@ -185,14 +198,6 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     private ViewportState? _viewport;
-
-    /// <summary>
-    /// The image decoder this VM was constructed with, or <c>null</c>
-    /// when the consumer (e.g. some tests) wasn't interested in image
-    /// dispatch. Exposed only so Phase 4 dispatch logic and wiring
-    /// tests can read it; not part of the binding surface.
-    /// </summary>
-    internal IImageDecoder? ImageDecoder => _imageDecoder;
 
     public DiffPaneViewModel(
         IRepositoryService repository,
@@ -392,6 +397,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             // Reset the signature so a subsequent "select the file again"
             // doesn't false-positive skip against a stale prior load.
             _lastLoadSignature = null;
+            ImageDiff = null;
             ApplyResult(string.Empty, string.Empty, "Select a file to see its diff.",
                 Array.Empty<DiffHunk>(), DiffHighlightMap.Empty, InlineDiffBuilder.Empty, false);
             LastLoadTask = Task.CompletedTask;
@@ -399,8 +405,23 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         }
 
         var change = entry.Change;
-        var earlyPlaceholder = ResolvePlaceholderForShape(change)
-            ?? ResolveLargeFilePlaceholder(change);
+        var shapePlaceholder = ResolvePlaceholderForShape(change);
+        var largePlaceholder = ResolveLargeFilePlaceholder(change);
+
+        // Image-diff dispatch: when the only reason we'd show a
+        // placeholder is "binary file" (no LFS / sparse / large-file /
+        // mode-only / submodule / conflict overlay), and the path looks
+        // like one of the formats we support, and we have a decoder,
+        // hand off to the image-diff pane instead.
+        if (ReferenceEquals(shapePlaceholder, BinaryPlaceholderMessage)
+            && largePlaceholder is null
+            && _imageDecoder is not null
+            && ImageFormatDetector.DetectByExtension(change.Path) != ImageFormat.NotAnImage)
+        {
+            return BeginImageDispatch(entry, change, _imageDecoder, ct);
+        }
+
+        var earlyPlaceholder = shapePlaceholder ?? largePlaceholder;
         if (earlyPlaceholder is not null)
         {
             // Capture the signature for the placeholder load so a
@@ -408,11 +429,16 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             // re-applying the placeholder (which would also re-fire
             // HighlightMapChanged).
             _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
+            ImageDiff = null;
             ApplyResult(string.Empty, string.Empty, earlyPlaceholder,
                 Array.Empty<DiffHunk>(), DiffHighlightMap.Empty, InlineDiffBuilder.Empty, false);
             LastLoadTask = Task.CompletedTask;
             return LastLoadTask;
         }
+
+        // Non-placeholder, non-image: text diff. Clear any stale image
+        // state from a previous selection before the async load starts.
+        ImageDiff = null;
 
         IsLoading = true;
         var options = BuildDiffOptions();
@@ -467,7 +493,96 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Like <see cref="LoadAsync"/> but additionally jumps to the first hunk
+    /// Async dispatch path for image blobs. Runs the blob reads + the
+    /// <see cref="IImageDecoder"/> calls off the UI thread (same as the
+    /// text-diff <c>Task.Run</c> pattern) and applies the results on
+    /// the dispatcher.
+    ///
+    /// <para>On success: <see cref="ImageDiff"/> is set to a freshly
+    /// built <see cref="ImageDiffViewModel"/> and the placeholder is
+    /// cleared. On failure (both sides failed to decode, or the byte
+    /// reads faulted): <see cref="ImageDiff"/> is cleared and the
+    /// existing <see cref="BinaryPlaceholderMessage"/> is emitted so
+    /// the user sees the same fallback they'd see today.</para>
+    /// </summary>
+    private Task BeginImageDispatch(
+        FileEntryViewModel entry,
+        FileChange change,
+        IImageDecoder decoder,
+        CancellationToken ct)
+    {
+        IsLoading = true;
+
+        var task = Task.Run(() =>
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Mirror SafeReadSide: swallow read failures and treat the
+            // side as empty rather than blowing up the whole dispatch.
+            // ReadSide already returns BlobContent.Empty for absent
+            // sides (add/delete), so the byte-length check below
+            // suffices for the "this side has no image" case.
+            BlobContent leftBlob;
+            try { leftBlob = _repository.ReadSide(change, ChangeSide.Left); }
+            catch { leftBlob = BlobContent.Empty; }
+
+            BlobContent rightBlob;
+            try { rightBlob = _repository.ReadSide(change, ChangeSide.Right); }
+            catch { rightBlob = BlobContent.Empty; }
+
+            ImageDecodeResult? leftResult = leftBlob.Bytes.Length > 0
+                ? decoder.Decode(leftBlob.Bytes, change.Path)
+                : null;
+            ImageDecodeResult? rightResult = rightBlob.Bytes.Length > 0
+                ? decoder.Decode(rightBlob.Bytes, change.Path)
+                : null;
+
+            return (leftResult, rightResult);
+        }, ct).ContinueWith(t =>
+        {
+            if (ct.IsCancellationRequested) return;
+
+            ImageDiffViewModel? vm = null;
+            if (!t.IsFaulted)
+            {
+                var (leftResult, rightResult) = t.Result;
+                // Success iff at least one side decoded to a bitmap.
+                // An all-error result falls through to the binary
+                // placeholder so the user gets a useful message
+                // instead of an empty image pane.
+                if (leftResult?.Image is not null || rightResult?.Image is not null)
+                {
+                    vm = new ImageDiffViewModel(
+                        leftResult?.Image, rightResult?.Image,
+                        leftResult?.Metadata, rightResult?.Metadata);
+                }
+            }
+
+            if (vm is not null)
+            {
+                ImageDiff = vm;
+                _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
+                ApplyResult(string.Empty, string.Empty, null,
+                    Array.Empty<DiffHunk>(), DiffHighlightMap.Empty,
+                    InlineDiffBuilder.Empty, false);
+            }
+            else
+            {
+                ImageDiff = null;
+                _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
+                ApplyResult(string.Empty, string.Empty, BinaryPlaceholderMessage,
+                    Array.Empty<DiffHunk>(), DiffHighlightMap.Empty,
+                    InlineDiffBuilder.Empty, false);
+            }
+
+            IsLoading = false;
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+
+        LastLoadTask = task;
+        return task;
+    }
+
+    /// <summary>
     /// once the load completes. The jump is chained inside
     /// <see cref="LastLoadTask"/> itself, so any caller that awaits
     /// <see cref="LastLoadTask"/> also waits for the auto-jump to land. If
@@ -537,7 +652,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         if (change.IsSparseNotCheckedOut)
             return "Sparse checkout: this file is not present in the working tree.";
         if (change.IsBinary)
-            return "Binary file - diff not displayed.";
+            return BinaryPlaceholderMessage;
         if (change.IsModeOnlyChange)
             return $"Mode change only: {Convert.ToString(change.OldMode, 8)} -> {Convert.ToString(change.NewMode, 8)}.";
         if (change.Status == Models.FileStatus.SubmoduleMoved)
@@ -675,6 +790,15 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
 
     partial void OnPlaceholderMessageChanged(string? value)
     {
+        OnPropertyChanged(nameof(ShowPlaceholder));
+        OnPropertyChanged(nameof(ShowEditors));
+        OnPropertyChanged(nameof(ShowSideBySide));
+        OnPropertyChanged(nameof(ShowInline));
+    }
+
+    partial void OnImageDiffChanged(ImageDiffViewModel? value)
+    {
+        OnPropertyChanged(nameof(ShowImageDiff));
         OnPropertyChanged(nameof(ShowPlaceholder));
         OnPropertyChanged(nameof(ShowEditors));
         OnPropertyChanged(nameof(ShowSideBySide));

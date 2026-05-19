@@ -1,10 +1,13 @@
 using System.Text;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using DiffViewer.Models;
 using DiffViewer.Services;
 using DiffViewer.ViewModels;
 using FluentAssertions;
 using Xunit;
+using ImageMetadata = DiffViewer.Models.ImageMetadata;
 
 namespace DiffViewer.Tests.ViewModels;
 
@@ -64,6 +67,168 @@ public class DiffPaneViewModelTests
         vm.ShowPlaceholder.Should().BeTrue();
         vm.PlaceholderMessage.Should().Contain("Binary");
         repo.ReadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task LoadAsync_BinaryImage_WithDecoder_DispatchesToImageDiff()
+    {
+        var repo = new FakeRepository
+        {
+            LeftBytesOverride = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+            RightBytesOverride = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+            LeftIsBinaryOverride = true,
+            RightIsBinaryOverride = true,
+        };
+        var decoder = new FakeImageDecoder();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var bitmap = MakeFrozenBitmap(4, 4);
+            decoder.DecodeFunc = (_, _) => new ImageDecodeResult(
+                bitmap,
+                new ImageMetadata(4, 4, 1234, ImageFormat.Png, 1),
+                null);
+
+            var vm = new DiffPaneViewModel(repo, imageDecoder: decoder);
+            await vm.LoadAsync(Entry(Binary("img.png")));
+            await vm.LastLoadTask;
+
+            vm.ImageDiff.Should().NotBeNull();
+            vm.ShowImageDiff.Should().BeTrue();
+            vm.PlaceholderMessage.Should().BeNull();
+            vm.ShowPlaceholder.Should().BeFalse();
+            vm.ShowEditors.Should().BeFalse();
+            vm.IsLoading.Should().BeFalse();
+            decoder.CallCount.Should().Be(2, "both sides have bytes");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_BinaryImage_DecoderFails_FallsBackToBinaryPlaceholder()
+    {
+        var repo = new FakeRepository
+        {
+            LeftBytesOverride = new byte[] { 0x00, 0x01, 0x02, 0x03 },
+            RightBytesOverride = new byte[] { 0x00, 0x01, 0x02, 0x03 },
+            LeftIsBinaryOverride = true,
+            RightIsBinaryOverride = true,
+        };
+        var decoder = new FakeImageDecoder
+        {
+            DecodeFunc = (_, _) => new ImageDecodeResult(null, null, "fake error"),
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, imageDecoder: decoder);
+            await vm.LoadAsync(Entry(Binary("img.png")));
+            await vm.LastLoadTask;
+
+            vm.ImageDiff.Should().BeNull();
+            vm.ShowImageDiff.Should().BeFalse();
+            vm.PlaceholderMessage.Should().Be(DiffPaneViewModel.BinaryPlaceholderMessage);
+            vm.ShowPlaceholder.Should().BeTrue();
+            vm.IsLoading.Should().BeFalse();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_BinaryImage_OverThreshold_SkipsDecode()
+    {
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { LargeFileThresholdBytes = 1024 });
+        var decoder = new FakeImageDecoder();
+        var vm = new DiffPaneViewModel(repo, settingsService: settings, imageDecoder: decoder);
+
+        var change = Binary("huge.png") with
+        {
+            LeftFileSizeBytes = 5L * 1024 * 1024,
+            RightFileSizeBytes = 5L * 1024 * 1024,
+        };
+
+        await vm.LoadAsync(Entry(change));
+
+        // Existing precedence: shape (binary) wins over large in the
+        // placeholder string, but the important invariant for image
+        // dispatch is that the large-file gate prevents the decode
+        // attempt entirely.
+        vm.ImageDiff.Should().BeNull();
+        vm.ShowPlaceholder.Should().BeTrue();
+        decoder.CallCount.Should().Be(0, "the large-file gate should win before we try to decode");
+        repo.ReadCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ImageThenText_ClearsImageDiff()
+    {
+        var repo = new FakeRepository
+        {
+            LeftBytesOverride = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+            RightBytesOverride = new byte[] { 0x89, 0x50, 0x4E, 0x47 },
+            LeftIsBinaryOverride = true,
+            RightIsBinaryOverride = true,
+            LeftText = "alpha\n",
+            RightText = "beta\n",
+        };
+        var decoder = new FakeImageDecoder();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var bitmap = MakeFrozenBitmap(2, 2);
+            decoder.DecodeFunc = (_, _) => new ImageDecodeResult(
+                bitmap,
+                new ImageMetadata(2, 2, 4, ImageFormat.Png, 1),
+                null);
+
+            var vm = new DiffPaneViewModel(repo, new DiffService(), imageDecoder: decoder);
+
+            await vm.LoadAsync(Entry(Binary("img.png")));
+            await vm.LastLoadTask;
+            vm.ImageDiff.Should().NotBeNull();
+
+            // Navigate to a text file. The byte overrides above only
+            // matter for "img.png"; the text-mode load reads via
+            // LeftText / RightText.
+            repo.LeftBytesOverride = null;
+            repo.RightBytesOverride = null;
+            await vm.LoadAsync(Entry(ModifiedTextFile("notes.txt")));
+            await vm.LastLoadTask;
+
+            vm.ImageDiff.Should().BeNull();
+            vm.ShowImageDiff.Should().BeFalse();
+            vm.PlaceholderMessage.Should().BeNull();
+            vm.ShowEditors.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_NonImageExtensionBinary_FallsBackToBinaryPlaceholderWithoutDecodeCall()
+    {
+        var repo = new FakeRepository();
+        var decoder = new FakeImageDecoder();
+        var vm = new DiffPaneViewModel(repo, imageDecoder: decoder);
+
+        // .exe is binary but not in our supported image extension list;
+        // dispatch should short-circuit on extension before reading bytes.
+        await vm.LoadAsync(Entry(Binary("setup.exe")));
+
+        vm.ImageDiff.Should().BeNull();
+        vm.ShowPlaceholder.Should().BeTrue();
+        vm.PlaceholderMessage.Should().Contain("Binary");
+        decoder.CallCount.Should().Be(0);
+        repo.ReadCount.Should().Be(0);
+    }
+
+    private static BitmapSource MakeFrozenBitmap(int width, int height)
+    {
+        var stride = width * 4;
+        var pixels = new byte[height * stride];
+        var source = BitmapSource.Create(
+            width, height, 96, 96,
+            PixelFormats.Bgra32, palette: null,
+            pixels, stride);
+        source.Freeze();
+        return source;
     }
 
     [Fact]
@@ -1396,6 +1561,10 @@ public class DiffPaneViewModelTests
     {
         public string LeftText { get; set; } = string.Empty;
         public string RightText { get; set; } = string.Empty;
+        public byte[]? LeftBytesOverride { get; set; }
+        public byte[]? RightBytesOverride { get; set; }
+        public bool LeftIsBinaryOverride { get; set; }
+        public bool RightIsBinaryOverride { get; set; }
         public int ReadCount;
 
         public RepositoryShape Shape => new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false);
@@ -1412,6 +1581,13 @@ public class DiffPaneViewModelTests
         public BlobContent ReadSide(FileChange change, ChangeSide side)
         {
             ReadCount++;
+            // Byte overrides take precedence so image-dispatch tests can
+            // supply arbitrary binary blobs without going through the
+            // Encoding.UTF8.GetBytes(text) path.
+            if (side == ChangeSide.Left && LeftBytesOverride is not null)
+                return new BlobContent(LeftBytesOverride, Encoding.UTF8, string.Empty, LeftIsBinaryOverride, false);
+            if (side == ChangeSide.Right && RightBytesOverride is not null)
+                return new BlobContent(RightBytesOverride, Encoding.UTF8, string.Empty, RightIsBinaryOverride, false);
             var text = side == ChangeSide.Left ? LeftText : RightText;
             return new BlobContent(Encoding.UTF8.GetBytes(text), Encoding.UTF8, text, false, false);
         }
@@ -1437,5 +1613,24 @@ public class DiffPaneViewModelTests
         public void Dispose() { }
 
         private sealed class DummyDisposable : IDisposable { public void Dispose() { } }
+    }
+
+    /// <summary>
+    /// Test double for <see cref="IImageDecoder"/>. Records every call
+    /// and returns a canned <see cref="ImageDecodeResult"/> per side so
+    /// tests can simulate decode success and failure without spinning
+    /// up <see cref="WpfImageDecoder"/>.
+    /// </summary>
+    private sealed class FakeImageDecoder : IImageDecoder
+    {
+        public Func<byte[], string?, ImageDecodeResult> DecodeFunc { get; set; } =
+            (_, _) => new ImageDecodeResult(null, null, "fake-not-configured");
+        public int CallCount;
+
+        public ImageDecodeResult Decode(byte[] bytes, string? path)
+        {
+            CallCount++;
+            return DecodeFunc(bytes, path);
+        }
     }
 }
