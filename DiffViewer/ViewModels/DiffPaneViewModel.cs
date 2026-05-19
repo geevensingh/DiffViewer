@@ -160,6 +160,13 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     internal const string BinaryPlaceholderMessage = "Binary file - diff not displayed.";
 
     public bool ShowImageDiff => ImageDiff is not null;
+    /// <summary>
+    /// Gates the toolbar's image-mode radio group: visible only when an
+    /// image is dispatched <em>and</em> both sides have a bitmap. For
+    /// add-only / delete-only changes the modes don't apply (nothing
+    /// to compose against), so the group is hidden.
+    /// </summary>
+    public bool ShowImageDiffModeControls => ImageDiff is not null && ImageDiff.HasBothImages;
     public bool ShowPlaceholder => PlaceholderMessage is not null && ImageDiff is null;
     public bool ShowEditors => PlaceholderMessage is null && ImageDiff is null;
     public bool ShowSideBySide => ShowEditors && IsSideBySide;
@@ -825,6 +832,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     partial void OnImageDiffChanged(ImageDiffViewModel? value)
     {
         OnPropertyChanged(nameof(ShowImageDiff));
+        OnPropertyChanged(nameof(ShowImageDiffModeControls));
         OnPropertyChanged(nameof(ShowPlaceholder));
         OnPropertyChanged(nameof(ShowEditors));
         OnPropertyChanged(nameof(ShowSideBySide));

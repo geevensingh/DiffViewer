@@ -95,6 +95,8 @@ public class DiffPaneViewModelTests
 
             vm.ImageDiff.Should().NotBeNull();
             vm.ShowImageDiff.Should().BeTrue();
+            vm.ShowImageDiffModeControls.Should().BeTrue(
+                "both sides decoded so the three-mode UI applies");
             vm.PlaceholderMessage.Should().BeNull();
             vm.ShowPlaceholder.Should().BeFalse();
             vm.ShowEditors.Should().BeFalse();

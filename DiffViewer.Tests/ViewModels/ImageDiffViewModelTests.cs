@@ -1,8 +1,11 @@
 using System.ComponentModel;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using DiffViewer.Models;
 using DiffViewer.ViewModels;
 using FluentAssertions;
 using Xunit;
+using ImageMetadata = DiffViewer.Models.ImageMetadata;
 
 namespace DiffViewer.Tests.ViewModels;
 
@@ -183,5 +186,70 @@ public class ImageDiffViewModelTests
         vm.RightImage.Should().BeNull();
         vm.LeftMetadata.Should().NotBeNull();
         vm.RightMetadata.Should().NotBeNull();
+    }
+
+    // ---- HasBothImages / SingleImage gates ----
+    //
+    // STA needed because BitmapSource.Create touches WPF imaging
+    // services. Mirrors the helper in DiffPaneViewModelTests.
+
+    private static BitmapSource MakeFrozenBitmap()
+    {
+        var bmp = BitmapSource.Create(
+            pixelWidth: 1,
+            pixelHeight: 1,
+            dpiX: 96,
+            dpiY: 96,
+            pixelFormat: PixelFormats.Bgra32,
+            palette: null,
+            pixels: new byte[] { 0, 0, 0, 255 },
+            stride: 4);
+        bmp.Freeze();
+        return bmp;
+    }
+
+    [Fact]
+    public void HasBothImages_BothNull_IsFalse()
+        => new ImageDiffViewModel(null, null, null, null).HasBothImages.Should().BeFalse();
+
+    [StaFact]
+    public void HasBothImages_BothPresent_IsTrue()
+    {
+        var vm = new ImageDiffViewModel(MakeFrozenBitmap(), MakeFrozenBitmap(), null, null);
+        vm.HasBothImages.Should().BeTrue();
+    }
+
+    [StaFact]
+    public void HasBothImages_AddOnly_IsFalse()
+    {
+        var vm = new ImageDiffViewModel(null, MakeFrozenBitmap(), null, null);
+        vm.HasBothImages.Should().BeFalse();
+    }
+
+    [StaFact]
+    public void HasBothImages_DeleteOnly_IsFalse()
+    {
+        var vm = new ImageDiffViewModel(MakeFrozenBitmap(), null, null, null);
+        vm.HasBothImages.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SingleImage_BothNull_IsNull()
+        => new ImageDiffViewModel(null, null, null, null).SingleImage.Should().BeNull();
+
+    [StaFact]
+    public void SingleImage_AddOnly_ReturnsRight()
+    {
+        var right = MakeFrozenBitmap();
+        var vm = new ImageDiffViewModel(null, right, null, null);
+        vm.SingleImage.Should().BeSameAs(right);
+    }
+
+    [StaFact]
+    public void SingleImage_DeleteOnly_ReturnsLeft()
+    {
+        var left = MakeFrozenBitmap();
+        var vm = new ImageDiffViewModel(left, null, null, null);
+        vm.SingleImage.Should().BeSameAs(left);
     }
 }

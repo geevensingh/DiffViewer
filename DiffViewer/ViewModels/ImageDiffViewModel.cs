@@ -53,6 +53,25 @@ public sealed partial class ImageDiffViewModel : ObservableObject
     public ImageMetadata? LeftMetadata { get; }
     public ImageMetadata? RightMetadata { get; }
 
+    /// <summary>
+    /// <c>true</c> when both sides decoded into a real bitmap, so the
+    /// three-mode (SideBySide / Swipe / OnionSkin) UI has something to
+    /// compose. <c>false</c> for add-only / delete-only changes, where
+    /// the view should render the single available image full-canvas
+    /// and hide the mode controls — the three modes have no meaningful
+    /// semantics when one side is absent.
+    /// </summary>
+    public bool HasBothImages => LeftImage is not null && RightImage is not null;
+
+    /// <summary>
+    /// The single image to render when <see cref="HasBothImages"/> is
+    /// <c>false</c>: <see cref="RightImage"/> for an added file or
+    /// <see cref="LeftImage"/> for a deleted file. <c>null</c> when
+    /// neither side has a bitmap (only possible in tests, since
+    /// production never constructs such a VM).
+    /// </summary>
+    public BitmapSource? SingleImage => LeftImage ?? RightImage;
+
     public ImageDiffViewModel(
         BitmapSource? leftImage,
         BitmapSource? rightImage,

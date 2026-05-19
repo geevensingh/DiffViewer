@@ -56,70 +56,89 @@
                        Foreground="#333"/>
         </Border>
 
-        <!-- Image canvas (checkerboard background). Three mutually
-             exclusive layout overlays, switched by Mode. -->
+        <!-- Image canvas (checkerboard background). Either three
+             mutually exclusive layout overlays (HasBothImages = true,
+             switched by Mode) or a single full-canvas image for
+             add-only / delete-only changes. -->
         <Border Grid.Row="1" Background="{StaticResource CheckerboardBrush}">
             <Grid>
-                <!-- SideBySide: two columns with a thin gap. -->
-                <Grid Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.SideBySide}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="2"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Image Grid.Column="0"
-                           Source="{Binding LeftImage}"
-                           Stretch="Uniform"
-                           Margin="4"/>
-                    <Border Grid.Column="1" Background="#DDD"/>
-                    <Image Grid.Column="2"
-                           Source="{Binding RightImage}"
-                           Stretch="Uniform"
-                           Margin="4"/>
-                </Grid>
+                <!-- Single-image fallback for add-only / delete-only
+                     changes. Renders whichever side has a bitmap full-
+                     canvas with Stretch=Uniform; the three modes have
+                     no meaningful semantics when one side is absent. -->
+                <Image Source="{Binding SingleImage}"
+                       Stretch="Uniform"
+                       Margin="4"
+                       Visibility="{Binding HasBothImages, Converter={x:Static vm:FalseToVisibleConverter.Instance}}"/>
 
-                <!-- Swipe: both images stacked, left image clipped to the
-                     area left of the draggable divider. Clip + divider
-                     position are updated from code-behind in response to
-                     SizeChanged + SwipePosition / Mode property changes. -->
-                <Grid x:Name="SwipeCanvas"
-                      Background="Transparent"
-                      Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.Swipe}}">
-                    <Image Source="{Binding RightImage}" Stretch="Uniform"/>
-                    <Image x:Name="SwipeLeftImage"
-                           Source="{Binding LeftImage}"
-                           Stretch="Uniform">
-                        <Image.Clip>
-                            <RectangleGeometry x:Name="SwipeLeftClip" Rect="0,0,0,0"/>
-                        </Image.Clip>
-                    </Image>
-                    <Line x:Name="SwipeDividerLine"
-                          Stroke="White"
-                          StrokeThickness="2"
-                          Y1="0" Y2="0"
-                          X1="0" X2="0"
-                          IsHitTestVisible="False"/>
-                </Grid>
+                <!-- Three-mode compositing container, gated on
+                     HasBothImages so it stays Collapsed when single-
+                     sided (the Swipe code-behind also early-outs when
+                     SwipeCanvas has zero size). -->
+                <Grid Visibility="{Binding HasBothImages, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
+                    <!-- SideBySide: two columns with a thin gap. -->
+                    <Grid Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.SideBySide}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="2"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Image Grid.Column="0"
+                               Source="{Binding LeftImage}"
+                               Stretch="Uniform"
+                               Margin="4"/>
+                        <Border Grid.Column="1" Background="#DDD"/>
+                        <Image Grid.Column="2"
+                               Source="{Binding RightImage}"
+                               Stretch="Uniform"
+                               Margin="4"/>
+                    </Grid>
 
-                <!-- OnionSkin: left image full opacity, right image overlay
-                     with user-controllable opacity. -->
-                <Grid Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.OnionSkin}}">
-                    <Image Source="{Binding LeftImage}" Stretch="Uniform"/>
-                    <Image Source="{Binding RightImage}"
-                           Stretch="Uniform"
-                           Opacity="{Binding OnionOpacity}"/>
+                    <!-- Swipe: both images stacked, left image clipped to the
+                         area left of the draggable divider. Clip + divider
+                         position are updated from code-behind in response to
+                         SizeChanged + SwipePosition / Mode property changes. -->
+                    <Grid x:Name="SwipeCanvas"
+                          Background="Transparent"
+                          Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.Swipe}}">
+                        <Image Source="{Binding RightImage}" Stretch="Uniform"/>
+                        <Image x:Name="SwipeLeftImage"
+                               Source="{Binding LeftImage}"
+                               Stretch="Uniform">
+                            <Image.Clip>
+                                <RectangleGeometry x:Name="SwipeLeftClip" Rect="0,0,0,0"/>
+                            </Image.Clip>
+                        </Image>
+                        <Line x:Name="SwipeDividerLine"
+                              Stroke="White"
+                              StrokeThickness="2"
+                              Y1="0" Y2="0"
+                              X1="0" X2="0"
+                              IsHitTestVisible="False"/>
+                    </Grid>
+
+                    <!-- OnionSkin: left image full opacity, right image overlay
+                         with user-controllable opacity. -->
+                    <Grid Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.OnionSkin}}">
+                        <Image Source="{Binding LeftImage}" Stretch="Uniform"/>
+                        <Image Source="{Binding RightImage}"
+                               Stretch="Uniform"
+                               Opacity="{Binding OnionOpacity}"/>
+                    </Grid>
                 </Grid>
             </Grid>
         </Border>
 
         <!-- Bottom controls row. Slider is mode-specific: Swipe uses the
              whole-canvas divider position; OnionSkin uses the right-side
-             opacity. SideBySide gets nothing. -->
+             opacity. SideBySide gets nothing. Hidden entirely for
+             single-sided changes since neither slider does anything. -->
         <Border Grid.Row="2"
                 Background="#F8F8F8"
                 BorderBrush="#DDD"
                 BorderThickness="0,1,0,0"
-                Padding="12,6">
+                Padding="12,6"
+                Visibility="{Binding HasBothImages, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
             <Grid>
                 <StackPanel Orientation="Horizontal"
                             Visibility="{Binding Mode, Converter={x:Static vm:EnumToVisibilityConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.Swipe}}">

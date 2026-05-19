@@ -244,10 +244,12 @@
                 </StackPanel>
 
                 <!-- Image-mode radio group: visible only when an image is
-                     dispatched. RadioButtons bind to ImageDiff.Mode via the
-                     shared EnumToBoolConverter pattern. -->
+                     dispatched AND both sides have a bitmap. For add-only /
+                     delete-only changes the three modes don't apply (nothing
+                     to compose), so the group is hidden. RadioButtons bind
+                     to ImageDiff.Mode via the shared EnumToBoolConverter. -->
                 <StackPanel Orientation="Horizontal"
-                            Visibility="{Binding ShowImageDiff, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
+                            Visibility="{Binding ShowImageDiffModeControls, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
                     <RadioButton Style="{StaticResource ToolbarRadioStyle}"
                                  IsChecked="{Binding ImageDiff.Mode, Converter={x:Static vm:EnumToBoolConverter.Instance}, ConverterParameter={x:Static models:ImageDiffMode.SideBySide}}"
                                  Content="Side-by-side"
