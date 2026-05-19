@@ -1,0 +1,147 @@
+<?xml version="1.0"?>
+<!--
+  Go syntax definition for DiffViewer.
+  Hand-authored against the Go language spec (golang.org/ref/spec). Covers
+  keywords, predeclared types, literals, built-in functions, both string
+  forms (interpreted and raw backtick), runes, and numeric literals.
+-->
+<SyntaxDefinition name="Go" extensions=".go"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Digits" foreground="DarkBlue" exampleText="x := 42" />
+  <Color name="Comment" foreground="Green" exampleText="// comment" />
+  <Color name="String" foreground="Sienna" exampleText="s := &quot;hello&quot;" />
+  <Color name="RawString" foreground="Sienna" exampleText="`raw string`" />
+  <Color name="Rune" foreground="Sienna" exampleText="r := 'a'" />
+  <Color name="Keyword" foreground="Blue" exampleText="return x" />
+  <Color name="BuiltInType" foreground="Teal" exampleText="var n int" />
+  <Color name="Literal" foreground="Blue" exampleText="return true" />
+  <Color name="BuiltInFunc" foreground="DarkCyan" exampleText="len(xs)" />
+
+  <RuleSet ignoreCase="false">
+
+    <Keywords color="Keyword">
+      <Word>break</Word>
+      <Word>case</Word>
+      <Word>chan</Word>
+      <Word>const</Word>
+      <Word>continue</Word>
+      <Word>default</Word>
+      <Word>defer</Word>
+      <Word>else</Word>
+      <Word>fallthrough</Word>
+      <Word>for</Word>
+      <Word>func</Word>
+      <Word>go</Word>
+      <Word>goto</Word>
+      <Word>if</Word>
+      <Word>import</Word>
+      <Word>interface</Word>
+      <Word>map</Word>
+      <Word>package</Word>
+      <Word>range</Word>
+      <Word>return</Word>
+      <Word>select</Word>
+      <Word>struct</Word>
+      <Word>switch</Word>
+      <Word>type</Word>
+      <Word>var</Word>
+    </Keywords>
+
+    <Keywords color="BuiltInType">
+      <Word>any</Word>
+      <Word>bool</Word>
+      <Word>byte</Word>
+      <Word>comparable</Word>
+      <Word>complex64</Word>
+      <Word>complex128</Word>
+      <Word>error</Word>
+      <Word>float32</Word>
+      <Word>float64</Word>
+      <Word>int</Word>
+      <Word>int8</Word>
+      <Word>int16</Word>
+      <Word>int32</Word>
+      <Word>int64</Word>
+      <Word>rune</Word>
+      <Word>string</Word>
+      <Word>uint</Word>
+      <Word>uint8</Word>
+      <Word>uint16</Word>
+      <Word>uint32</Word>
+      <Word>uint64</Word>
+      <Word>uintptr</Word>
+    </Keywords>
+
+    <Keywords color="Literal">
+      <Word>true</Word>
+      <Word>false</Word>
+      <Word>nil</Word>
+      <Word>iota</Word>
+    </Keywords>
+
+    <Keywords color="BuiltInFunc">
+      <Word>append</Word>
+      <Word>cap</Word>
+      <Word>clear</Word>
+      <Word>close</Word>
+      <Word>complex</Word>
+      <Word>copy</Word>
+      <Word>delete</Word>
+      <Word>imag</Word>
+      <Word>len</Word>
+      <Word>make</Word>
+      <Word>max</Word>
+      <Word>min</Word>
+      <Word>new</Word>
+      <Word>panic</Word>
+      <Word>print</Word>
+      <Word>println</Word>
+      <Word>real</Word>
+      <Word>recover</Word>
+    </Keywords>
+
+    <Span color="Comment">
+      <Begin>//</Begin>
+    </Span>
+    <Span color="Comment" multiline="true">
+      <Begin>/\*</Begin>
+      <End>\*/</End>
+    </Span>
+
+    <!-- Interpreted string. -->
+    <Span color="String">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Raw string: backtick-delimited, multi-line, no escapes. -->
+    <Span color="RawString" multiline="true">
+      <Begin>`</Begin>
+      <End>`</End>
+    </Span>
+
+    <!-- Rune literal. -->
+    <Span color="Rune">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <Rule color="Digits">
+      \b0[xX][0-9a-fA-F_]+i?
+      |
+      \b0[bB][01_]+i?
+      |
+      \b0[oO]?[0-7_]+i?
+      |
+      (\b\d[\d_]*(\.[0-9_]+)?|\.[0-9_]+)([eE][+-]?[0-9_]+)?i?
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

@@ -14,6 +14,17 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- Language-aware syntax highlighting for TypeScript (`.ts`, `.tsx`),
+  YAML (`.yaml`, `.yml`), Go (`.go`), Rust (`.rs`), Ruby (`.rb`),
+  Bash / shell (`.sh`, `.bash`, `.zsh`), and TOML (`.toml`). Combined
+  with AvalonEdit's bundled definitions (C#, JavaScript, JSON, XML,
+  HTML, CSS, Python, PowerShell, T-SQL, Java, C/C++, PHP, VB, etc.)
+  this covers the most common file types in modern repositories.
+  Highlighting is regex-based and intentionally conservative — diff
+  background and intra-line word coloring still take precedence over
+  language coloring, so changed-line signal isn't masked. Some
+  pathological constructs may mis-color (notably TypeScript JSX
+  attributes and Ruby heredocs); patch reports welcome.
 - Image diff for binary image blobs. PNG, JPEG, GIF, and BMP files
   now render as an actual image-diff view instead of the generic
   "Binary file - diff not displayed." placeholder. Three viewing

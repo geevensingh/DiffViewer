@@ -26,6 +26,14 @@
     <Resource Include="Assets\diffviewer.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Hand-authored AvalonEdit syntax-highlighting definitions (TypeScript,
+         YAML, Go, Rust, Ruby, Bash, TOML). Registered at app startup via
+         CustomHighlightingRegistrar; the wildcard keeps the csproj in sync
+         as new definitions are added or removed. -->
+    <EmbeddedResource Include="Resources\Highlighting\*.xshd" />
+  </ItemGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>

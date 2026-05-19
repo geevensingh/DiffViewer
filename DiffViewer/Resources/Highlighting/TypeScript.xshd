@@ -1,0 +1,170 @@
+<?xml version="1.0"?>
+<!--
+  TypeScript syntax definition for DiffViewer.
+  Derived from AvalonEdit's bundled JavaScript-Mode.xshd (MIT) with TypeScript
+  keywords, built-in type names, decorators, and template-literal interpolation
+  added on top. Grammar is regex-based; pathological JSX/TSX constructs may
+  mis-color (acceptable for a diff viewer).
+-->
+<SyntaxDefinition name="TypeScript" extensions=".ts;.tsx"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Digits" foreground="DarkBlue" exampleText="3.14" />
+  <Color name="Comment" foreground="Green" exampleText="// comment" />
+  <Color name="String" foreground="Sienna" exampleText="const s = &quot;hello&quot;;" />
+  <Color name="Character" foreground="Sienna" exampleText="const c = 'a';" />
+  <Color name="Regex" foreground="Sienna" exampleText="/abc/m" />
+  <Color name="TemplateString" foreground="Sienna" exampleText="`hello ${name}`" />
+  <Color name="Interpolation" foreground="DarkRed" exampleText="${name}" />
+  <Color name="Keyword" foreground="Blue" exampleText="return value;" />
+  <Color name="BuiltInType" foreground="Teal" exampleText="const n: number = 1;" />
+  <Color name="Literal" foreground="Blue" exampleText="return true;" />
+  <Color name="Decorator" foreground="DarkCyan" exampleText="@Component" />
+
+  <RuleSet ignoreCase="false">
+
+    <Keywords color="Keyword">
+      <Word>break</Word>
+      <Word>case</Word>
+      <Word>catch</Word>
+      <Word>class</Word>
+      <Word>const</Word>
+      <Word>continue</Word>
+      <Word>debugger</Word>
+      <Word>default</Word>
+      <Word>delete</Word>
+      <Word>do</Word>
+      <Word>else</Word>
+      <Word>export</Word>
+      <Word>extends</Word>
+      <Word>finally</Word>
+      <Word>for</Word>
+      <Word>function</Word>
+      <Word>if</Word>
+      <Word>import</Word>
+      <Word>in</Word>
+      <Word>instanceof</Word>
+      <Word>let</Word>
+      <Word>new</Word>
+      <Word>of</Word>
+      <Word>return</Word>
+      <Word>super</Word>
+      <Word>switch</Word>
+      <Word>this</Word>
+      <Word>throw</Word>
+      <Word>try</Word>
+      <Word>typeof</Word>
+      <Word>var</Word>
+      <Word>void</Word>
+      <Word>while</Word>
+      <Word>with</Word>
+      <Word>yield</Word>
+      <!-- TypeScript-specific -->
+      <Word>abstract</Word>
+      <Word>as</Word>
+      <Word>async</Word>
+      <Word>await</Word>
+      <Word>declare</Word>
+      <Word>enum</Word>
+      <Word>from</Word>
+      <Word>get</Word>
+      <Word>implements</Word>
+      <Word>infer</Word>
+      <Word>interface</Word>
+      <Word>is</Word>
+      <Word>keyof</Word>
+      <Word>module</Word>
+      <Word>namespace</Word>
+      <Word>override</Word>
+      <Word>package</Word>
+      <Word>private</Word>
+      <Word>protected</Word>
+      <Word>public</Word>
+      <Word>readonly</Word>
+      <Word>satisfies</Word>
+      <Word>set</Word>
+      <Word>static</Word>
+      <Word>type</Word>
+    </Keywords>
+
+    <Keywords color="BuiltInType">
+      <Word>any</Word>
+      <Word>bigint</Word>
+      <Word>boolean</Word>
+      <Word>never</Word>
+      <Word>number</Word>
+      <Word>object</Word>
+      <Word>string</Word>
+      <Word>symbol</Word>
+      <Word>unknown</Word>
+    </Keywords>
+
+    <Keywords color="Literal">
+      <Word>false</Word>
+      <Word>true</Word>
+      <Word>null</Word>
+      <Word>undefined</Word>
+      <Word>NaN</Word>
+      <Word>Infinity</Word>
+    </Keywords>
+
+    <Span color="Comment">
+      <Begin>//</Begin>
+    </Span>
+    <Span color="Comment" multiline="true">
+      <Begin>/\*</Begin>
+      <End>\*/</End>
+    </Span>
+
+    <!-- Template literal: backtick string with ${...} interpolation. -->
+    <Span color="TemplateString" multiline="true">
+      <Begin>`</Begin>
+      <End>`</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+        <Span color="Interpolation" multiline="true">
+          <Begin>\$\{</Begin>
+          <End>\}</End>
+        </Span>
+      </RuleSet>
+    </Span>
+
+    <!-- Regex literal. Same lookbehind heuristic as the bundled JS XSHD:
+         only treat / as a regex start when not preceded by an identifier,
+         closing bracket, or closing brace (those imply division). -->
+    <Span color="Regex">
+      <Begin>(?&lt;!([})\]\w]+\s*))/</Begin>
+      <End>/</End>
+    </Span>
+
+    <Span color="String" multiline="true">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <Span color="Character">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Decorators like @Component, @inject. -->
+    <Rule color="Decorator">@[A-Za-z_][A-Za-z0-9_]*</Rule>
+
+    <Rule color="Digits">
+      \b0[xX][0-9a-fA-F]+n?
+      |
+      \b0[bB][01]+n?
+      |
+      \b0[oO][0-7]+n?
+      |
+      (\b\d+(\.[0-9]+)?|\.[0-9]+)([eE][+-]?[0-9]+)?n?
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

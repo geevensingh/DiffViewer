@@ -2,7 +2,9 @@ using System;
 using System.Net.Http;
 using System.Threading;
 using System.Windows;
+using DiffViewer.Rendering;
 using DiffViewer.Services;
+using ICSharpCode.AvalonEdit.Highlighting;
 
 namespace DiffViewer;
 
@@ -15,6 +17,12 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Register DiffViewer's hand-authored XSHD highlighting definitions
+        // (TypeScript, YAML, Go, Rust, Ruby, Bash, TOML) on top of the set
+        // AvalonEdit ships with. Idempotent; lazy-loads the XSHD payloads on
+        // first lookup so this doesn't impact startup time.
+        CustomHighlightingRegistrar.RegisterAll(HighlightingManager.Instance);
 
         _shutdownCts = new CancellationTokenSource();
 

@@ -1,0 +1,174 @@
+<?xml version="1.0"?>
+<!--
+  Rust syntax definition for DiffViewer.
+  Hand-authored against the Rust reference. Covers keywords (including
+  reserved-for-future), primitive types, attributes, multiple string forms
+  (regular, byte, raw with up to one #), char literals, lifetimes, and
+  numeric literals with optional type suffixes. Raw strings with more than
+  one # of padding (r##"..."##) are intentionally not handled — XSHD's fixed
+  Begin/End can't express balanced delimiters.
+-->
+<SyntaxDefinition name="Rust" extensions=".rs"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Digits" foreground="DarkBlue" exampleText="let x = 42;" />
+  <Color name="Comment" foreground="Green" exampleText="// comment" />
+  <Color name="String" foreground="Sienna" exampleText="let s = &quot;hello&quot;;" />
+  <Color name="RawString" foreground="Sienna" exampleText="let s = r&quot;raw&quot;;" />
+  <Color name="Character" foreground="Sienna" exampleText="let c = 'a';" />
+  <Color name="Keyword" foreground="Blue" exampleText="return value;" />
+  <Color name="BuiltInType" foreground="Teal" exampleText="let n: i32 = 1;" />
+  <Color name="Literal" foreground="Blue" exampleText="let b = true;" />
+  <Color name="Attribute" foreground="DarkCyan" exampleText="#[derive(Debug)]" />
+  <Color name="Lifetime" foreground="DarkOrange" exampleText="&amp;'a str" />
+
+  <RuleSet ignoreCase="false">
+
+    <Keywords color="Keyword">
+      <Word>as</Word>
+      <Word>async</Word>
+      <Word>await</Word>
+      <Word>break</Word>
+      <Word>const</Word>
+      <Word>continue</Word>
+      <Word>crate</Word>
+      <Word>dyn</Word>
+      <Word>else</Word>
+      <Word>enum</Word>
+      <Word>extern</Word>
+      <Word>fn</Word>
+      <Word>for</Word>
+      <Word>if</Word>
+      <Word>impl</Word>
+      <Word>in</Word>
+      <Word>let</Word>
+      <Word>loop</Word>
+      <Word>match</Word>
+      <Word>mod</Word>
+      <Word>move</Word>
+      <Word>mut</Word>
+      <Word>pub</Word>
+      <Word>ref</Word>
+      <Word>return</Word>
+      <Word>self</Word>
+      <Word>Self</Word>
+      <Word>static</Word>
+      <Word>struct</Word>
+      <Word>super</Word>
+      <Word>trait</Word>
+      <Word>type</Word>
+      <Word>union</Word>
+      <Word>unsafe</Word>
+      <Word>use</Word>
+      <Word>where</Word>
+      <Word>while</Word>
+      <Word>yield</Word>
+      <!-- Reserved for future use -->
+      <Word>abstract</Word>
+      <Word>become</Word>
+      <Word>box</Word>
+      <Word>do</Word>
+      <Word>final</Word>
+      <Word>macro</Word>
+      <Word>override</Word>
+      <Word>priv</Word>
+      <Word>try</Word>
+      <Word>typeof</Word>
+      <Word>unsized</Word>
+      <Word>virtual</Word>
+    </Keywords>
+
+    <Keywords color="BuiltInType">
+      <Word>bool</Word>
+      <Word>char</Word>
+      <Word>f32</Word>
+      <Word>f64</Word>
+      <Word>i8</Word>
+      <Word>i16</Word>
+      <Word>i32</Word>
+      <Word>i64</Word>
+      <Word>i128</Word>
+      <Word>isize</Word>
+      <Word>str</Word>
+      <Word>u8</Word>
+      <Word>u16</Word>
+      <Word>u32</Word>
+      <Word>u64</Word>
+      <Word>u128</Word>
+      <Word>usize</Word>
+      <Word>String</Word>
+      <Word>Vec</Word>
+      <Word>Option</Word>
+      <Word>Result</Word>
+      <Word>Box</Word>
+    </Keywords>
+
+    <Keywords color="Literal">
+      <Word>true</Word>
+      <Word>false</Word>
+      <Word>None</Word>
+      <Word>Some</Word>
+      <Word>Ok</Word>
+      <Word>Err</Word>
+    </Keywords>
+
+    <!-- Line comments incl. doc comments. /// and //! are doc comments
+         but we don't distinguish them here. -->
+    <Span color="Comment">
+      <Begin>//</Begin>
+    </Span>
+    <Span color="Comment" multiline="true">
+      <Begin>/\*</Begin>
+      <End>\*/</End>
+    </Span>
+
+    <!-- Attributes: #[...] and #![...]. End at the first ]. Multi-line is rare
+         but supported via multiline="true". -->
+    <Span color="Attribute" multiline="true">
+      <Begin>\#!?\[</Begin>
+      <End>\]</End>
+    </Span>
+
+    <!-- Raw strings: r"..." and r#"..."#. Order: longer Begin first. -->
+    <Span color="RawString" multiline="true">
+      <Begin>br?\#"</Begin>
+      <End>"\#</End>
+    </Span>
+    <Span color="RawString" multiline="true">
+      <Begin>br?"</Begin>
+      <End>"</End>
+    </Span>
+
+    <!-- Lifetimes: 'name not followed by '. Put before char-literal Span. -->
+    <Rule color="Lifetime">'[A-Za-z_][A-Za-z0-9_]*(?!')\b</Rule>
+
+    <!-- Char literal: '.' with optional escape. -->
+    <Span color="Character">
+      <Begin>b?'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Regular and byte strings. -->
+    <Span color="String" multiline="true">
+      <Begin>b?"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <Rule color="Digits">
+      \b0[xX][0-9a-fA-F_]+(?:[iu](?:8|16|32|64|128|size))?
+      |
+      \b0[bB][01_]+(?:[iu](?:8|16|32|64|128|size))?
+      |
+      \b0[oO][0-7_]+(?:[iu](?:8|16|32|64|128|size))?
+      |
+      (?:\b\d[\d_]*(?:\.[0-9_]+)?|\.[0-9_]+)(?:[eE][+-]?[0-9_]+)?(?:f(?:32|64)|[iu](?:8|16|32|64|128|size))?
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

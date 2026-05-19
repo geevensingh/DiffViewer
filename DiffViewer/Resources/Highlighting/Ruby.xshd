@@ -1,0 +1,133 @@
+<?xml version="1.0"?>
+<!--
+  Ruby syntax definition for DiffViewer.
+  Hand-authored. Covers keywords, line and block comments (=begin/=end),
+  single- and double-quoted strings with #{...} interpolation, symbols,
+  instance/class/global variables, and numeric literals. Heredocs
+  (&lt;&lt;END / &lt;&lt;~END) are deliberately out of scope — XSHD's fixed
+  Begin/End cannot express their identifier-coupled delimiter.
+-->
+<SyntaxDefinition name="Ruby" extensions=".rb"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Digits" foreground="DarkBlue" exampleText="x = 42" />
+  <Color name="Comment" foreground="Green" exampleText="# comment" />
+  <Color name="String" foreground="Sienna" exampleText="s = &quot;hi&quot;" />
+  <Color name="Interpolation" foreground="DarkRed" exampleText="#{name}" />
+  <Color name="Keyword" foreground="Blue" exampleText="return value" />
+  <Color name="Literal" foreground="Blue" exampleText="return true" />
+  <Color name="Symbol" foreground="DarkMagenta" exampleText=":name" />
+  <Color name="Variable" foreground="DarkOrange" exampleText="@count" />
+
+  <RuleSet ignoreCase="false">
+
+    <!-- Block comments: =begin ... =end. Must be at column 0. -->
+    <Span color="Comment" multiline="true">
+      <Begin>^=begin\b</Begin>
+      <End>^=end\b</End>
+    </Span>
+
+    <Span color="Comment">
+      <Begin>\#</Begin>
+    </Span>
+
+    <Keywords color="Keyword">
+      <Word>BEGIN</Word>
+      <Word>END</Word>
+      <Word>alias</Word>
+      <Word>and</Word>
+      <Word>begin</Word>
+      <Word>break</Word>
+      <Word>case</Word>
+      <Word>class</Word>
+      <Word>def</Word>
+      <Word>defined</Word>
+      <Word>do</Word>
+      <Word>else</Word>
+      <Word>elsif</Word>
+      <Word>end</Word>
+      <Word>ensure</Word>
+      <Word>for</Word>
+      <Word>if</Word>
+      <Word>in</Word>
+      <Word>module</Word>
+      <Word>next</Word>
+      <Word>not</Word>
+      <Word>or</Word>
+      <Word>redo</Word>
+      <Word>rescue</Word>
+      <Word>retry</Word>
+      <Word>return</Word>
+      <Word>self</Word>
+      <Word>super</Word>
+      <Word>then</Word>
+      <Word>undef</Word>
+      <Word>unless</Word>
+      <Word>until</Word>
+      <Word>when</Word>
+      <Word>while</Word>
+      <Word>yield</Word>
+      <Word>lambda</Word>
+      <Word>proc</Word>
+      <Word>require</Word>
+      <Word>require_relative</Word>
+      <Word>load</Word>
+      <Word>include</Word>
+      <Word>extend</Word>
+      <Word>private</Word>
+      <Word>protected</Word>
+      <Word>public</Word>
+      <Word>attr_accessor</Word>
+      <Word>attr_reader</Word>
+      <Word>attr_writer</Word>
+    </Keywords>
+
+    <Keywords color="Literal">
+      <Word>true</Word>
+      <Word>false</Word>
+      <Word>nil</Word>
+      <Word>__FILE__</Word>
+      <Word>__LINE__</Word>
+      <Word>__dir__</Word>
+    </Keywords>
+
+    <!-- Double-quoted string with #{...} interpolation. -->
+    <Span color="String" multiline="true">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+        <Span color="Interpolation" multiline="true">
+          <Begin>\#\{</Begin>
+          <End>\}</End>
+        </Span>
+      </RuleSet>
+    </Span>
+
+    <!-- Single-quoted string: no interpolation, only \' and \\ are escapes. -->
+    <Span color="String" multiline="true">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Symbols: :foo, :"foo". Don't match :: (scope resolution). -->
+    <Rule color="Symbol">(?&lt;!:):[A-Za-z_][A-Za-z0-9_]*[!?=]?</Rule>
+
+    <!-- Instance/class/global variables: @foo, @@foo, $foo. -->
+    <Rule color="Variable">[@$]+[A-Za-z_][A-Za-z0-9_]*</Rule>
+
+    <Rule color="Digits">
+      \b0[xX][0-9a-fA-F_]+
+      |
+      \b0[bB][01_]+
+      |
+      \b0[oO]?[0-7_]+
+      |
+      (?:\b\d[\d_]*(?:\.[0-9_]+)?|\.[0-9_]+)(?:[eE][+-]?[0-9_]+)?
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

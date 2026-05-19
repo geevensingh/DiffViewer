@@ -1,0 +1,138 @@
+<?xml version="1.0"?>
+<!--
+  Bash / shell syntax definition for DiffViewer.
+  Hand-authored. Covers comments, keywords/builtins, single- and double-quoted
+  strings, variable references ($var, ${var}, $?, $#, etc.), command
+  substitution $(...), and numbers. Heredocs (&lt;&lt;EOF) are out of scope.
+-->
+<SyntaxDefinition name="Bash" extensions=".sh;.bash;.zsh"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Comment" foreground="Green" exampleText="# comment" />
+  <Color name="String" foreground="Sienna" exampleText="echo &quot;hi&quot;" />
+  <Color name="LiteralString" foreground="Sienna" exampleText="echo 'hi'" />
+  <Color name="Digits" foreground="DarkBlue" exampleText="x=42" />
+  <Color name="Keyword" foreground="Blue" exampleText="if [ -f f ]; then" />
+  <Color name="Builtin" foreground="DarkCyan" exampleText="echo hello" />
+  <Color name="Variable" foreground="DarkOrange" exampleText="echo $HOME" />
+  <Color name="Substitution" foreground="DarkOrange" exampleText="$(date)" />
+
+  <RuleSet ignoreCase="false">
+
+    <Span color="Comment">
+      <Begin>\#</Begin>
+    </Span>
+
+    <Keywords color="Keyword">
+      <Word>if</Word>
+      <Word>then</Word>
+      <Word>else</Word>
+      <Word>elif</Word>
+      <Word>fi</Word>
+      <Word>for</Word>
+      <Word>do</Word>
+      <Word>done</Word>
+      <Word>while</Word>
+      <Word>until</Word>
+      <Word>case</Word>
+      <Word>esac</Word>
+      <Word>function</Word>
+      <Word>in</Word>
+      <Word>select</Word>
+      <Word>return</Word>
+      <Word>break</Word>
+      <Word>continue</Word>
+      <Word>exit</Word>
+      <Word>time</Word>
+      <Word>coproc</Word>
+    </Keywords>
+
+    <Keywords color="Builtin">
+      <Word>alias</Word>
+      <Word>bg</Word>
+      <Word>bind</Word>
+      <Word>builtin</Word>
+      <Word>cd</Word>
+      <Word>command</Word>
+      <Word>declare</Word>
+      <Word>echo</Word>
+      <Word>enable</Word>
+      <Word>eval</Word>
+      <Word>exec</Word>
+      <Word>export</Word>
+      <Word>fg</Word>
+      <Word>getopts</Word>
+      <Word>hash</Word>
+      <Word>help</Word>
+      <Word>history</Word>
+      <Word>jobs</Word>
+      <Word>kill</Word>
+      <Word>let</Word>
+      <Word>local</Word>
+      <Word>logout</Word>
+      <Word>popd</Word>
+      <Word>printf</Word>
+      <Word>pushd</Word>
+      <Word>pwd</Word>
+      <Word>read</Word>
+      <Word>readarray</Word>
+      <Word>readonly</Word>
+      <Word>set</Word>
+      <Word>shift</Word>
+      <Word>shopt</Word>
+      <Word>source</Word>
+      <Word>suspend</Word>
+      <Word>test</Word>
+      <Word>trap</Word>
+      <Word>type</Word>
+      <Word>typeset</Word>
+      <Word>ulimit</Word>
+      <Word>umask</Word>
+      <Word>unalias</Word>
+      <Word>unset</Word>
+      <Word>wait</Word>
+    </Keywords>
+
+    <!-- Double-quoted string: $var interpolation is allowed inside. -->
+    <Span color="String" multiline="true">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+        <Span color="Variable">
+          <Begin>\$\{</Begin>
+          <End>\}</End>
+        </Span>
+        <Rule color="Variable">\$[A-Za-z_][A-Za-z0-9_]*|\$[\?\!\#\$\*\@\-0-9]</Rule>
+      </RuleSet>
+    </Span>
+
+    <!-- Single-quoted string: literal, no interpolation. -->
+    <Span color="LiteralString" multiline="true">
+      <Begin>'</Begin>
+      <End>'</End>
+    </Span>
+
+    <!-- Command substitution: $(...). Multi-line is allowed. -->
+    <Span color="Substitution" multiline="true">
+      <Begin>\$\(</Begin>
+      <End>\)</End>
+    </Span>
+
+    <!-- Variable references: ${var}, $var, $?, $#, $@, etc. -->
+    <Span color="Variable">
+      <Begin>\$\{</Begin>
+      <End>\}</End>
+    </Span>
+    <Rule color="Variable">\$[A-Za-z_][A-Za-z0-9_]*|\$[\?\!\#\$\*\@\-0-9]</Rule>
+
+    <Rule color="Digits">
+      \b0[xX][0-9a-fA-F]+
+      |
+      \b0[0-7]+
+      |
+      \b\d+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

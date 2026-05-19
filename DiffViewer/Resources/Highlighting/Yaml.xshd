@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!--
+  YAML syntax definition for DiffViewer.
+  Hand-authored against the YAML 1.2 spec. Covers comments, document markers,
+  anchors/aliases/tags, quoted scalars, block-scalar headers, common literals,
+  numbers, and mapping keys. Plain (unquoted) scalars are intentionally left
+  uncolored — coloring them aggressively would mis-paint normal text.
+-->
+<SyntaxDefinition name="YAML" extensions=".yaml;.yml"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Comment" foreground="Green" exampleText="# comment" />
+  <Color name="String" foreground="Sienna" exampleText="name: &quot;hello&quot;" />
+  <Color name="Digits" foreground="DarkBlue" exampleText="count: 42" />
+  <Color name="Literal" foreground="Blue" exampleText="enabled: true" />
+  <Color name="DocumentMarker" foreground="DarkMagenta" fontWeight="bold" exampleText="---" />
+  <Color name="BlockScalarHeader" foreground="DarkMagenta" exampleText="body: |" />
+  <Color name="Anchor" foreground="DarkMagenta" exampleText="&amp;anchor" />
+  <Color name="Tag" foreground="DarkMagenta" exampleText="!!str" />
+  <Color name="Key" foreground="DarkRed" exampleText="name:" />
+
+  <RuleSet ignoreCase="false">
+
+    <Span color="Comment">
+      <Begin>\#</Begin>
+    </Span>
+
+    <Span color="String" multiline="false">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <Span color="String" multiline="false">
+      <Begin>'</Begin>
+      <End>'</End>
+      <RuleSet>
+        <!-- YAML single-quoted strings escape ' as ''. -->
+        <Span begin="''" end="" />
+      </RuleSet>
+    </Span>
+
+    <!-- Document and stream markers at column 0. -->
+    <Rule color="DocumentMarker">^(---|\.\.\.)\s*$</Rule>
+
+    <!-- Block scalar header: `|`, `>`, optional chomping/indent indicator,
+         must appear after a colon at end of line. We just color the indicator. -->
+    <Rule color="BlockScalarHeader">(?&lt;=:\s*)[|&gt;][+\-]?\d?\s*$</Rule>
+
+    <!-- Anchors and aliases: &name, *name. -->
+    <Rule color="Anchor">[&amp;*][A-Za-z_][A-Za-z0-9_\-]*</Rule>
+
+    <!-- Tags: !tag, !!tag, !&lt;uri&gt;. -->
+    <Rule color="Tag">!!?[A-Za-z0-9_\-/.]*</Rule>
+
+    <Keywords color="Literal">
+      <Word>true</Word>
+      <Word>True</Word>
+      <Word>TRUE</Word>
+      <Word>false</Word>
+      <Word>False</Word>
+      <Word>FALSE</Word>
+      <Word>yes</Word>
+      <Word>Yes</Word>
+      <Word>YES</Word>
+      <Word>no</Word>
+      <Word>No</Word>
+      <Word>NO</Word>
+      <Word>on</Word>
+      <Word>On</Word>
+      <Word>ON</Word>
+      <Word>off</Word>
+      <Word>Off</Word>
+      <Word>OFF</Word>
+      <Word>null</Word>
+      <Word>Null</Word>
+      <Word>NULL</Word>
+    </Keywords>
+
+    <!-- Tilde is a null shorthand. -->
+    <Rule color="Literal">(?&lt;=:\s)~(?=\s|$)</Rule>
+
+    <!-- Mapping key: identifier-ish text at line start followed by colon.
+         Conservative pattern; we don't try to color quoted or flow-style keys. -->
+    <Rule color="Key">(?m)^\s*[A-Za-z_][\w\-.]*(?=\s*:(\s|$))</Rule>
+
+    <Rule color="Digits">
+      \b0[xX][0-9a-fA-F]+
+      |
+      \b0[oO]?[0-7]+
+      |
+      (\b\d+(\.[0-9]+)?|\.[0-9]+)([eE][+-]?[0-9]+)?
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>

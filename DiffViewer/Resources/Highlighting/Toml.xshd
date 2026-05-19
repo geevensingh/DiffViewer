@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<!--
+  TOML syntax definition for DiffViewer.
+  Hand-authored against the TOML 1.0 spec. Covers comments, sections
+  ([table] and [[array.of.tables]]), keys (bare and quoted), all four
+  string forms (basic, multi-line basic, literal, multi-line literal),
+  booleans, numbers, and date/time literals.
+-->
+<SyntaxDefinition name="TOML" extensions=".toml"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Comment" foreground="Green" exampleText="# comment" />
+  <Color name="String" foreground="Sienna" exampleText="name = &quot;value&quot;" />
+  <Color name="LiteralString" foreground="Sienna" exampleText="path = 'C:\\dir'" />
+  <Color name="Digits" foreground="DarkBlue" exampleText="port = 8080" />
+  <Color name="Literal" foreground="Blue" exampleText="enabled = true" />
+  <Color name="Section" foreground="DarkMagenta" fontWeight="bold" exampleText="[server]" />
+  <Color name="Key" foreground="DarkRed" exampleText="name = ..." />
+  <Color name="DateTime" foreground="DarkCyan" exampleText="2024-01-15T12:34:56Z" />
+
+  <RuleSet ignoreCase="false">
+
+    <Span color="Comment">
+      <Begin>\#</Begin>
+    </Span>
+
+    <!-- Section / table headers at the start of a line. Match [[...]] before [...]. -->
+    <Rule color="Section">^\s*\[\[[^\]\n]+\]\]</Rule>
+    <Rule color="Section">^\s*\[[^\]\n]+\]</Rule>
+
+    <Keywords color="Literal">
+      <Word>true</Word>
+      <Word>false</Word>
+      <Word>inf</Word>
+      <Word>nan</Word>
+    </Keywords>
+
+    <!-- Multi-line basic string. Must come before single-line basic. -->
+    <Span color="String" multiline="true">
+      <Begin>"""</Begin>
+      <End>"""</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Multi-line literal string. -->
+    <Span color="LiteralString" multiline="true">
+      <Begin>'''</Begin>
+      <End>'''</End>
+    </Span>
+
+    <!-- Basic string. -->
+    <Span color="String">
+      <Begin>"</Begin>
+      <End>"</End>
+      <RuleSet>
+        <Span begin="\\" end="." />
+      </RuleSet>
+    </Span>
+
+    <!-- Literal string. -->
+    <Span color="LiteralString">
+      <Begin>'</Begin>
+      <End>'</End>
+    </Span>
+
+    <!-- Date / time literals: RFC 3339-ish. Conservative pattern. -->
+    <Rule color="DateTime">
+      \b\d{4}-\d{2}-\d{2}(?:[Tt ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+\-]\d{2}:\d{2})?)?
+      |
+      \b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b
+    </Rule>
+
+    <!-- Bare key at start of line (before =). -->
+    <Rule color="Key">^\s*[A-Za-z0-9_\-]+(?:\.[A-Za-z0-9_\-]+)*(?=\s*=)</Rule>
+
+    <Rule color="Digits">
+      \b0[xX][0-9a-fA-F_]+
+      |
+      \b0[oO][0-7_]+
+      |
+      \b0[bB][01_]+
+      |
+      [+\-]?(?:\b\d[\d_]*(?:\.[0-9_]+)?|\.[0-9_]+)(?:[eE][+-]?[0-9_]+)?
+    </Rule>
+
+  </RuleSet>
+</SyntaxDefinition>
