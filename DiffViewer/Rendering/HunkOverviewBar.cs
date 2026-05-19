@@ -46,17 +46,46 @@ public sealed class HunkOverviewBar : FrameworkElement
     private DiffPaneViewModel? _vm;
 
     /// <summary>
-    /// True while the user is dragging the viewport band. Captured on
-    /// <see cref="OnMouseLeftButtonDown"/> when the click lands inside
-    /// the band; released on mouse-up / lost capture. While true,
-    /// <see cref="OnMouseMove"/> drives <see cref="DiffPaneViewModel.RequestScrollByVerticalFraction"/>
-    /// instead of updating the hover tooltip.
+    /// Phase of the bar's left-button interaction. <c>Idle</c> is the
+    /// default. <c>PendingClick</c> means the user pressed but we have
+    /// not yet decided whether it's a click (jump-to-hunk) or a drag
+    /// (band scroll) — promoted to <c>Dragging</c> on the first
+    /// MouseMove that exceeds the system drag threshold, or resolved as
+    /// a click on MouseUp if the threshold is never crossed.
     /// </summary>
-    private bool _isDraggingBand;
+    private enum BarInteractionState
+    {
+        Idle,
+        PendingClick,
+        Dragging,
+    }
+
+    private BarInteractionState _interaction = BarInteractionState.Idle;
+
+    /// <summary>
+    /// Mouse position recorded at MouseDown, used as the threshold
+    /// reference for promoting <c>PendingClick</c> to <c>Dragging</c>.
+    /// </summary>
+    private Point _interactionStartPoint;
+
+    /// <summary>
+    /// Hunk index hit by the MouseDown, or <c>-1</c> if none. Commits
+    /// to a JumpToHunk on MouseUp iff we never promoted to drag and the
+    /// pointer never strayed past the system click-vs-drag threshold.
+    /// </summary>
+    private int _pendingHunkIndex = -1;
+
+    /// <summary>
+    /// True if the MouseDown landed inside the viewport band — the
+    /// click-vs-drag promotion is gated on this so a press outside the
+    /// band (e.g. on a hunk marker that doesn't overlap the band)
+    /// can never accidentally start a drag.
+    /// </summary>
+    private bool _bandWasUnderClick;
 
     /// <summary>
     /// Pixel offset from the click point to the band's top edge,
-    /// recorded at mouse-down. Replayed on every <see cref="OnMouseMove"/>
+    /// recorded at MouseDown. Replayed on every <see cref="OnMouseMove"/>
     /// during a drag so the cursor "sticks" to whichever part of the
     /// band the user grabbed (scrollbar-thumb feel). Anchored on top
     /// (not center) so the resulting fraction maps 1:1 to the editor's
@@ -297,59 +326,89 @@ public sealed class HunkOverviewBar : FrameworkElement
         var p = e.GetPosition(this);
         var layouts = ComputeLayouts();
         int idx = HunkOverviewBarGeometry.HitTest(layouts, p);
-        if (idx >= 0)
-        {
-            // Hunk markers always win when overlapping the viewport band —
-            // matches user intent ("click the colored thing" → hunk nav).
-            _vm.JumpToHunk(idx);
-            e.Handled = true;
-            return;
-        }
 
-        // Fall-through: did the click land on the viewport band?
         int leftTotal = Math.Max(1, _vm.LeftDocument.LineCount);
         int rightTotal = Math.Max(1, _vm.RightDocument.LineCount);
         var band = HunkOverviewBarGeometry.ComputeViewport(
             _vm.Viewport, leftTotal, rightTotal, ActualWidth, ActualHeight, ColumnWidth);
-        if (band is not null && HunkOverviewBarGeometry.IsInsideBand(band, p))
+        bool inBand = band is not null && HunkOverviewBarGeometry.IsInsideBand(band, p);
+
+        // Empty press — let it bubble.
+        if (idx < 0 && !inBand) return;
+
+        // Defer both the JumpToHunk commit and the drag start to
+        // MouseMove/MouseUp so a click that lands on a hunk marker
+        // overlapping the viewport band can still promote to a drag
+        // instead of immediately firing JumpToHunk and scrolling out
+        // from under the user.
+        _interactionStartPoint = p;
+        _pendingHunkIndex = idx;
+        _bandWasUnderClick = inBand;
+        if (inBand)
         {
-            // Start a sticky-thumb drag: record where in the band the user
-            // grabbed (offset from band top) and capture the mouse so we
-            // keep getting moves even when the cursor strays off the bar.
-            // We deliberately do NOT scroll on the down stroke —
-            // sticky-thumb means "don't move the band until the user
-            // actually drags".
-            double bandTopY = HunkOverviewBarGeometry.GetBandTopY(band);
-            _bandDragOffsetFromTop = p.Y - bandTopY;
-            _isDraggingBand = true;
-            ToolTip = null;
-            CaptureMouse();
-            e.Handled = true;
+            _bandDragOffsetFromTop = p.Y - HunkOverviewBarGeometry.GetBandTopY(band!);
         }
+        _interaction = BarInteractionState.PendingClick;
+        ToolTip = null;
+        CaptureMouse();
+        e.Handled = true;
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
-        if (_isDraggingBand)
+        if (_interaction == BarInteractionState.Idle) return;
+
+        bool committedAsDrag = _interaction == BarInteractionState.Dragging;
+        int hunkIdx = _pendingHunkIndex;
+        bool stayedWithinClickThreshold = ExceededDragThreshold(e.GetPosition(this)) == false;
+
+        ResetInteraction();
+
+        // Commit the JumpToHunk only if the gesture stayed a click:
+        // never promoted to drag AND never wandered past the system
+        // click-vs-drag threshold. The threshold check matches the
+        // standard Windows button convention ("click and drag off
+        // cancels"); without it, a near-miss drag on a hunk-marker-only
+        // press (no band overlap) would still fire JumpToHunk.
+        if (!committedAsDrag && stayedWithinClickThreshold && hunkIdx >= 0 && _vm is not null)
         {
-            EndBandDrag();
-            e.Handled = true;
+            _vm.JumpToHunk(hunkIdx);
         }
+        e.Handled = true;
     }
 
     protected override void OnLostMouseCapture(MouseEventArgs e)
     {
         base.OnLostMouseCapture(e);
         // Captures can be lost without a corresponding MouseUp (e.g. the
-        // user Alt-Tabs away). Clear drag state so we don't get stuck.
-        _isDraggingBand = false;
+        // user Alt-Tabs away). Clear interaction state so we don't get
+        // stuck mid-drag or with a pending click that never resolves.
+        ResetInteraction();
     }
 
-    private void EndBandDrag()
+    private void ResetInteraction()
     {
-        _isDraggingBand = false;
+        _interaction = BarInteractionState.Idle;
+        _pendingHunkIndex = -1;
+        _bandWasUnderClick = false;
         if (IsMouseCaptured) ReleaseMouseCapture();
+    }
+
+    /// <summary>
+    /// True if <paramref name="p"/> has wandered far enough from
+    /// <see cref="_interactionStartPoint"/> to count as a drag rather
+    /// than a click, per the system-wide drag thresholds. Either axis
+    /// crossing the threshold is enough — matches how WPF's own
+    /// drag-and-drop machinery and the standard listbox drag-select
+    /// behave.
+    /// </summary>
+    private bool ExceededDragThreshold(Point p)
+    {
+        double dx = Math.Abs(p.X - _interactionStartPoint.X);
+        double dy = Math.Abs(p.Y - _interactionStartPoint.Y);
+        return dx >= SystemParameters.MinimumHorizontalDragDistance
+            || dy >= SystemParameters.MinimumVerticalDragDistance;
     }
 
     /// <summary>
@@ -389,22 +448,41 @@ public sealed class HunkOverviewBar : FrameworkElement
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
         if (_vm is null) return;
+        var p = e.GetPosition(this);
 
-        // Drag in progress: drive the editor scroll from the cursor's
-        // current Y, preserving the click-offset captured at MouseDown.
-        // Routed through RequestScrollByVerticalFraction (not
-        // RequestScrollByFraction) so each pixel of cursor movement maps
-        // to a sub-line of editor scroll — the fraction-by-line path
-        // would only fire on rounded-line changes and jump in viewport-
-        // sized chunks. No tooltip / no hunk hover during drag.
-        if (_isDraggingBand)
+        // Active drag: drive editor scroll from the cursor, preserving
+        // the click-offset captured at MouseDown. Routed through
+        // RequestScrollByVerticalFraction (not RequestScrollByFraction)
+        // so each pixel of cursor movement maps to a sub-line of editor
+        // scroll. No tooltip / no hunk hover during drag.
+        if (_interaction == BarInteractionState.Dragging)
         {
-            double targetBandTopY = e.GetPosition(this).Y - _bandDragOffsetFromTop;
-            double fraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
-            _vm.RequestScrollByVerticalFraction(fraction);
+            EmitDragScroll(p);
             return;
         }
 
+        // Pending click + click-was-in-band: promote to drag once the
+        // pointer moves past the system drag threshold. Press-and-hold
+        // without movement stays pending so MouseUp can still commit as
+        // a hunk-jump.
+        if (_interaction == BarInteractionState.PendingClick
+            && _bandWasUnderClick
+            && ExceededDragThreshold(p))
+        {
+            _interaction = BarInteractionState.Dragging;
+            EmitDragScroll(p);
+            return;
+        }
+
+        // Pending click on a hunk-only press (no band overlap): nothing
+        // to drag, so we just wait for MouseUp. Suppress tooltips while
+        // a click is pending — tooltip flicker during a press is noise.
+        if (_interaction == BarInteractionState.PendingClick)
+        {
+            return;
+        }
+
+        // Idle: regular hover tooltip on hunk markers.
         var hunks = _vm.CurrentHunks;
         if (hunks.Count == 0)
         {
@@ -412,7 +490,7 @@ public sealed class HunkOverviewBar : FrameworkElement
             return;
         }
         var layouts = ComputeLayouts();
-        int idx = HunkOverviewBarGeometry.HitTest(layouts, e.GetPosition(this));
+        int idx = HunkOverviewBarGeometry.HitTest(layouts, p);
         if (idx < 0)
         {
             ToolTip = null;
@@ -420,6 +498,14 @@ public sealed class HunkOverviewBar : FrameworkElement
         }
         var h = hunks[idx];
         ToolTip = FormatTooltip(idx, hunks.Count, h, layouts[idx].Shape);
+    }
+
+    private void EmitDragScroll(Point p)
+    {
+        if (_vm is null) return;
+        double targetBandTopY = p.Y - _bandDragOffsetFromTop;
+        double fraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
+        _vm.RequestScrollByVerticalFraction(fraction);
     }
 
     private IReadOnlyList<HunkOverviewBarGeometry.HunkBarLayout> ComputeLayouts()

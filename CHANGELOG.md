@@ -28,7 +28,11 @@ body. Keep section headings exact and write notes in Markdown.
   moves the caret or selects a hunk — they're pure scroll, leaving
   the editor caret and the active-hunk highlight unchanged. Clicking
   a hunk marker still jumps to that hunk; that behaviour is
-  unchanged.
+  unchanged. Click-to-jump commits on mouse-up (not mouse-down) so
+  that a press landing on a hunk marker which overlaps the viewport
+  band can still promote to a drag if the user moves the mouse past
+  the system drag threshold — previously, the jump fired immediately
+  and stole the drag.
 - Language-aware syntax highlighting for TypeScript (`.ts`, `.tsx`),
   YAML (`.yaml`, `.yml`), Go (`.go`), Rust (`.rs`), Ruby (`.rb`),
   Bash / shell (`.sh`, `.bash`, `.zsh`), and TOML (`.toml`). Combined
