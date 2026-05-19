@@ -12,6 +12,26 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- Image diff for binary image blobs. PNG, JPEG, GIF, and BMP files
+  now render as an actual image-diff view instead of the generic
+  "Binary file - diff not displayed." placeholder. Three viewing
+  modes are exposed via toolbar radio buttons that replace the
+  text-only toggles when an image is shown: **Side-by-side** (two
+  fit-to-frame panes on a checkerboard background), **Swipe**
+  (overlay both images with a draggable divider — drag anywhere
+  over the canvas), and **Onion-skin** (stack both images with an
+  opacity slider to blend between them). A header strip shows each
+  side's dimensions, byte size, and the byte delta (e.g.
+  `512 x 512 / 18.3 KB -> 1024 x 1024 / 64.1 KB  (+45.8 KB)`), with
+  an `(animated, first frame)` suffix when either side is a
+  multi-frame GIF. The size gate reuses the existing
+  `LargeFileThresholdBytes` setting; over-threshold images still
+  fall back to the binary placeholder. Format and mode state is
+  per-file in memory, not persisted in `AppSettings`. SVG support
+  is tracked separately as issue #15.
+
 ## [1.1.1] - 2026-05-18
 
 ### Changed

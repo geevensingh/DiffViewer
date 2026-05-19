@@ -31,6 +31,13 @@ individual hunks.
   hunk from the working tree" confirmation (suppressible).
 - Live updates when the working tree changes (Ctrl+L; automatically
   disabled for commit-vs-commit comparisons).
+- **Image diff for PNG, JPEG, GIF, and BMP** files. Binary image
+  blobs render as an actual image diff (instead of the generic
+  binary placeholder) with three modes: side-by-side, swipe (drag
+  anywhere over the canvas), and onion-skin. A header strip shows
+  each side's dimensions, byte size, and the byte delta. Reuses
+  the existing large-file threshold; over-threshold images fall
+  back to the binary placeholder.
 - Persistent settings and a **recent launch contexts** dropdown (up to 10
   entries) so jumping back to "working tree of repo X" or "two commits in
   repo Y" is one click.
