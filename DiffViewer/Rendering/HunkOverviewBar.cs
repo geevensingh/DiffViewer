@@ -98,15 +98,24 @@ public sealed class HunkOverviewBar : FrameworkElement
 
     /// <summary>
     /// Optimistic band-top Y while a drag is active, in bar coords.
-    /// Set on every MouseMove from the cursor position; cleared on drag
-    /// end. When set, <see cref="OnRender"/> translates the computed
-    /// viewport band so its top sits here — decouples the band's
-    /// painted position from the editor's actual scroll, which trails
-    /// MouseMove by a layout pass and can fall many frames behind
-    /// under fast drag. The editor scroll still catches up via the
-    /// normal <see cref="DiffPaneViewModel.RequestScrollByVerticalFraction"/>
+    /// Set on every MouseMove (and on empty-space MouseDown) to the
+    /// predicted post-settle position for the requested scroll; cleared
+    /// on drag end. When set, <see cref="OnRender"/> translates the
+    /// computed viewport band so its top sits here — decouples the
+    /// band's painted position from the editor's actual scroll, which
+    /// trails MouseMove by a layout pass and can fall many frames
+    /// behind under fast drag. The editor scroll still catches up via
+    /// the normal <see cref="DiffPaneViewModel.RequestScrollByVerticalFraction"/>
     /// path; the ghost just makes the bar's visual feedback frame-
     /// instant so the band feels truly stuck to the cursor.
+    /// <para>The "predicted" qualifier matters in inline mode, where
+    /// the editor's <c>ExtentHeight</c> covers the inline document
+    /// (including deletion lines) but the bar paints from the right/
+    /// left source line counts. The ghost uses
+    /// <see cref="DiffPaneViewModel.PredictBandTopFractionForScroll"/>
+    /// so it lands at the same position the band will paint after
+    /// settle, eliminating the visible snap when the ghost is later
+    /// cleared.</para>
     /// </summary>
     private double? _dragGhostBandTop;
 
@@ -363,26 +372,13 @@ public sealed class HunkOverviewBar : FrameworkElement
         bool inBand = band is not null && HunkOverviewBarGeometry.IsInsideBand(band, p);
 
         // Empty press: minimap-style "click anywhere to jump there".
-        // Send the scroll request immediately so the band lands at the
-        // cursor, but do NOT set the optimistic ghost band — let the
-        // natural ViewportState propagation paint the band at its
-        // actual settled (line-snapped) position on the next frame.
-        // Using the ghost path here would lock the band visually to
-        // the cursor's exact Y, then snap to the line-snapped position
-        // on MouseUp when the ghost clears — visible as a jiggle on
-        // smaller files where one line of editor scroll spans several
-        // bar pixels. The ghost's value-add is smoothing fast drag
-        // (decoupling the bar paint from editor scroll lag); a
-        // stationary click has nothing to smooth.
-        //
-        // If the user follows up with motion, the first MouseMove
-        // activates the ghost via EmitDragScroll and we're back on
-        // the smooth-drag path. The transition is a small one-time
-        // snap to cursor, masked by the motion that caused it.
-        //
-        // Still go directly into Dragging (skipping PendingClick) so
-        // MouseUp doesn't try to fire a JumpToHunk — there's no hunk
-        // to commit to, and the scroll has already been sent.
+        // Set the ghost at the predicted post-settle position so the
+        // band feels stuck to the press, send the scroll request, and
+        // enter Dragging so the same gesture can scrub by moving the
+        // cursor. ResetInteraction clears the ghost on MouseUp; since
+        // the ghost is at the predicted-settle position (not the raw
+        // cursor), the clear lands on the same frame the natural band
+        // repaints at that same position — no visible snap.
         if (idx < 0 && !inBand)
         {
             if (band is null) return;
@@ -393,9 +389,7 @@ public sealed class HunkOverviewBar : FrameworkElement
             _interaction = BarInteractionState.Dragging;
             ToolTip = null;
             CaptureMouse();
-            double targetBandTopY = p.Y - _bandDragOffsetFromTop;
-            double fraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
-            _vm.RequestScrollByVerticalFraction(fraction);
+            EmitDragScroll(p);
             e.Handled = true;
             return;
         }
@@ -459,10 +453,6 @@ public sealed class HunkOverviewBar : FrameworkElement
         if (IsMouseCaptured) ReleaseMouseCapture();
         if (_dragGhostBandTop is not null)
         {
-            // Clear the ghost first, then invalidate so the next paint
-            // shows the band where the editor actually settled. If the
-            // editor hasn't quite caught up yet, the band may snap by a
-            // pixel or two — fine, drag is over.
             _dragGhostBandTop = null;
             InvalidateVisual();
         }
@@ -578,20 +568,33 @@ public sealed class HunkOverviewBar : FrameworkElement
         if (_vm is null) return;
         double targetBandTopY = p.Y - _bandDragOffsetFromTop;
 
-        // Paint the band at the cursor on the very next render tick,
-        // without waiting for the editor's scroll → layout → ScrollChanged
-        // → ViewportState → PropertyChanged round-trip. Without this
-        // decoupling, the band visibly trails the cursor by however long
-        // the editor takes to settle its layout pass; on large files
-        // that's enough to drop the band several frames behind a fast
-        // drag, which reads as the band "sticking" to lower-than-cursor
-        // positions. The editor still catches up via the normal scroll
-        // path below; the ghost just makes the bar's visual frame-instant.
-        _dragGhostBandTop = ClampGhostTop(targetBandTopY);
+        // Paint the band at the predicted post-settle position on the
+        // very next render tick, without waiting for the editor's scroll
+        // → layout → ScrollChanged → ViewportState → PropertyChanged
+        // round-trip. Without this decoupling, the band visibly trails
+        // the cursor by however long the editor takes to settle its
+        // layout pass; on large files that's enough to drop the band
+        // several frames behind a fast drag, which reads as the band
+        // "sticking" to lower-than-cursor positions.
+        //
+        // In side-by-side mode the editor's scroll fraction maps 1:1 to
+        // the bar's band-top fraction, so the predicted position equals
+        // <c>targetBandTopY</c> and the band lands under the cursor.
+        // In inline mode the editor's extent is the inline document
+        // (which includes deletion lines) while the bar paints from the
+        // right/left source line counts; the prediction (via the VM's
+        // <see cref="DiffPaneViewModel.PredictBandTopFractionForScroll"/>)
+        // walks the inline-to-source map to find where the band will
+        // actually settle. Setting the ghost to the predicted position
+        // (instead of the cursor) ensures there's no visible jump when
+        // the editor's Viewport state catches up.
+        double rawFraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
+        double predictedFraction = _vm.PredictBandTopFractionForScroll(rawFraction);
+        double predictedBandTopY = predictedFraction * ActualHeight;
+        _dragGhostBandTop = ClampGhostTop(predictedBandTopY);
         InvalidateVisual();
 
-        double fraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
-        _vm.RequestScrollByVerticalFraction(fraction);
+        _vm.RequestScrollByVerticalFraction(rawFraction);
     }
 
     /// <summary>

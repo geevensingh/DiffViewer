@@ -1198,6 +1198,90 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             this, new ScrollByVerticalFractionRequestedEventArgs(fraction));
     }
 
+    /// <summary>
+    /// Predict the viewport-band top fraction (0..1 of bar height) the
+    /// overview bar will paint at after the editor settles at
+    /// <paramref name="scrollFraction"/>. Used by the bar to position the
+    /// sticky-thumb ghost so it lands at the post-settle position rather
+    /// than the raw cursor position — without this prediction, inline
+    /// mode produces a visible "jiggle" on click-to-jump because the
+    /// editor's ExtentHeight is based on the inline document (which
+    /// includes deletion lines) while the bar paints the band based on
+    /// <c>(RightFirstLine − 1) / RightTotalLines × barHeight</c>. The two
+    /// coordinate systems coincide only in side-by-side mode.
+    ///
+    /// <para>In side-by-side mode the right editor's extent maps 1:1 to
+    /// the right document's line count, so the prediction is identity.
+    /// In inline mode the prediction walks
+    /// <see cref="InlineLineToSourceLines"/> forward from the predicted
+    /// first inline line to find what
+    /// <c>(LeftFirstLine, RightFirstLine)</c> will be after settle, then
+    /// returns <c>min(leftFrac, rightFrac)</c> to match how
+    /// <c>HunkOverviewBarGeometry.GetBandTopY</c> picks the band's top.
+    /// </para>
+    /// </summary>
+    public double PredictBandTopFractionForScroll(double scrollFraction) =>
+        PredictBandTopFraction(
+            scrollFraction,
+            InlineLineToSourceLines,
+            LeftDocument.LineCount,
+            RightDocument.LineCount,
+            IsSideBySide);
+
+    /// <summary>
+    /// Pure-function core of <see cref="PredictBandTopFractionForScroll"/>
+    /// for unit-testing without spinning up an editor or loading a real
+    /// diff. NaN and out-of-range inputs are normalized to <c>[0, 1]</c>.
+    /// Returns <paramref name="scrollFraction"/> verbatim when the map
+    /// is empty (no inline diff loaded yet) or when
+    /// <paramref name="isSideBySide"/> is true.
+    /// </summary>
+    internal static double PredictBandTopFraction(
+        double scrollFraction,
+        IReadOnlyList<(int? OldLine, int? NewLine)> map,
+        int leftTotal,
+        int rightTotal,
+        bool isSideBySide)
+    {
+        if (double.IsNaN(scrollFraction)) scrollFraction = 0;
+        if (scrollFraction < 0) scrollFraction = 0;
+        if (scrollFraction > 1) scrollFraction = 1;
+
+        if (isSideBySide) return scrollFraction;
+        if (map is null || map.Count == 0) return scrollFraction;
+
+        int safeLeftTotal = Math.Max(1, leftTotal);
+        int safeRightTotal = Math.Max(1, rightTotal);
+        int inlineTotal = map.Count;
+
+        int firstInlineIndex = (int)Math.Floor(scrollFraction * inlineTotal);
+        if (firstInlineIndex < 0) firstInlineIndex = 0;
+        if (firstInlineIndex >= inlineTotal) firstInlineIndex = inlineTotal - 1;
+
+        int? predictedLeft = null;
+        int? predictedRight = null;
+        for (int i = firstInlineIndex; i < inlineTotal; i++)
+        {
+            var (oldLn, newLn) = map[i];
+            if (predictedLeft is null && oldLn is int o) predictedLeft = o;
+            if (predictedRight is null && newLn is int n) predictedRight = n;
+            if (predictedLeft is not null && predictedRight is not null) break;
+        }
+
+        if (predictedLeft is null && predictedRight is null)
+        {
+            return scrollFraction;
+        }
+
+        double leftFrac = predictedLeft is int pl
+            ? (double)(pl - 1) / safeLeftTotal
+            : 1.0;
+        double rightFrac = predictedRight is int pr
+            ? (double)(pr - 1) / safeRightTotal
+            : 1.0;
+        return Math.Min(leftFrac, rightFrac);
+    }
+
     public void Dispose()
     {
         if (_settingsService is not null)

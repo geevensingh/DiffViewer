@@ -41,12 +41,14 @@ body. Keep section headings exact and write notes in Markdown.
   indicator) recenters the indicator on the cursor and starts a
   drag in the same gesture — minimap-style "click anywhere to jump
   there", and a press-and-drag from empty space scrubs without
-  needing a second click. Empty-space clicks land the indicator at
-  its actual line-snapped position immediately rather than locking
-  to the cursor on press and snapping on release — no more jiggle
-  when the press and release land at the same cursor position but
-  the editor's per-line scroll granularity doesn't divide the bar's
-  pixel height evenly.
+  needing a second click. The indicator lands at the editor's
+  natural settle position for the click — in side-by-side mode that
+  always equals the cursor position, in inline mode it can be
+  slightly offset because the inline document interleaves
+  deletion lines (which advance the editor's scroll but not the
+  right-side line count); picking the post-settle position up
+  front keeps the indicator stable across MouseUp instead of
+  visibly jumping when the editor's viewport catches up.
 - Language-aware syntax highlighting for TypeScript (`.ts`, `.tsx`),
   YAML (`.yaml`, `.yml`), Go (`.go`), Rust (`.rs`), Ruby (`.rb`),
   Bash / shell (`.sh`, `.bash`, `.zsh`), and TOML (`.toml`). Combined

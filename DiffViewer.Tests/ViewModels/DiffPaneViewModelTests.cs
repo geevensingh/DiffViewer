@@ -1735,4 +1735,117 @@ public class DiffPaneViewModelTests
             return DecodeFunc(bytes, path);
         }
     }
+
+    [Fact]
+    public void PredictBandTopFraction_SideBySide_ReturnsScrollFractionVerbatim()
+    {
+        // In side-by-side mode the right editor's ExtentHeight maps 1:1
+        // to RightDocument.LineCount * lineHeight, so the predicted
+        // band-top fraction equals the scroll fraction. The inline map
+        // is irrelevant for this mode.
+        var emptyMap = Array.Empty<(int?, int?)>();
+        DiffPaneViewModel.PredictBandTopFraction(
+            scrollFraction: 0.42,
+            map: emptyMap,
+            leftTotal: 100,
+            rightTotal: 100,
+            isSideBySide: true)
+            .Should().Be(0.42);
+    }
+
+    [Fact]
+    public void PredictBandTopFraction_Inline_EmptyMap_ReturnsScrollFractionVerbatim()
+    {
+        // Before the inline diff is built (e.g. during initial load) the
+        // map is empty and there's nothing to project through; pass the
+        // scroll fraction through so the bar still has a sensible ghost
+        // position instead of collapsing to 0 or 1.
+        DiffPaneViewModel.PredictBandTopFraction(
+            scrollFraction: 0.7,
+            map: Array.Empty<(int?, int?)>(),
+            leftTotal: 50,
+            rightTotal: 50,
+            isSideBySide: false)
+            .Should().Be(0.7);
+    }
+
+    [Fact]
+    public void PredictBandTopFraction_Inline_PureDeleteInMiddle_ShiftsAwayFromCursor()
+    {
+        // Left:  a b c d e   (5 lines)   Right: a c d e (4 lines)
+        // Inline mapping (1-indexed inline line):
+        //   1: a       (1, 1)
+        //   2: -b      (2, null)
+        //   3: c       (3, 2)
+        //   4: d       (4, 3)
+        //   5: e       (5, 4)
+        // Scroll fraction 0.4 of inlineTotal=5 -> firstInlineIndex=2,
+        // i.e. inline line 3 ("c") at top. That maps to leftLine=3,
+        // rightLine=2, so leftFrac=2/5=0.4, rightFrac=1/4=0.25, and
+        // the predicted band-top fraction is min(0.4, 0.25) = 0.25.
+        // (Without this prediction the bar would ghost at 0.4 and then
+        // visibly jump down to 0.25 on settle — the inline-mode jiggle.)
+        var map = new (int? OldLine, int? NewLine)[]
+        {
+            (1, 1),
+            (2, null),
+            (3, 2),
+            (4, 3),
+            (5, 4),
+        };
+        DiffPaneViewModel.PredictBandTopFraction(
+            scrollFraction: 0.4,
+            map: map,
+            leftTotal: 5,
+            rightTotal: 4,
+            isSideBySide: false)
+            .Should().BeApproximately(0.25, 1e-9);
+    }
+
+    [Fact]
+    public void PredictBandTopFraction_Inline_FirstInlineLineIsDelete_WalksPastIt()
+    {
+        // Inline line 1 is a pure delete (oldLine present, newLine null).
+        // The prediction must walk forward to find the first non-null
+        // newLine — otherwise rightFrac would default to 1.0 (the
+        // "missing" sentinel) and the predicted band-top would collapse
+        // to leftFrac, which would visibly skew the ghost.
+        var map = new (int? OldLine, int? NewLine)[]
+        {
+            (1, null),  // pure delete at the top of the inline doc
+            (2, 1),     // first context line: leftLine=2, rightLine=1
+            (3, 2),
+            (4, 3),
+        };
+        // scrollFraction=0 -> firstInlineIndex=0. Walk: map[0] gives
+        // predictedLeft=1, predictedRight=null. map[1] gives
+        // predictedRight=1. leftFrac=(1-1)/4=0, rightFrac=(1-1)/3=0.
+        // min(0,0) = 0.
+        DiffPaneViewModel.PredictBandTopFraction(
+            scrollFraction: 0.0,
+            map: map,
+            leftTotal: 4,
+            rightTotal: 3,
+            isSideBySide: false)
+            .Should().Be(0.0);
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 0.0)]
+    [InlineData(-0.5, 0.0)]
+    [InlineData(1.5, 1.0)]
+    public void PredictBandTopFraction_ClampsAndNormalizesInput(
+        double scrollFraction, double expectedNormalized)
+    {
+        // Out-of-range / NaN inputs are normalized before any further
+        // logic. In side-by-side mode that normalized value is returned
+        // verbatim, giving us a tidy way to assert the normalization.
+        DiffPaneViewModel.PredictBandTopFraction(
+            scrollFraction: scrollFraction,
+            map: Array.Empty<(int?, int?)>(),
+            leftTotal: 10,
+            rightTotal: 10,
+            isSideBySide: true)
+            .Should().Be(expectedNormalized);
+    }
 }
