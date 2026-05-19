@@ -12,6 +12,17 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-18
+
+### Changed
+
+- CI/release pipeline now runs on Node.js 24-compatible GitHub
+  Actions (`actions/checkout@v6`, `actions/setup-dotnet@v5`,
+  `softprops/action-gh-release@v3`), ahead of the June 2 / Sep 16
+  2026 Node.js 20 deprecation deadlines. No user-visible behavior
+  change; the shipped `DiffViewer.exe` is functionally identical to
+  v1.1.0.
+
 ## [1.1.0] - 2026-05-18
 
 ### Added
