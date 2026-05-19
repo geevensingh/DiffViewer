@@ -93,6 +93,20 @@ public sealed class HunkOverviewBar : FrameworkElement
     /// </summary>
     private double _bandDragOffsetFromTop;
 
+    /// <summary>
+    /// Optimistic band-top Y while a drag is active, in bar coords.
+    /// Set on every MouseMove from the cursor position; cleared on drag
+    /// end. When set, <see cref="OnRender"/> translates the computed
+    /// viewport band so its top sits here — decouples the band's
+    /// painted position from the editor's actual scroll, which trails
+    /// MouseMove by a layout pass and can fall many frames behind
+    /// under fast drag. The editor scroll still catches up via the
+    /// normal <see cref="DiffPaneViewModel.RequestScrollByVerticalFraction"/>
+    /// path; the ghost just makes the bar's visual feedback frame-
+    /// instant so the band feels truly stuck to the cursor.
+    /// </summary>
+    private double? _dragGhostBandTop;
+
     public HunkOverviewBar()
     {
         Cursor = Cursors.Hand;
@@ -231,6 +245,18 @@ public sealed class HunkOverviewBar : FrameworkElement
             _vm.Viewport, leftTotal, rightTotal, ActualWidth, ActualHeight, ColumnWidth);
         if (viewportBand is not null)
         {
+            // Optimistic translation during drag — see _dragGhostBandTop
+            // for why. Outside a drag, the ghost is null and the band
+            // paints at the editor's actual viewport position.
+            if (_dragGhostBandTop is double ghostTop)
+            {
+                double actualTop = HunkOverviewBarGeometry.GetBandTopY(viewportBand);
+                double dy = ghostTop - actualTop;
+                if (dy != 0)
+                {
+                    viewportBand = HunkOverviewBarGeometry.TranslateBand(viewportBand, dy);
+                }
+            }
             DrawViewport(dc, viewportBand);
         }
     }
@@ -393,6 +419,15 @@ public sealed class HunkOverviewBar : FrameworkElement
         _pendingHunkIndex = -1;
         _bandWasUnderClick = false;
         if (IsMouseCaptured) ReleaseMouseCapture();
+        if (_dragGhostBandTop is not null)
+        {
+            // Clear the ghost first, then invalidate so the next paint
+            // shows the band where the editor actually settled. If the
+            // editor hasn't quite caught up yet, the band may snap by a
+            // pixel or two — fine, drag is over.
+            _dragGhostBandTop = null;
+            InvalidateVisual();
+        }
     }
 
     /// <summary>
@@ -504,8 +539,48 @@ public sealed class HunkOverviewBar : FrameworkElement
     {
         if (_vm is null) return;
         double targetBandTopY = p.Y - _bandDragOffsetFromTop;
+
+        // Paint the band at the cursor on the very next render tick,
+        // without waiting for the editor's scroll → layout → ScrollChanged
+        // → ViewportState → PropertyChanged round-trip. Without this
+        // decoupling, the band visibly trails the cursor by however long
+        // the editor takes to settle its layout pass; on large files
+        // that's enough to drop the band several frames behind a fast
+        // drag, which reads as the band "sticking" to lower-than-cursor
+        // positions. The editor still catches up via the normal scroll
+        // path below; the ghost just makes the bar's visual frame-instant.
+        _dragGhostBandTop = ClampGhostTop(targetBandTopY);
+        InvalidateVisual();
+
         double fraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
         _vm.RequestScrollByVerticalFraction(fraction);
+    }
+
+    /// <summary>
+    /// Clamp the ghost band's top to <c>[0, ActualHeight − bandHeight]</c>
+    /// so it can't be dragged off either end of the bar. Band height is
+    /// estimated from the current viewport band; if no band exists
+    /// (shouldn't happen mid-drag — we wouldn't have started one) we
+    /// fall back to clamping against the full bar height, which is
+    /// harmlessly loose.
+    /// </summary>
+    private double ClampGhostTop(double top)
+    {
+        double maxTop = ActualHeight;
+        if (_vm is not null)
+        {
+            int leftTotal = Math.Max(1, _vm.LeftDocument.LineCount);
+            int rightTotal = Math.Max(1, _vm.RightDocument.LineCount);
+            var band = HunkOverviewBarGeometry.ComputeViewport(
+                _vm.Viewport, leftTotal, rightTotal, ActualWidth, ActualHeight, ColumnWidth);
+            if (band is not null)
+            {
+                maxTop = Math.Max(0, ActualHeight - HunkOverviewBarGeometry.GetBandHeight(band));
+            }
+        }
+        if (top < 0) top = 0;
+        if (top > maxTop) top = maxTop;
+        return top;
     }
 
     private IReadOnlyList<HunkOverviewBarGeometry.HunkBarLayout> ComputeLayouts()

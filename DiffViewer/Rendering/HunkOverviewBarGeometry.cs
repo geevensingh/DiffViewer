@@ -306,6 +306,43 @@ internal static class HunkOverviewBarGeometry
     }
 
     /// <summary>
+    /// Vertical height of the viewport band, in bar coordinates — the
+    /// distance from <see cref="GetBandTopY"/> to the lower of the two
+    /// rects' bottoms. Used during sticky-thumb drag to clamp the
+    /// optimistic ghost band so it can't be dragged off the ends of the
+    /// bar. For mixed bands the two rects have the same height in
+    /// practice (both come from the same viewport line range) but we
+    /// take the max to be safe against off-by-one rounding.
+    /// Returns 0 for empty bands (matches <see cref="GetBandTopY"/>).
+    /// </summary>
+    public static double GetBandHeight(ViewportBand band)
+    {
+        double h = 0;
+        if (band.LeftRect is Rect L) h = Math.Max(h, L.Height);
+        if (band.RightRect is Rect R) h = Math.Max(h, R.Height);
+        return h;
+    }
+
+    /// <summary>
+    /// Return a copy of <paramref name="band"/> with each rect's Y
+    /// translated by <paramref name="dy"/>. Used during drag to paint
+    /// an "optimistic" band at the cursor position without waiting for
+    /// the editor's scroll → ScrollChanged → ViewportState round-trip;
+    /// the actual editor scroll catches up at its own pace.
+    /// </summary>
+    public static ViewportBand TranslateBand(ViewportBand band, double dy)
+    {
+        if (dy == 0) return band;
+        Rect? left = band.LeftRect is Rect L
+            ? new Rect(L.X, L.Y + dy, L.Width, L.Height)
+            : (Rect?)null;
+        Rect? right = band.RightRect is Rect R
+            ? new Rect(R.X, R.Y + dy, R.Width, R.Height)
+            : (Rect?)null;
+        return new ViewportBand(left, right);
+    }
+
+    /// <summary>
     /// Classifies a hunk's content for color selection — pure-add (all
     /// inserted lines), pure-delete (all removed lines), or mixed.
     /// </summary>

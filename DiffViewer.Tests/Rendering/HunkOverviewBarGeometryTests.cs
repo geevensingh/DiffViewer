@@ -624,4 +624,95 @@ public class HunkOverviewBarGeometryTests
         // Right rect only: y in [38, 120]. Top = 38.
         HunkOverviewBarGeometry.GetBandTopY(band).Should().BeApproximately(38, 0.001);
     }
+
+    // ---------- GetBandHeight ----------
+
+    [Fact]
+    public void GetBandHeight_SymmetricBand_ReturnsRectHeight()
+    {
+        var state = new DiffViewer.Models.ViewportState(10, 30, 10, 30);
+        var band = HunkOverviewBarGeometry.ComputeViewport(
+            state, 100, 100, BarWidth, 200, ColumnWidth)!;
+        // Both rects: y in [18, 60] → height = 42.
+        HunkOverviewBarGeometry.GetBandHeight(band).Should().BeApproximately(42, 0.001);
+    }
+
+    [Fact]
+    public void GetBandHeight_AsymmetricBand_UsesLargerHeight()
+    {
+        // Left: lines 10..30 of 100 → [18, 60], h=42.
+        // Right: lines 5..10 of 50 → [16, 40], h=24.
+        // Larger height = 42.
+        var state = new DiffViewer.Models.ViewportState(10, 30, 5, 10);
+        var band = HunkOverviewBarGeometry.ComputeViewport(
+            state, 100, 50, BarWidth, 200, ColumnWidth)!;
+        HunkOverviewBarGeometry.GetBandHeight(band).Should().BeApproximately(42, 0.001);
+    }
+
+    [Fact]
+    public void GetBandHeight_SingleSideBand_UsesThatRectsHeight()
+    {
+        var state = new DiffViewer.Models.ViewportState(0, 0, 20, 60);
+        var band = HunkOverviewBarGeometry.ComputeViewport(
+            state, 100, 100, BarWidth, 200, ColumnWidth)!;
+        // Right rect only: y in [38, 120] → height = 82.
+        HunkOverviewBarGeometry.GetBandHeight(band).Should().BeApproximately(82, 0.001);
+    }
+
+    // ---------- TranslateBand ----------
+
+    [Fact]
+    public void TranslateBand_PositiveDy_ShiftsBothRectsDown()
+    {
+        var band = new HunkOverviewBarGeometry.ViewportBand(
+            new Rect(0, 10, 10, 20),
+            new Rect(22, 10, 10, 20));
+        var moved = HunkOverviewBarGeometry.TranslateBand(band, 15);
+        moved.LeftRect!.Value.Should().Be(new Rect(0, 25, 10, 20));
+        moved.RightRect!.Value.Should().Be(new Rect(22, 25, 10, 20));
+    }
+
+    [Fact]
+    public void TranslateBand_NegativeDy_ShiftsBothRectsUp()
+    {
+        var band = new HunkOverviewBarGeometry.ViewportBand(
+            new Rect(0, 30, 10, 20),
+            new Rect(22, 30, 10, 20));
+        var moved = HunkOverviewBarGeometry.TranslateBand(band, -12);
+        moved.LeftRect!.Value.Should().Be(new Rect(0, 18, 10, 20));
+        moved.RightRect!.Value.Should().Be(new Rect(22, 18, 10, 20));
+    }
+
+    [Fact]
+    public void TranslateBand_ZeroDy_ReturnsSameInstance()
+    {
+        // Fast-path: avoids allocating a new ViewportBand for no-op
+        // translations (common when the editor has caught up exactly).
+        var band = new HunkOverviewBarGeometry.ViewportBand(
+            new Rect(0, 10, 10, 20),
+            new Rect(22, 10, 10, 20));
+        HunkOverviewBarGeometry.TranslateBand(band, 0).Should().BeSameAs(band);
+    }
+
+    [Fact]
+    public void TranslateBand_LeftOnlyBand_LeavesRightNull()
+    {
+        var band = new HunkOverviewBarGeometry.ViewportBand(
+            new Rect(0, 10, 10, 20),
+            null);
+        var moved = HunkOverviewBarGeometry.TranslateBand(band, 5);
+        moved.LeftRect!.Value.Should().Be(new Rect(0, 15, 10, 20));
+        moved.RightRect.Should().BeNull();
+    }
+
+    [Fact]
+    public void TranslateBand_RightOnlyBand_LeavesLeftNull()
+    {
+        var band = new HunkOverviewBarGeometry.ViewportBand(
+            null,
+            new Rect(22, 10, 10, 20));
+        var moved = HunkOverviewBarGeometry.TranslateBand(band, 5);
+        moved.LeftRect.Should().BeNull();
+        moved.RightRect!.Value.Should().Be(new Rect(22, 15, 10, 20));
+    }
 }

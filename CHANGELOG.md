@@ -32,7 +32,11 @@ body. Keep section headings exact and write notes in Markdown.
   that a press landing on a hunk marker which overlaps the viewport
   band can still promote to a drag if the user moves the mouse past
   the system drag threshold — previously, the jump fired immediately
-  and stole the drag.
+  and stole the drag. The viewport indicator paints at the cursor's
+  position on every mouse-move frame instead of waiting for the
+  editor's scroll + layout pass to round-trip — keeps the indicator
+  truly stuck to the cursor even on large files where the editor
+  scroll can't quite keep up at fast drag speeds.
 - Language-aware syntax highlighting for TypeScript (`.ts`, `.tsx`),
   YAML (`.yaml`, `.yml`), Go (`.go`), Rust (`.rs`), Ruby (`.rb`),
   Bash / shell (`.sh`, `.bash`, `.zsh`), and TOML (`.toml`). Combined
