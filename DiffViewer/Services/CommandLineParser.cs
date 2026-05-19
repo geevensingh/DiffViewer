@@ -50,6 +50,15 @@ public sealed class CommandLineParser : ICommandLineParser
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(env);
 
+        // Flag-form grammar: --repo <p> --left <ref|WORKING> --right <ref|WORKING> [--file <p>]
+        // Branches off iff the first arg starts with "--". Positional grammar
+        // (the historical form) handles everything else, including args that
+        // start with a single "-" (rejected as UnknownFlag below).
+        if (args.Count > 0 && args[0].StartsWith("--", StringComparison.Ordinal))
+        {
+            return ParseFlagForm(args, env);
+        }
+
         // Reject unknown switches early — every arg starting with "-" is a flag we don't (yet) support.
         for (int i = 0; i < args.Count; i++)
         {
@@ -173,6 +182,165 @@ public sealed class CommandLineParser : ICommandLineParser
 
     private static bool LooksLikeRepoPath(string arg, ICommandLineEnvironment env) =>
         env.PathExists(arg) && env.IsGitRepository(arg);
+
+    /// <summary>
+    /// Sentinel that <c>--left</c> / <c>--right</c> accept to mean
+    /// "working tree" (i.e. <see cref="DiffSide.WorkingTree"/>).
+    /// Matched case-insensitively.
+    /// </summary>
+    private const string WorkingTreeSentinel = "WORKING";
+
+    /// <summary>
+    /// Flag-form parser: <c>--repo &lt;p&gt; --left &lt;ref|WORKING&gt;
+    /// --right &lt;ref|WORKING&gt; [--file &lt;repo-relative-path&gt;]</c>.
+    /// </summary>
+    /// <remarks>
+    /// Designed for non-interactive launches (e.g. <c>git difftool</c>): every
+    /// side is named, nothing is inferred from cwd, and mixing positional
+    /// arguments with flag arguments is rejected up front to avoid the
+    /// "is this a value or a stray ref" ambiguity that haunts the positional
+    /// grammar. The flag form still goes through the same repo-discovery and
+    /// commit-ish resolution as the positional form, so failure modes match.
+    /// </remarks>
+    private static CommandLineParseResult ParseFlagForm(IReadOnlyList<string> args, ICommandLineEnvironment env)
+    {
+        string? repoArg = null;
+        string? leftArg = null;
+        string? rightArg = null;
+        string? fileArg = null;
+
+        for (int i = 0; i < args.Count; i++)
+        {
+            var a = args[i];
+            if (!a.StartsWith("--", StringComparison.Ordinal))
+            {
+                return CommandLineParseResult.Failure(
+                    CommandLineErrorKind.UnexpectedPositionalArgument,
+                    $"Unexpected positional argument in flag-form parse: `{a}`. " +
+                    "Mix --repo / --left / --right / --file only; do not combine flag and positional forms.");
+            }
+
+            // All four known flags take a value. Peek ahead once; reject if the
+            // next token is missing or is itself another flag.
+            if (a is "--repo" or "--left" or "--right" or "--file")
+            {
+                if (i + 1 >= args.Count || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                {
+                    return CommandLineParseResult.Failure(
+                        CommandLineErrorKind.MissingFlagValue,
+                        $"Flag `{a}` is missing its value.");
+                }
+                var value = args[i + 1];
+                i++;
+
+                switch (a)
+                {
+                    case "--repo": repoArg = value; break;
+                    case "--left": leftArg = value; break;
+                    case "--right": rightArg = value; break;
+                    case "--file": fileArg = value; break;
+                }
+            }
+            else
+            {
+                return CommandLineParseResult.Failure(
+                    CommandLineErrorKind.UnknownFlag,
+                    $"Unknown flag: {a}");
+            }
+        }
+
+        if (string.IsNullOrEmpty(repoArg))
+        {
+            return CommandLineParseResult.Failure(
+                CommandLineErrorKind.MissingRequiredFlag,
+                "Missing required flag: --repo");
+        }
+        if (string.IsNullOrEmpty(leftArg))
+        {
+            return CommandLineParseResult.Failure(
+                CommandLineErrorKind.MissingRequiredFlag,
+                "Missing required flag: --left");
+        }
+        if (string.IsNullOrEmpty(rightArg))
+        {
+            return CommandLineParseResult.Failure(
+                CommandLineErrorKind.MissingRequiredFlag,
+                "Missing required flag: --right");
+        }
+
+        // Resolve repo path. Same shape as positional: path must exist;
+        // if it isn't itself a repo, discovery walks upward.
+        if (!env.PathExists(repoArg))
+        {
+            return CommandLineParseResult.Failure(
+                CommandLineErrorKind.PathDoesNotExist,
+                $"Path does not exist: {repoArg}");
+        }
+
+        string repoPath = repoArg;
+        if (!env.IsGitRepository(repoPath))
+        {
+            var discovered = env.TryDiscoverRepoRoot(repoPath);
+            if (discovered is null)
+            {
+                return CommandLineParseResult.Failure(
+                    CommandLineErrorKind.NotAGitRepository,
+                    $"Not a git repository: {repoPath}");
+            }
+            repoPath = discovered;
+        }
+
+        // Resolve each side. WORKING (case-insensitive) → WorkingTree; anything
+        // else must resolve as a commit-ish inside the repo.
+        var leftSide = ResolveSide(leftArg!, repoPath, env, out var leftErr);
+        if (leftErr is not null) return leftErr;
+
+        var rightSide = ResolveSide(rightArg!, repoPath, env, out var rightErr);
+        if (rightErr is not null) return rightErr;
+
+        // Normalize the optional file path separator so downstream code can do
+        // straight string comparisons against FileEntryViewModel.RepoRelativePath
+        // (which already uses Path.DirectorySeparatorChar). Trim a leading
+        // separator for robustness against `--file /src/foo.cs`.
+        string? initialFile = fileArg;
+        if (!string.IsNullOrEmpty(initialFile))
+        {
+            initialFile = initialFile
+                .Replace('/', System.IO.Path.DirectorySeparatorChar)
+                .Replace('\\', System.IO.Path.DirectorySeparatorChar)
+                .TrimStart(System.IO.Path.DirectorySeparatorChar);
+        }
+
+        return CommandLineParseResult.Success(
+            new ParsedCommandLine(repoPath, leftSide!, rightSide!, initialFile));
+    }
+
+    /// <summary>
+    /// Maps a side argument (<c>WORKING</c> or a commit-ish) to a
+    /// <see cref="DiffSide"/>, validating commit-ish resolution against the
+    /// supplied repo. Sets <paramref name="error"/> on failure; returns
+    /// <c>null</c> in that case.
+    /// </summary>
+    private static DiffSide? ResolveSide(
+        string arg, string repoPath, ICommandLineEnvironment env, out CommandLineParseResult? error)
+    {
+        if (string.Equals(arg, WorkingTreeSentinel, StringComparison.OrdinalIgnoreCase))
+        {
+            error = null;
+            return new DiffSide.WorkingTree();
+        }
+
+        if (!env.TryResolveCommitIsh(repoPath, arg))
+        {
+            error = CommandLineParseResult.Failure(
+                CommandLineErrorKind.UnknownCommitIsh,
+                $"Cannot resolve `{arg}` in repo {repoPath}");
+            return null;
+        }
+
+        error = null;
+        return new DiffSide.CommitIsh(arg);
+    }
 
     /// <summary>
     /// True if the argument <em>looks</em> like a filesystem path (rather than a commit-ish).

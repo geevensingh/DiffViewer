@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using DiffViewer;
 using DiffViewer.Models;
@@ -36,6 +38,74 @@ public class MainWindowCoordinatorTests
         dialog.LastError.Should().NotBeNull();
         exitCode.Should().Be(1);
         coordinator.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task InitialLaunchAsync_ParseFailure_AlsoWritesToStderr()
+    {
+        // The stderrWriter callback is wired in production from
+        // App.OnStartup when AttachConsole succeeds; the coordinator just
+        // forwards every cold-launch failure message through it so CLI
+        // consumers (git difftool) see the error in their terminal.
+        var dialog = new FakeDialog();
+        var services = BuildServices(out _);
+        var stderr = new List<string>();
+
+        var coordinator = new MainWindowCoordinator(
+            services, dialog, default,
+            shutdownAction: _ => { },
+            stderrWriter: stderr.Add);
+
+        await coordinator.InitialLaunchAsync(
+            new[] { "C:\\nope1", "C:\\nope2", "C:\\nope3" });
+
+        // Exact wording is the parser's; we just verify the structured
+        // failure made it through to the stderr callback verbatim.
+        stderr.Should().ContainSingle()
+            .Which.Should().Contain("C:\\nope1");
+    }
+
+    [Fact]
+    public async Task InitialLaunchAsync_ParseFailure_NoStderrWired_StillShowsDialog()
+    {
+        // Backward-compat: when no stderrWriter is supplied (GUI launch),
+        // the existing dialog-and-shutdown path must still fire identically.
+        var dialog = new FakeDialog();
+        int? exitCode = null;
+        var services = BuildServices(out _);
+
+        var coordinator = new MainWindowCoordinator(
+            services, dialog, default,
+            shutdownAction: c => exitCode = c,
+            stderrWriter: null);
+
+        var ok = await coordinator.InitialLaunchAsync(new[] { "--bogus" });
+
+        ok.Should().BeFalse();
+        dialog.LastError.Should().NotBeNull();
+        exitCode.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task InitialLaunchAsync_StderrWriterThrows_DoesNotDerailFailureHandling()
+    {
+        // Best-effort contract: a misbehaving stderr writer (e.g. parent
+        // console closed between attach and write) must not prevent the
+        // dialog / shutdown from firing.
+        var dialog = new FakeDialog();
+        int? exitCode = null;
+        var services = BuildServices(out _);
+
+        var coordinator = new MainWindowCoordinator(
+            services, dialog, default,
+            shutdownAction: c => exitCode = c,
+            stderrWriter: _ => throw new IOException("simulated console gone"));
+
+        var ok = await coordinator.InitialLaunchAsync(new[] { "--bogus" });
+
+        ok.Should().BeFalse();
+        dialog.LastError.Should().NotBeNull();
+        exitCode.Should().Be(1);
     }
 
     [Fact]

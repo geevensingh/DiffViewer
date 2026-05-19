@@ -15,6 +15,9 @@ individual hunks.
 - **Review a GitHub pull request** by passing its URL on the command line
   (e.g. `DiffViewer.exe https://github.com/owner/repo/pull/123`). See
   [Pull request review](#pull-request-review) below for setup.
+- **Launch directly into a diff context** from a terminal or `git` alias
+  with `--repo`, `--left`, `--right`, and optional `--file` flags. See
+  [Command-line launch](#command-line-launch).
 - File list grouped by working-tree layer (Conflicted, Committed since
   baseline, Staged, Unstaged, Untracked), with three presentation modes —
   full path, repo-relative, or grouped-by-directory — and a status badge
@@ -115,6 +118,67 @@ DiffViewer's PR review is a **read-only**, **public-repo-clone-friendly**,
   what shows up in the recents dropdown.
 
 [gh-cli]: https://cli.github.com/
+
+## Command-line launch
+
+DiffViewer can launch directly into a specific diff context from a
+terminal or a `git` alias, bypassing the launch-context picker:
+
+```text
+DiffViewer.exe --repo <path>
+               --left <commit-ish | WORKING>
+               --right <commit-ish | WORKING>
+               [--file <repo-relative-path>]
+```
+
+- `--repo` — path to the repository. Any directory inside the worktree
+  is fine; DiffViewer walks up to the repo root the same way `git` does.
+- `--left` / `--right` — either a commit-ish (`HEAD`, `main`, `abc1234`,
+  ...) or the literal `WORKING` (case-insensitive) to mean "the working
+  tree". Both flags are required.
+- `--file` — optional. When supplied, pre-selects that path in the file
+  list on launch. Match is case-insensitive against the repo-relative
+  path; forward or backward slashes both work.
+
+Errors (missing flag, unresolvable ref, repo not found) print to stderr
+and exit with status 1. When DiffViewer was started from a terminal
+(`cmd`, PowerShell, Git Bash, Windows Terminal, ...) the messages appear
+inline in that terminal; when started from Explorer or a shortcut they
+fall back to the existing error dialog. Unknown flags fail loudly — a
+silent ignore would just hide difftool-style misconfiguration.
+
+### Hook into `git` as an alias
+
+The simplest way to drive DiffViewer from `git` is a shell alias:
+
+```text
+git config --global alias.dv '!f() { DiffViewer.exe --repo "$(git rev-parse --show-toplevel)" --left "${1:-HEAD}" --right "${2:-WORKING}"; }; f'
+```
+
+Usage from any clone:
+
+```text
+git dv                     # working tree vs HEAD (the default)
+git dv main                # working tree vs main
+git dv main HEAD           # two-commit diff
+```
+
+`DiffViewer.exe` needs to be reachable on `PATH`, or replace it with a
+full path (e.g. `"C:/Tools/DiffViewer.exe"`). Git invokes alias bodies
+via `/bin/sh` even on Windows, so the `${1:-HEAD}` default-value syntax
+works regardless of which shell you launched `git` from.
+
+### A note on `git difftool`
+
+The natural-looking `git difftool` integration doesn't actually fit
+DiffViewer's flag form. In `git difftool`'s per-file mode (the default)
+Git materializes each side into a temp file under `%TEMP%` and invokes
+the configured tool with those file paths as `$LOCAL` / `$REMOTE`;
+`--dir-diff` does the same with temp directories. DiffViewer's flag
+form expects commit-ish refs against a real repository so it can drive
+hunk staging, history, and the recents list — snapshot files outside
+any clone don't carry that context. Use the `git dv` alias above
+instead.
 
 ## Requirements
 

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Windows;
 using DiffViewer.Rendering;
 using DiffViewer.Services;
+using DiffViewer.Utility;
 using ICSharpCode.AvalonEdit.Highlighting;
 
 namespace DiffViewer;
@@ -17,6 +18,15 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Attach to the parent process's console (cmd / PowerShell / git
+        // stdio) before anything else. Returns false for double-click
+        // launches (no parent console) — see ConsoleAttacher's class docs.
+        // Done up-front so any later stderr writes (e.g. CLI parse errors
+        // surfaced through MainWindowCoordinator.HandleColdLaunchFailure)
+        // land in the launching terminal, matching the behavior expected by
+        // `git difftool` and other CLI consumers (issue #5).
+        ConsoleAttacher.AttachToParent();
 
         // Register DiffViewer's hand-authored XSHD highlighting definitions
         // (TypeScript, YAML, Go, Rust, Ruby, Bash, TOML) on top of the set
@@ -86,7 +96,14 @@ public partial class App : Application
         _coordinator = new MainWindowCoordinator(
             services,
             new MessageBoxDialogService(),
-            _shutdownCts.Token);
+            _shutdownCts.Token,
+            stderrWriter: ConsoleAttacher.IsAttached
+                ? message =>
+                {
+                    try { Console.Error.WriteLine(message); }
+                    catch { /* best-effort; parent console may have closed */ }
+                }
+                : null);
         // Late-bind the switcher into the services bundle so per-context
         // view-models (built later inside CompositionRoot.BuildContextAsync)
         // can wire the dropdown to the coordinator.

@@ -354,8 +354,20 @@ public sealed partial class FileListViewModel : ObservableObject
     /// the list entirely (deleted, staged elsewhere, branch switched,
     /// etc.), the selection is cleared -- the diff pane will swap to its
     /// placeholder via the normal <c>SelectedEntry</c>-change pipeline.</para>
+    ///
+    /// <para>When <paramref name="preferredInitialPath"/> is supplied AND
+    /// there is no prior selection (cold launch), the matching entry is
+    /// selected. Used by the CLI <c>--file</c> flag (issue #5). Matching is
+    /// case-insensitive against <see cref="FileEntryViewModel.RepoRelativePath"/>;
+    /// the caller is responsible for normalizing separators to
+    /// <see cref="System.IO.Path.DirectorySeparatorChar"/>. An unmatched
+    /// path is a silent no-op.</para>
     /// </summary>
-    public void LoadFromChanges(IReadOnlyList<FileChange> changes, string repoRoot, bool isCommitVsCommit)
+    public void LoadFromChanges(
+        IReadOnlyList<FileChange> changes,
+        string repoRoot,
+        bool isCommitVsCommit,
+        string? preferredInitialPath = null)
     {
         ArgumentNullException.ThrowIfNull(changes);
 
@@ -446,6 +458,9 @@ public sealed partial class FileListViewModel : ObservableObject
             // Restore selection (or explicitly clear it if the prior file
             // fell out of the list -- otherwise the diff pane stays stale
             // showing a file that no longer appears anywhere on the left).
+            // On a cold launch there is no prior selection; in that case,
+            // if the caller supplied a preferredInitialPath (--file), select
+            // the matching entry. Unmatched paths fall through silently.
             if (priorPath is not null)
             {
                 FileEntryViewModel? match = null;
@@ -459,6 +474,17 @@ public sealed partial class FileListViewModel : ObservableObject
                     }
                 }
                 SelectedEntry = match;
+            }
+            else if (!string.IsNullOrEmpty(preferredInitialPath))
+            {
+                foreach (var e in FlatEntries)
+                {
+                    if (string.Equals(e.RepoRelativePath, preferredInitialPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        SelectedEntry = e;
+                        break;
+                    }
+                }
             }
 
             // Initial visibility pass — seeds each section's

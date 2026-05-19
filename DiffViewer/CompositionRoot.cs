@@ -151,7 +151,8 @@ internal static class CompositionRoot
             contextSwitcher: services.ContextSwitcher,
             newDiffDialogHost: services.NewDiffDialogHost,
             clipboardService: clipboardService,
-            imageDecoder: imageDecoder);
+            imageDecoder: imageDecoder,
+            initialFile: parsed.InitialFile);
 
         await vm.LoadInitialChangesAsync(ct).ConfigureAwait(true);
         return vm;

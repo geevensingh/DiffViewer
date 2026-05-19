@@ -5,10 +5,21 @@ namespace DiffViewer.Models;
 /// always populated (current directory if not supplied); the two sides
 /// describe what is being compared.
 /// </summary>
+/// <param name="RepoPath">Working-tree root (or any subdirectory of a repo).</param>
+/// <param name="Left">Left side of the comparison.</param>
+/// <param name="Right">Right side of the comparison.</param>
+/// <param name="InitialFile">
+/// Optional repo-relative path of a file to select once the file list has
+/// loaded. Only populated by the flag-form parse (<c>--file</c>); the
+/// positional grammar does not carry a file. Path separators are
+/// normalized to <see cref="System.IO.Path.DirectorySeparatorChar"/> at
+/// parse time; selection matching is case-insensitive on Windows.
+/// </param>
 public sealed record ParsedCommandLine(
     string RepoPath,
     DiffSide Left,
-    DiffSide Right);
+    DiffSide Right,
+    string? InitialFile = null);
 
 /// <summary>
 /// What kind of failure happened while parsing or resolving the command line.
@@ -32,6 +43,24 @@ public enum CommandLineErrorKind
 
     /// <summary>Unsupported flag or unknown switch.</summary>
     UnknownFlag,
+
+    /// <summary>
+    /// A required flag is missing in the flag-form grammar (e.g.
+    /// <c>--repo</c>, <c>--left</c>, or <c>--right</c>).
+    /// </summary>
+    MissingRequiredFlag,
+
+    /// <summary>
+    /// A flag was supplied without its value (e.g. <c>--left</c> at the
+    /// end of the argv, or followed by another flag).
+    /// </summary>
+    MissingFlagValue,
+
+    /// <summary>
+    /// The flag-form parse saw a positional argument it could not place
+    /// (mixing positional and flag forms, or an unrecognized leftover).
+    /// </summary>
+    UnexpectedPositionalArgument,
 }
 
 /// <summary>

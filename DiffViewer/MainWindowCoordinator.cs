@@ -45,6 +45,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     private readonly CancellationToken _appShutdownToken;
     private readonly ContextFactory _contextFactory;
     private readonly Action<int>? _shutdownAction;
+    private readonly Action<string>? _stderrWriter;
     private readonly SemaphoreSlim _switchGate = new(1, 1);
 
     private IShellViewModel? _current;
@@ -57,13 +58,15 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         IDialogService dialog,
         CancellationToken appShutdownToken = default,
         ContextFactory? contextFactory = null,
-        Action<int>? shutdownAction = null)
+        Action<int>? shutdownAction = null,
+        Action<string>? stderrWriter = null)
     {
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _dialog = dialog ?? throw new ArgumentNullException(nameof(dialog));
         _appShutdownToken = appShutdownToken;
         _contextFactory = contextFactory ?? ((p, s, sc, ct) => CompositionRoot.BuildContextAsync(p, s, sc, ct));
         _shutdownAction = shutdownAction;
+        _stderrWriter = stderrWriter;
     }
 
     /// <summary>
@@ -568,8 +571,25 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     /// <c>false</c> when the user-facing error has been shown and
     /// shutdown has been requested.
     /// </summary>
+    /// <remarks>
+    /// The structured error message is always also forwarded to the
+    /// supplied <c>stderrWriter</c> (when one was wired), regardless of
+    /// whether the empty-state fallback fires. This is what lets CLI
+    /// consumers (e.g. <c>git difftool</c>) see the failure in the
+    /// terminal that launched DiffViewer; the on-screen dialog / empty
+    /// state covers the GUI case.
+    /// </remarks>
     private bool HandleColdLaunchFailure(string errorMessage)
     {
+        // CLI consumers expect parse / launch failures to land in stderr
+        // even when the GUI also surfaces them — without this the only
+        // signal a script gets is "DiffViewer.exe popped a dialog".
+        // Best-effort: a console write throwing must not derail launch.
+        if (_stderrWriter is not null)
+        {
+            try { _stderrWriter(errorMessage); } catch { /* best-effort */ }
+        }
+
         // Cold-launch fallback (DR-007): if at least one recent is
         // persisted, swap in an empty-state shell so the user can pick
         // a recent from the dropdown rather than seeing the app

@@ -32,6 +32,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     private readonly bool _isCommitVsCommit;
     private readonly ContextScope _scope;
     private readonly RecentContextsViewModel? _recents;
+    private readonly string? _initialFile;
 
     /// <summary>
     /// Stack of suspend tokens, one per in-flight git write operation. The
@@ -612,7 +613,8 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         IContextSwitcher? contextSwitcher = null,
         INewDiffDialogHost? newDiffDialogHost = null,
         IClipboardService? clipboardService = null,
-        IImageDecoder? imageDecoder = null)
+        IImageDecoder? imageDecoder = null,
+        string? initialFile = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _left = left ?? throw new ArgumentNullException(nameof(left));
@@ -624,6 +626,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         _gitWriteService = gitWriteService;
         _externalAppLauncher = externalAppLauncher;
         _clipboardService = clipboardService;
+        _initialFile = string.IsNullOrEmpty(initialFile) ? null : initialFile;
 
         // Resolve commit metadata for any commit side. The lookup is
         // cheap (single LibGit2Sharp ref → commit walk; sub-millisecond
@@ -716,7 +719,11 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
             () => _repository.EnumerateChanges(_left, _right),
             ct).ConfigureAwait(true);
         ct.ThrowIfCancellationRequested();
-        FileList.LoadFromChanges(changes, _repository.Shape.RepoRoot, _isCommitVsCommit);
+        FileList.LoadFromChanges(
+            changes,
+            _repository.Shape.RepoRoot,
+            _isCommitVsCommit,
+            preferredInitialPath: _initialFile);
         StartPreDiffPass();
     }
 

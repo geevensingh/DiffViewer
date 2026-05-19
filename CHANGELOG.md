@@ -14,6 +14,21 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **Command-line flags for direct launch**: `DiffViewer.exe --repo
+  <path> --left <commit-ish | WORKING> --right <commit-ish | WORKING>
+  [--file <repo-relative-path>]` launches straight into a diff context,
+  bypassing the launch-context picker. `WORKING` is the sentinel for
+  "working tree" (matches `DiffSide.WorkingTree`). `--file` pre-selects
+  a file in the file list, with case-insensitive matching and both
+  forward- and backward-slash separators accepted. Errors (missing or
+  unknown flag, missing flag value, unresolvable ref, repo not found)
+  print to stderr and exit with status 1; when DiffViewer is launched
+  from a terminal those messages appear inline in that terminal, when
+  launched from Explorer they fall back to the existing error dialog.
+  The existing positional grammar (`DiffViewer.exe <path>`,
+  `DiffViewer.exe <pr-url>`, ...) is unchanged. See the new
+  "Command-line launch" section in the README for the `git` alias
+  recipe.
 - Hunk overview bar is now interactive for scrolling. Drag the
   viewport indicator (the soft blue outline that shows the editors'
   currently-visible window) up or down to scroll both editors —
