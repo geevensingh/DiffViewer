@@ -930,6 +930,37 @@ public class DiffPaneViewModelTests
     }
 
     [Fact]
+    public void RequestScrollByVerticalFraction_RaisesEventWithFraction()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo);
+
+        var fractions = new List<double>();
+        vm.ScrollByVerticalFractionRequested += (_, args) => fractions.Add(args.Fraction);
+
+        vm.RequestScrollByVerticalFraction(0.25);
+        vm.RequestScrollByVerticalFraction(0.75);
+
+        fractions.Should().Equal(0.25, 0.75);
+    }
+
+    [Fact]
+    public void RequestScrollByVerticalFraction_ClampsOutOfRange()
+    {
+        var repo = new FakeRepository();
+        var vm = new DiffPaneViewModel(repo);
+
+        var fractions = new List<double>();
+        vm.ScrollByVerticalFractionRequested += (_, args) => fractions.Add(args.Fraction);
+
+        vm.RequestScrollByVerticalFraction(-0.5);
+        vm.RequestScrollByVerticalFraction(1.5);
+        vm.RequestScrollByVerticalFraction(double.NaN);
+
+        fractions.Should().Equal(0.0, 1.0);
+    }
+
+    [Fact]
     public void RequestScrollByFraction_RaisesScrollRequestedWithMappedLines()
     {
         var repo = new FakeRepository();

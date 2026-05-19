@@ -49,18 +49,20 @@ public sealed class HunkOverviewBar : FrameworkElement
     /// True while the user is dragging the viewport band. Captured on
     /// <see cref="OnMouseLeftButtonDown"/> when the click lands inside
     /// the band; released on mouse-up / lost capture. While true,
-    /// <see cref="OnMouseMove"/> drives <see cref="DiffPaneViewModel.RequestScrollByFraction"/>
+    /// <see cref="OnMouseMove"/> drives <see cref="DiffPaneViewModel.RequestScrollByVerticalFraction"/>
     /// instead of updating the hover tooltip.
     /// </summary>
     private bool _isDraggingBand;
 
     /// <summary>
-    /// Pixel offset from the click point to the band's vertical center,
+    /// Pixel offset from the click point to the band's top edge,
     /// recorded at mouse-down. Replayed on every <see cref="OnMouseMove"/>
     /// during a drag so the cursor "sticks" to whichever part of the
-    /// band the user grabbed (scrollbar-thumb feel).
+    /// band the user grabbed (scrollbar-thumb feel). Anchored on top
+    /// (not center) so the resulting fraction maps 1:1 to the editor's
+    /// scroll offset — pixel-precise drag with no line-rounding.
     /// </summary>
-    private double _bandDragOffsetFromCenter;
+    private double _bandDragOffsetFromTop;
 
     public HunkOverviewBar()
     {
@@ -312,13 +314,13 @@ public sealed class HunkOverviewBar : FrameworkElement
         if (band is not null && HunkOverviewBarGeometry.IsInsideBand(band, p))
         {
             // Start a sticky-thumb drag: record where in the band the user
-            // grabbed (offset from band center) and capture the mouse so
-            // we keep getting moves even when the cursor strays off the
-            // bar. We deliberately do NOT call RequestScrollByFraction on
-            // the down stroke — sticky-thumb means "don't move the band
-            // until the user actually drags".
-            double bandCenterY = HunkOverviewBarGeometry.GetBandCenterY(band);
-            _bandDragOffsetFromCenter = p.Y - bandCenterY;
+            // grabbed (offset from band top) and capture the mouse so we
+            // keep getting moves even when the cursor strays off the bar.
+            // We deliberately do NOT scroll on the down stroke —
+            // sticky-thumb means "don't move the band until the user
+            // actually drags".
+            double bandTopY = HunkOverviewBarGeometry.GetBandTopY(band);
+            _bandDragOffsetFromTop = p.Y - bandTopY;
             _isDraggingBand = true;
             ToolTip = null;
             CaptureMouse();
@@ -390,13 +392,16 @@ public sealed class HunkOverviewBar : FrameworkElement
 
         // Drag in progress: drive the editor scroll from the cursor's
         // current Y, preserving the click-offset captured at MouseDown.
-        // No tooltip / no hunk hover during drag — it's a noisy
-        // distraction and would fight the cursor for attention.
+        // Routed through RequestScrollByVerticalFraction (not
+        // RequestScrollByFraction) so each pixel of cursor movement maps
+        // to a sub-line of editor scroll — the fraction-by-line path
+        // would only fire on rounded-line changes and jump in viewport-
+        // sized chunks. No tooltip / no hunk hover during drag.
         if (_isDraggingBand)
         {
-            double targetBandCenterY = e.GetPosition(this).Y - _bandDragOffsetFromCenter;
-            double fraction = ActualHeight <= 0 ? 0 : targetBandCenterY / ActualHeight;
-            _vm.RequestScrollByFraction(fraction);
+            double targetBandTopY = e.GetPosition(this).Y - _bandDragOffsetFromTop;
+            double fraction = ActualHeight <= 0 ? 0 : targetBandTopY / ActualHeight;
+            _vm.RequestScrollByVerticalFraction(fraction);
             return;
         }
 

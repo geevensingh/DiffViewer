@@ -124,6 +124,21 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// </summary>
     public event EventHandler<ScrollByLineDeltaRequestedEventArgs>? ScrollByLineDeltaRequested;
 
+    /// <summary>
+    /// Raised when the user drags the viewport indicator on the hunk
+    /// overview bar. Carries the desired first-visible-line as a
+    /// fraction (0..1) of the editor's total scroll extent. The view
+    /// multiplies by <see cref="ICSharpCode.AvalonEdit.TextEditor.ExtentHeight"/>
+    /// and calls <see cref="ICSharpCode.AvalonEdit.TextEditor.ScrollToVerticalOffset(double)"/>
+    /// so each pixel of mouse drag produces a sub-line of editor scroll
+    /// — without this, the line-rounded path through
+    /// <see cref="ScrollRequested"/> only fires when the rounded line
+    /// changes, which makes the drag jump in viewport-sized chunks.
+    /// <para>Same scroll-only semantics as <see cref="ScrollRequested"/>:
+    /// no caret move, no <see cref="CurrentHunkIndex"/> update.</para>
+    /// </summary>
+    public event EventHandler<ScrollByVerticalFractionRequestedEventArgs>? ScrollByVerticalFractionRequested;
+
     [ObservableProperty]
     private bool _isWhitespaceOnlyBannerVisible;
 
@@ -1162,6 +1177,27 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         ScrollByLineDeltaRequested?.Invoke(this, new ScrollByLineDeltaRequestedEventArgs(lineDelta));
     }
 
+    /// <summary>
+    /// Request a drag-style scroll to a position expressed as a fraction
+    /// (0..1) of the editor's vertical scroll extent. NaN is dropped;
+    /// out-of-range values are clamped. Distinct from
+    /// <see cref="RequestScrollByFraction"/> in that the view honors this
+    /// in pixels (<c>fraction × ExtentHeight</c>) rather than rounding to
+    /// a line — necessary for smooth sticky-thumb drag of the overview
+    /// bar's viewport indicator.
+    /// <para>Same scroll-only semantics as
+    /// <see cref="RequestScrollByFraction"/>: caret stays put and
+    /// <see cref="CurrentHunkIndex"/> is untouched.</para>
+    /// </summary>
+    public void RequestScrollByVerticalFraction(double fraction)
+    {
+        if (double.IsNaN(fraction)) return;
+        if (fraction < 0) fraction = 0;
+        if (fraction > 1) fraction = 1;
+        ScrollByVerticalFractionRequested?.Invoke(
+            this, new ScrollByVerticalFractionRequestedEventArgs(fraction));
+    }
+
     public void Dispose()
     {
         if (_settingsService is not null)
@@ -1261,3 +1297,11 @@ public sealed record ScrollRequestedEventArgs(int LeftLine, int RightLine);
 /// (positive = scroll toward later lines).
 /// </summary>
 public sealed record ScrollByLineDeltaRequestedEventArgs(int LineDelta);
+
+/// <summary>
+/// Args for <see cref="DiffPaneViewModel.ScrollByVerticalFractionRequested"/>.
+/// <see cref="Fraction"/> is the desired scroll position as 0..1 of the
+/// editor's <c>ExtentHeight</c>; the view multiplies and clamps to
+/// <c>ExtentHeight − ViewportHeight</c>.
+/// </summary>
+public sealed record ScrollByVerticalFractionRequestedEventArgs(double Fraction);

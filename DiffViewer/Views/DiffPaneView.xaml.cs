@@ -321,6 +321,7 @@ public partial class DiffPaneView : UserControl
         _vm.HunkNavigationRequested += OnHunkNavigationRequested;
         _vm.ScrollRequested += OnScrollRequested;
         _vm.ScrollByLineDeltaRequested += OnScrollByLineDeltaRequested;
+        _vm.ScrollByVerticalFractionRequested += OnScrollByVerticalFractionRequested;
         _vm.ColorSchemeChanged += OnColorSchemeChanged;
         _vm.PropertyChanged += OnVmPropertyChanged;
 
@@ -336,6 +337,7 @@ public partial class DiffPaneView : UserControl
         _vm.HunkNavigationRequested -= OnHunkNavigationRequested;
         _vm.ScrollRequested -= OnScrollRequested;
         _vm.ScrollByLineDeltaRequested -= OnScrollByLineDeltaRequested;
+        _vm.ScrollByVerticalFractionRequested -= OnScrollByVerticalFractionRequested;
         _vm.ColorSchemeChanged -= OnColorSchemeChanged;
         _vm.PropertyChanged -= OnVmPropertyChanged;
         _vm = null;
@@ -597,6 +599,45 @@ public partial class DiffPaneView : UserControl
         if (maxOffset < 0) maxOffset = 0;
         if (newOffset > maxOffset) newOffset = maxOffset;
         editor.ScrollToVerticalOffset(newOffset);
+    }
+
+    /// <summary>
+    /// Apply a drag-style absolute scroll. The fraction is the desired
+    /// scroll position as 0..1 of <see cref="TextEditor.ExtentHeight"/>;
+    /// we multiply and clamp to <c>ExtentHeight − ViewportHeight</c> so
+    /// the editor never overscrolls. Pixel-precise (unlike the
+    /// line-rounded <see cref="OnScrollRequested"/> path), which is what
+    /// makes the overview-bar drag feel smooth instead of jumping in
+    /// viewport-sized chunks. Side-by-side mode scrolls only the right
+    /// editor on purpose; <see cref="TextEditorScrollSync"/> mirrors the
+    /// offset to the left.
+    /// </summary>
+    private void OnScrollByVerticalFractionRequested(
+        object? sender, ScrollByVerticalFractionRequestedEventArgs e)
+    {
+        if (_vm is null) return;
+        if (_vm.IsSideBySide)
+        {
+            ScrollEditorByFraction(RightEditor, e.Fraction);
+        }
+        else
+        {
+            ScrollEditorByFraction(InlineEditor, e.Fraction);
+        }
+    }
+
+    private static void ScrollEditorByFraction(TextEditor editor, double fraction)
+    {
+        if (editor.Document is null) return;
+        if (double.IsNaN(fraction)) return;
+        double extent = editor.ExtentHeight;
+        if (extent <= 0) return;
+        double maxOffset = extent - editor.ViewportHeight;
+        if (maxOffset <= 0) return;
+        double target = fraction * extent;
+        if (target < 0) target = 0;
+        if (target > maxOffset) target = maxOffset;
+        editor.ScrollToVerticalOffset(target);
     }
 
     private static void ScrollEditorToLine(TextEditor editor, int line)

@@ -18,9 +18,12 @@ body. Keep section headings exact and write notes in Markdown.
   viewport indicator (the soft blue outline that shows the editors'
   currently-visible window) up or down to scroll both editors —
   sticky-thumb behaviour, so whichever part of the indicator you
-  grab stays under the cursor for the whole drag. The scroll wheel
-  also works anywhere over the bar and moves the editors at the same
-  rate as wheeling the editor surface itself (one notch =
+  grab stays under the cursor for the whole drag. Drag scrolling is
+  pixel-precise (each pixel of mouse movement produces a sub-line
+  of editor scroll) so fine adjustments work even when one bar pixel
+  spans many file lines. The scroll wheel also works anywhere over
+  the bar and moves the editors at the same rate as wheeling the
+  editor surface itself (one notch =
   `SystemParameters.WheelScrollLines` lines). Neither interaction
   moves the caret or selects a hunk — they're pure scroll, leaving
   the editor caret and the active-hunk highlight unchanged. Clicking

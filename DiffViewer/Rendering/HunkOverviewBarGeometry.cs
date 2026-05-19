@@ -281,34 +281,28 @@ internal static class HunkOverviewBarGeometry
         ContainsInRectsOrRibbon(band.LeftRect, band.RightRect, p);
 
     /// <summary>
-    /// Vertical center of the viewport band, in bar coordinates. Used as
+    /// Vertical top of the viewport band, in bar coordinates. Used as
     /// the anchor for sticky-thumb drag: at MouseDown we record the
-    /// click's pixel offset from this center, then on each MouseMove we
-    /// place the band's center back at <c>mouseY − offset</c> so the
-    /// click point "sticks" to the band.
-    /// <para>For mixed bands (both rects present) this is the midpoint
-    /// of the combined Y-range. For single-side bands it's the rect's
-    /// own midpoint. Returns the bar's vertical midpoint as a fallback
-    /// when both rects are <c>null</c> — shouldn't happen because
-    /// <see cref="ComputeViewport"/> never returns a band in that case,
-    /// but the fallback keeps callers from having to special-case.</para>
+    /// click's pixel offset from this top, then on each MouseMove we
+    /// place the band's top back at <c>mouseY − offset</c> so the click
+    /// point "sticks" to the band. Top-anchored (rather than center)
+    /// because the band's top fraction maps 1:1 to the editor's scroll
+    /// offset (which corresponds to its first visible line), so passing
+    /// it as <c>fraction × ExtentHeight</c> gives pixel-precise drag
+    /// without round-tripping through line numbers.
+    /// <para>For mixed bands (both rects present) this is the smaller
+    /// of the two rects' tops. For single-side bands it's that rect's
+    /// top. Returns 0 as a fallback when both rects are <c>null</c> —
+    /// shouldn't happen because <see cref="ComputeViewport"/> never
+    /// returns a band in that case, but the fallback keeps callers from
+    /// having to special-case.</para>
     /// </summary>
-    public static double GetBandCenterY(ViewportBand band)
+    public static double GetBandTopY(ViewportBand band)
     {
         double top = double.MaxValue;
-        double bottom = double.MinValue;
-        if (band.LeftRect is Rect L)
-        {
-            top = Math.Min(top, L.Top);
-            bottom = Math.Max(bottom, L.Bottom);
-        }
-        if (band.RightRect is Rect R)
-        {
-            top = Math.Min(top, R.Top);
-            bottom = Math.Max(bottom, R.Bottom);
-        }
-        if (top > bottom) return 0;
-        return (top + bottom) / 2.0;
+        if (band.LeftRect is Rect L) top = Math.Min(top, L.Top);
+        if (band.RightRect is Rect R) top = Math.Min(top, R.Top);
+        return top == double.MaxValue ? 0 : top;
     }
 
     /// <summary>
