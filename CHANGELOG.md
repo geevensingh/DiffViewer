@@ -14,6 +14,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **Stash support in the ref-picker popup.** The "Pick…" popup next
+  to every commit-ish input now includes a *Stashes* section showing
+  all stash entries (symbolic name, subject, short SHA) ordered
+  most-recent-first. Picking a stash writes `stash@{N}` into the
+  commit-ish textbox. Filter matches against the symbolic name,
+  subject text, and short SHA.
+- **"View stash" mode in the New Diff dialog.** A dedicated mode
+  that shows an inline stash list and launches a comparison of the
+  stash's working-tree snapshot against HEAD at stash time
+  (`stash@{N}^1` → `stash@{N}`), matching `git stash show`
+  semantics. Empty repos or repos with no stashes show a clear
+  empty-state message.
 - **New Diff dialog auto-detects a GitHub PR URL on the clipboard.**
   Opening *New diff* while a GitHub PR URL is on the clipboard now
   switches the dialog to *GitHub pull request* mode and pre-fills the
