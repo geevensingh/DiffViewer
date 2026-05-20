@@ -14,6 +14,19 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- **New Diff dialog: picking an annotated tag no longer fails to
+  resolve.** When the ref-picker surfaced an annotated tag (e.g.
+  `v1.2.0` created with `git tag -a`) and the user clicked it, the
+  tag name landed in the commit-ish field but validation reported
+  *"Cannot resolve `v1.2.0`"*. Root cause: the picker peeled the
+  tag's `TagAnnotation` wrapper through to the underlying commit
+  during enumeration, but the validator's `Lookup<Commit>` call
+  refused to follow the same indirection (annotated-tag refs target
+  a `TagAnnotation` object, not a `Commit`, so the generic lookup
+  returned null). `TryResolveCommitIsh` now peels through the
+  wrapper too — the same code path the CLI uses, so passing an
+  annotated tag like `DiffViewer.exe <repo> v1.2.0 origin/master`
+  now also works.
 - **New Diff dialog: `Pick…` ref-picker buttons now actually open.**
   The buttons next to the commit-ish fields in the *Working tree vs
   commit*, *Commit vs commit*, and *Branch vs merge-base* forms were

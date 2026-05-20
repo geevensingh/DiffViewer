@@ -80,4 +80,42 @@ public class ProcessCommandLineEnvironmentTests
         var env = new ProcessCommandLineEnvironment();
         env.TryResolveCommitIsh(repo.Path, "this-ref-does-not-exist").Should().BeFalse();
     }
+
+    [Fact]
+    public void TryResolveCommitIsh_LightweightTag_Resolves()
+    {
+        // Lightweight tags (`git tag <name>` with no -a/-m) point
+        // directly at the underlying commit, so even the unpeeled
+        // Lookup<Commit> would catch them. Pinned as a baseline so
+        // any future refactor that breaks tag resolution surfaces
+        // here rather than only against the annotated case below.
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "1\n");
+        var c1 = t.InitialCommit("c1");
+        t.CreateLightweightTag("v1.0.0", c1);
+
+        var env = new ProcessCommandLineEnvironment();
+        env.TryResolveCommitIsh(t.Path, "v1.0.0").Should().BeTrue();
+    }
+
+    [Fact]
+    public void TryResolveCommitIsh_AnnotatedTag_Resolves()
+    {
+        // Regression for the user-reported bug: picking `v1.2.0` from
+        // the ref-picker (which surfaces annotated tags by peeling
+        // through their TagAnnotation wrapper) put `v1.2.0` into the
+        // commit-ish field, but the validator's Lookup<Commit> call
+        // returned null because annotated tags resolve to a
+        // TagAnnotation, not a Commit. The dialog then reported
+        // "Cannot resolve `v1.2.0`" for a tag the picker had just
+        // offered. The validator now peels through the wrapper so
+        // picker output and validator input agree.
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "1\n");
+        var c1 = t.InitialCommit("c1");
+        t.CreateAnnotatedTag("v1.2.0", c1, "Release v1.2.0");
+
+        var env = new ProcessCommandLineEnvironment();
+        env.TryResolveCommitIsh(t.Path, "v1.2.0").Should().BeTrue();
+    }
 }

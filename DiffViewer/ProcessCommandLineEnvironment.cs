@@ -32,7 +32,26 @@ internal sealed class ProcessCommandLineEnvironment : ICommandLineEnvironment
         try
         {
             using var repo = new Repository(repoPath);
-            return repo.Lookup<Commit>(commitIsh) is not null;
+            // Fast path: SHAs, branch names, and revspecs like HEAD~3
+            // resolve directly to a Commit. This single call already
+            // handles the vast majority of inputs the CLI parser and
+            // the New Diff dialog hand us.
+            if (repo.Lookup<Commit>(commitIsh) is not null) return true;
+            // Annotated-tag fallback. An annotated tag (e.g. one made
+            // with `git tag -a v1.2.0 -m ...`) points at a
+            // TagAnnotation object that wraps the underlying Commit;
+            // the generic Lookup<Commit> above returns null for it
+            // because the immediate ref target is the wrapper, not the
+            // commit. Peel<Commit> follows the wrapper through to the
+            // commit. Lightweight tags already point straight at the
+            // commit and were caught by the fast path. This call
+            // matches how LibGit2GitRefEnumerator surfaces tags into
+            // the picker, so any tag the user can pick from the popup
+            // will also pass validation here. Peel throws on
+            // un-peelable objects (trees, blobs); the outer try/catch
+            // swallows that as a non-resolving input.
+            var obj = repo.Lookup(commitIsh);
+            return obj?.Peel<Commit>() is not null;
         }
         catch
         {
