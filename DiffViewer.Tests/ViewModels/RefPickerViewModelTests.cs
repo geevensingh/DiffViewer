@@ -398,6 +398,8 @@ public class RefPickerViewModelTests
             MergeBaseCalls++;
             return MergeBaseLookup?.Invoke(refA, refB);
         }
+
+        public string? TryGetDefaultRemoteBranch(string canonicalRepoPath) => null;
     }
 
     private sealed class FakeRecents : IRecentContextsService

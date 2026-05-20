@@ -12,6 +12,37 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **New Diff dialog auto-detects a GitHub PR URL on the clipboard.**
+  Opening *New diff* while a GitHub PR URL is on the clipboard now
+  switches the dialog to *GitHub pull request* mode and pre-fills the
+  URL field — so the common "I just copied a PR link from Outlook /
+  chat / GitHub" path collapses to one click on *OK*. URLs with
+  trailing `/files`, `/commits/<sha>`, query strings, or fragments
+  are tolerated (same parser as the CLI). The detection is
+  per-open: your session's last-used mode is not overwritten, so
+  re-opening the dialog without a PR URL on the clipboard reverts
+  to whatever mode you were actually working in. Junk on the
+  clipboard, a clipboard owned by another app, or a clipboard
+  containing a non-PR URL are all silently ignored.
+- **New Diff dialog: *Branch vs merge-base* auto-seeds the partner
+  field with `origin/<default-branch>`.** When the form's repo
+  path resolves and the partner field is empty, the dialog now
+  reads `refs/remotes/origin/HEAD` and pre-fills the partner with
+  the friendly remote-tracking name (e.g. `origin/main` or
+  `origin/master`). Cuts the dominant PR-review interaction to
+  "type a branch name and hit OK". Clones without an
+  `origin/HEAD` symref (some clones never set one), repos without
+  an `origin` remote, and invalid repo paths leave the field
+  empty — no surprise.
+- **New Diff dialog: cold-launch seeds the repo path from your
+  most-recent diff.** When you open *New diff* without an active
+  context (e.g. straight from the recent-contexts list with no
+  context currently open), every local-provider form now starts
+  with the repo field pre-filled from the top of the recent-launch
+  MRU. Empty MRU + no active context leaves the field blank.
+
 ### Fixed
 
 - **Annotated tags now resolve everywhere a commit-ish is accepted.**

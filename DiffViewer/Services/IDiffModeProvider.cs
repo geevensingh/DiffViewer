@@ -62,8 +62,13 @@ public interface IDiffModeProvider
 /// pre-fill its repo-path input with this canonical path so
 /// "compare another two commits in this repo" is one-field-away.
 /// PR-URL forms typically ignore this.</param>
+/// <param name="SeedPullRequestUrl">When non-null, the GitHub PR
+/// form should pre-fill its URL input with this string. Set by
+/// <see cref="NewDiffDialogHost"/> when it detects a PR URL on
+/// the clipboard at dialog-open time. Non-PR forms ignore it.</param>
 public sealed record FormDependencies(
     IDiffLaunchValidator Validator,
     IGitRefEnumerator RefEnumerator,
     IRecentContextsService RecentContexts,
-    string? PrefilledRepoPath = null);
+    string? PrefilledRepoPath = null,
+    string? SeedPullRequestUrl = null);

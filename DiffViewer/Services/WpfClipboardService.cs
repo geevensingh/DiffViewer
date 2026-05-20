@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 
 namespace DiffViewer.Services;
@@ -23,4 +24,27 @@ internal sealed class WpfClipboardService : IClipboardService
             // Best-effort: clipboard may be locked by another process.
         }
     }
+
+    public bool TryGetText([NotNullWhen(true)] out string? text)
+    {
+        try
+        {
+            if (Clipboard.ContainsText())
+            {
+                var read = Clipboard.GetText();
+                if (read is not null)
+                {
+                    text = read;
+                    return true;
+                }
+            }
+        }
+        catch
+        {
+            // Same clipboard-contention race as SetText; treat as "no text".
+        }
+        text = null;
+        return false;
+    }
 }
+

@@ -46,12 +46,17 @@ public class NewDiffFormViewModelTests
     {
         public RefEnumerationResult Enumerate(string canonicalRepoPath) => RefEnumerationResult.Empty;
         public string? TryComputeMergeBase(string canonicalRepoPath, string refA, string refB) => null;
+        public string? TryGetDefaultRemoteBranch(string canonicalRepoPath) => null;
     }
 
     /// <summary>Build a <see cref="FormDependencies"/> bundle for tests
     /// that only care about the validator.</summary>
-    private static FormDependencies Deps(IDiffLaunchValidator validator, string? prefilledRepoPath = null)
-        => new(validator, new StubRefEnumerator(), new NullRecentContextsService(), prefilledRepoPath);
+    private static FormDependencies Deps(
+        IDiffLaunchValidator validator,
+        string? prefilledRepoPath = null,
+        string? seedPullRequestUrl = null)
+        => new(validator, new StubRefEnumerator(), new NullRecentContextsService(),
+               prefilledRepoPath, seedPullRequestUrl);
 
     // === WorkingTreeVsHeadFormViewModel ===
 
@@ -412,5 +417,55 @@ public class NewDiffFormViewModelTests
 
         Action act = () => form.BuildLaunchSource();
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void GitHubPr_WithSeedUrl_PreFillsAndIsImmediatelyValid()
+    {
+        // Clipboard PR URL detection (A1): the host seeds the URL via
+        // FormDependencies.SeedPullRequestUrl. The form should pre-fill
+        // the field and run validation once at construction so OK is
+        // enabled before the user touches anything.
+        var v = new FakeValidator();
+        var pr = new PullRequestRef("github.com", "octocat", "hello-world", 42);
+        const string url = "https://github.com/octocat/hello-world/pull/42";
+        v.PrResults[url] = new PullRequestUrlValidation.Valid(pr);
+
+        var form = new GitHubPullRequestFormViewModel(Deps(v, seedPullRequestUrl: url));
+
+        form.PullRequestUrl.Should().Be(url);
+        form.IsValid.Should().BeTrue();
+        form.ValidationError.Should().BeNull();
+        var source = form.BuildLaunchSource();
+        source.Should().BeOfType<DiffLaunchSource.GitHubPullRequest>()
+            .Which.Pr.Should().Be(pr);
+    }
+
+    [Fact]
+    public void GitHubPr_WithSeedUrlThatFailsValidation_SurfaceError()
+    {
+        // A garbage clipboard string that survived TryParse but whose
+        // canonical repo doesn't exist (or any other downstream failure)
+        // should land in the form's ValidationError, not throw.
+        var v = new FakeValidator();
+        v.PrResults["seeded-garbage"] = new PullRequestUrlValidation.Invalid("bad seed");
+
+        var form = new GitHubPullRequestFormViewModel(Deps(v, seedPullRequestUrl: "seeded-garbage"));
+
+        form.PullRequestUrl.Should().Be("seeded-garbage");
+        form.IsValid.Should().BeFalse();
+        form.ValidationError.Should().Be("bad seed");
+    }
+
+    [Fact]
+    public void GitHubPr_WithNullSeedUrl_StartsEmpty()
+    {
+        // Cold-launch case — host found nothing on the clipboard, so
+        // seed is null. Equivalent to the pre-existing zero-state.
+        var v = new FakeValidator();
+        var form = new GitHubPullRequestFormViewModel(Deps(v, seedPullRequestUrl: null));
+        form.PullRequestUrl.Should().BeEmpty();
+        form.IsValid.Should().BeFalse();
+        form.ValidationError.Should().BeNull();
     }
 }

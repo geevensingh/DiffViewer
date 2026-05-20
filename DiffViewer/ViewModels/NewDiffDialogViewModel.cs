@@ -32,6 +32,7 @@ public sealed partial class NewDiffDialogViewModel : ObservableObject
     private readonly IGitRefEnumerator _refEnumerator;
     private readonly IRecentContextsService _recentContexts;
     private readonly string? _prefilledRepoPath;
+    private readonly string? _seedPullRequestUrl;
     private readonly Dictionary<IDiffModeProvider, NewDiffFormViewModelBase> _formCache = new();
     private readonly TaskCompletionSource<DiffLaunchSource?> _tcs;
 
@@ -45,13 +46,15 @@ public sealed partial class NewDiffDialogViewModel : ObservableObject
         IGitRefEnumerator refEnumerator,
         IRecentContextsService recentContexts,
         string? prefilledRepoPath = null,
-        string? initialProviderId = null)
+        string? initialProviderId = null,
+        string? seedPullRequestUrl = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
         _refEnumerator = refEnumerator ?? throw new ArgumentNullException(nameof(refEnumerator));
         _recentContexts = recentContexts ?? throw new ArgumentNullException(nameof(recentContexts));
         _prefilledRepoPath = prefilledRepoPath;
+        _seedPullRequestUrl = seedPullRequestUrl;
         Providers = registry.Providers;
 
         if (Providers.Count == 0)
@@ -111,7 +114,8 @@ public sealed partial class NewDiffDialogViewModel : ObservableObject
             if (!_formCache.TryGetValue(SelectedProvider, out var form))
             {
                 var deps = new FormDependencies(
-                    _validator, _refEnumerator, _recentContexts, _prefilledRepoPath);
+                    _validator, _refEnumerator, _recentContexts,
+                    _prefilledRepoPath, _seedPullRequestUrl);
                 form = SelectedProvider.CreateForm(deps);
                 _formCache[SelectedProvider] = form;
             }

@@ -21,7 +21,11 @@ public sealed partial class GitHubPullRequestFormViewModel : NewDiffFormViewMode
     public GitHubPullRequestFormViewModel(FormDependencies deps)
         : base(deps.Validator)
     {
-        _pullRequestUrl = string.Empty;
+        // Seed from deps.SeedPullRequestUrl when the host detected a PR
+        // URL on the clipboard at dialog-open time; otherwise start
+        // empty. Validate runs once below so OK lights up immediately
+        // when the seed is well-formed.
+        _pullRequestUrl = deps.SeedPullRequestUrl ?? string.Empty;
         Validate();
     }
 

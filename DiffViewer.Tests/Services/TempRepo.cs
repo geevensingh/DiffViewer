@@ -130,6 +130,21 @@ internal sealed class TempRepo : IDisposable
         repo.Refs.Add($"refs/remotes/{remote}/{branch}", commit.Sha);
     }
 
+    /// <summary>Install the symbolic ref <c>refs/remotes/{remote}/HEAD</c>
+    /// pointing at the given target branch (e.g. <c>refs/remotes/origin/main</c>).
+    /// Mirrors what <c>git clone</c> does at the end of a clone when the
+    /// remote advertises a HEAD branch; tests that exercise
+    /// "default-branch detection" use this to set up the precondition
+    /// without spinning up a real remote.</summary>
+    public void SetRemoteHead(string remote, string targetBranch)
+    {
+        using var repo = new Repository(_tempPath);
+        var name = $"refs/remotes/{remote}/HEAD";
+        var target = $"refs/remotes/{remote}/{targetBranch}";
+        // allowOverwrite=true so a test can rewire HEAD after first set.
+        repo.Refs.Add(name, target, allowOverwrite: true);
+    }
+
     public void Dispose()
     {
         try

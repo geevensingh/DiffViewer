@@ -103,5 +103,55 @@ public sealed class LibGit2GitRefEnumerator : IGitRefEnumerator
         }
     }
 
+    public string? TryGetDefaultRemoteBranch(string canonicalRepoPath)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalRepoPath)) return null;
+        if (!Repository.IsValid(canonicalRepoPath)) return null;
+
+        try
+        {
+            using var repo = new Repository(canonicalRepoPath);
+            // refs/remotes/origin/HEAD is the symbolic ref `git clone`
+            // installs to record what the remote's HEAD was at clone
+            // time. Not every clone has it (older Gits, manually
+            // configured remotes, --no-tags variants) — in which case
+            // we return null and let the caller leave the partner
+            // field blank.
+            var headRef = repo.Refs["refs/remotes/origin/HEAD"];
+            if (headRef is not SymbolicReference symref) return null;
+
+            var target = symref.Target;
+            if (target is null) return null;
+
+            const string remotePrefix = "refs/remotes/";
+            var canonical = target.CanonicalName;
+            if (string.IsNullOrEmpty(canonical)
+                || !canonical.StartsWith(remotePrefix, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            var friendly = canonical[remotePrefix.Length..];
+            // Defensive: ignore an origin/HEAD that points back at itself
+            // (would produce a nonsense recursive seed). Real-world this
+            // doesn't happen — libgit2's git clone produces e.g.
+            // refs/remotes/origin/HEAD -> refs/remotes/origin/main.
+            if (friendly.Length == 0
+                || friendly.EndsWith("/HEAD", StringComparison.Ordinal))
+            {
+                return null;
+            }
+            return friendly;
+        }
+        catch (LibGit2SharpException)
+        {
+            return null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
     private static string ShortSha(string sha) => sha.Length >= 7 ? sha[..7] : sha;
 }

@@ -25,12 +25,14 @@ public class NewDiffDialogViewModelTests
     {
         public RefEnumerationResult Enumerate(string canonicalRepoPath) => RefEnumerationResult.Empty;
         public string? TryComputeMergeBase(string canonicalRepoPath, string refA, string refB) => null;
+        public string? TryGetDefaultRemoteBranch(string canonicalRepoPath) => null;
     }
 
     private static NewDiffDialogViewModel MakeVm(
         IDiffLaunchValidator? validator = null,
         string? prefilledRepoPath = null,
-        string? initialProviderId = null)
+        string? initialProviderId = null,
+        string? seedPullRequestUrl = null)
     {
         var registry = DiffModeRegistry.BuildDefault();
         return new NewDiffDialogViewModel(
@@ -39,7 +41,8 @@ public class NewDiffDialogViewModelTests
             new StubRefEnumerator(),
             new NullRecentContextsService(),
             prefilledRepoPath,
-            initialProviderId);
+            initialProviderId,
+            seedPullRequestUrl);
     }
 
     [Fact]
@@ -62,6 +65,39 @@ public class NewDiffDialogViewModelTests
     {
         var vm = MakeVm(initialProviderId: "totally-bogus");
         vm.SelectedProvider.Should().BeSameAs(vm.Providers[0]);
+    }
+
+    [Fact]
+    public void SeedPullRequestUrl_RoutesIntoPrForm_AndImmediatelyValidates()
+    {
+        // A1 end-to-end at the dialog-VM level: when the host detects
+        // a PR URL on the clipboard, it passes (initialProviderId =
+        // github.pr, seedPullRequestUrl = url). The PR form should
+        // open pre-filled with OK enabled.
+        const string url = "https://github.com/octocat/hello-world/pull/42";
+        var vm = MakeVm(
+            initialProviderId: GitHubPullRequestProvider.ProviderId,
+            seedPullRequestUrl: url);
+
+        vm.SelectedProvider.Id.Should().Be(GitHubPullRequestProvider.ProviderId);
+        var form = vm.CurrentForm.Should().BeOfType<GitHubPullRequestFormViewModel>().Subject;
+        form.PullRequestUrl.Should().Be(url);
+        vm.IsOkEnabled.Should().BeTrue();
+        vm.OkCommand.CanExecute(null).Should().BeTrue();
+    }
+
+    [Fact]
+    public void SeedPullRequestUrl_DoesNotAffectLocalForms()
+    {
+        // Local-mode forms ignore the PR seed entirely — they read
+        // PrefilledRepoPath, not SeedPullRequestUrl. Sanity: opening
+        // on the default first provider with a seed URL set still
+        // produces an empty repo-path form.
+        var vm = MakeVm(seedPullRequestUrl: "https://github.com/octocat/hello-world/pull/42");
+
+        vm.SelectedProvider.Id.Should().Be(WorkingTreeVsHeadProvider.ProviderId);
+        vm.CurrentForm.Should().BeOfType<WorkingTreeVsHeadFormViewModel>();
+        vm.IsOkEnabled.Should().BeFalse("repo path is still empty");
     }
 
     [Fact]

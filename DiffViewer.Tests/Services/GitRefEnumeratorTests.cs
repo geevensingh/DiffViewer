@@ -214,4 +214,70 @@ public class GitRefEnumeratorTests
         sut.TryComputeMergeBase(t.Path, "", "master").Should().BeNull();
         sut.TryComputeMergeBase(t.Path, "master", "  ").Should().BeNull();
     }
+
+    [Fact]
+    public void TryGetDefaultRemoteBranch_OnInvalidOrEmptyPath_ReturnsNull()
+    {
+        var sut = new LibGit2GitRefEnumerator();
+        sut.TryGetDefaultRemoteBranch("").Should().BeNull();
+        sut.TryGetDefaultRemoteBranch("   ").Should().BeNull();
+        sut.TryGetDefaultRemoteBranch(@"C:\nope-" + Guid.NewGuid().ToString("N")).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetDefaultRemoteBranch_WithoutOriginHead_ReturnsNull()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        // Remote-tracking branch exists, but no symbolic origin/HEAD.
+        // Real-world case: --no-tags clone or a remote that didn't
+        // advertise a default branch.
+        t.CreateRemoteTrackingBranch("origin", "main", c1);
+
+        var sut = new LibGit2GitRefEnumerator();
+        sut.TryGetDefaultRemoteBranch(t.Path).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetDefaultRemoteBranch_WithOriginHeadPointingAtMain_ReturnsOriginMain()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.CreateRemoteTrackingBranch("origin", "main", c1);
+        t.SetRemoteHead("origin", "main");
+
+        var sut = new LibGit2GitRefEnumerator();
+        sut.TryGetDefaultRemoteBranch(t.Path).Should().Be("origin/main");
+    }
+
+    [Fact]
+    public void TryGetDefaultRemoteBranch_WithOriginHeadPointingAtMaster_ReturnsOriginMaster()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.CreateRemoteTrackingBranch("origin", "master", c1);
+        t.SetRemoteHead("origin", "master");
+
+        var sut = new LibGit2GitRefEnumerator();
+        sut.TryGetDefaultRemoteBranch(t.Path).Should().Be("origin/master");
+    }
+
+    [Fact]
+    public void TryGetDefaultRemoteBranch_WithOriginHeadPointingAtCustomBranch_ReturnsThatBranch()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        var c1 = t.InitialCommit("c1");
+        t.CreateRemoteTrackingBranch("origin", "develop", c1);
+        t.SetRemoteHead("origin", "develop");
+
+        var sut = new LibGit2GitRefEnumerator();
+        // A non-main/master default branch (some shops ship trunk or
+        // develop). We surface whatever the clone recorded; the form
+        // VM just treats the result as a string seed.
+        sut.TryGetDefaultRemoteBranch(t.Path).Should().Be("origin/develop");
+    }
 }

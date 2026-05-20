@@ -64,6 +64,11 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         TryUpdateCanonicalRepoPath();
         SyncPickerRepoPath();
         Validate();
+        // Seed merge-base partner from origin/HEAD whenever the
+        // prefilled repo path resolves and partner is still empty.
+        // Drives "branch + OK" as the steady state for the PR-review
+        // form. See TrySeedDefaultPartner for the guards.
+        TrySeedDefaultPartner();
     }
 
     partial void OnRepoPathChanged(string value)
@@ -71,6 +76,12 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         TryUpdateCanonicalRepoPath();
         SyncPickerRepoPath();
         Validate();
+        // Re-seed on every repo-path change. "Empty partner" is never
+        // a positive user choice (HasRequiredInputs requires it
+        // non-empty), so re-filling it after a user clears + switches
+        // repos is help, not magic. Guard inside the helper keeps
+        // non-empty partner values untouched.
+        TrySeedDefaultPartner();
     }
 
     partial void OnBranchChanged(string value) => Validate();
@@ -160,5 +171,26 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
     {
         BranchPicker.CanonicalRepoPath = _canonicalRepoPath;
         MergeBasePartnerPicker.CanonicalRepoPath = _canonicalRepoPath;
+    }
+
+    /// <summary>
+    /// If the partner field is currently empty and the repo path
+    /// resolves, ask the enumerator for the repo's default remote
+    /// branch (typically <c>origin/main</c> or <c>origin/master</c>)
+    /// and seed the partner with it. Silent no-op when the repo
+    /// doesn't resolve, the partner is already non-empty, or the
+    /// repo has no <c>origin/HEAD</c> symref (older clones,
+    /// manually-configured remotes). Assignment to the partner
+    /// re-triggers <see cref="Validate"/> via the source-generated
+    /// setter.
+    /// </summary>
+    private void TrySeedDefaultPartner()
+    {
+        if (!string.IsNullOrWhiteSpace(MergeBasePartner)) return;
+        if (_canonicalRepoPath is null) return;
+
+        var seed = _enumerator.TryGetDefaultRemoteBranch(_canonicalRepoPath);
+        if (string.IsNullOrWhiteSpace(seed)) return;
+        MergeBasePartner = seed;
     }
 }

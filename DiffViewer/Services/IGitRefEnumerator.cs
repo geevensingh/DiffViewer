@@ -46,6 +46,24 @@ public interface IGitRefEnumerator
     /// don't share a common ancestor, or libgit2 throws.
     /// </summary>
     string? TryComputeMergeBase(string canonicalRepoPath, string refA, string refB);
+
+    /// <summary>
+    /// Look up the default branch of the <c>origin</c> remote in the
+    /// repository at <paramref name="canonicalRepoPath"/> and return
+    /// its friendly remote-tracking name (e.g. <c>"origin/main"</c>).
+    /// Returns <c>null</c> when the repo doesn't have an
+    /// <c>origin/HEAD</c> symref (some clones never set one), when
+    /// the symref points at something other than a remote-tracking
+    /// branch, when the path doesn't resolve, or when libgit2 throws.
+    ///
+    /// <para>Used by the "New diff" dialog's branch-vs-merge-base form
+    /// to pre-fill the merge-base partner field — the dominant
+    /// PR-review case is comparing a feature branch against the
+    /// upstream default branch, and forcing the user to remember
+    /// whether that's <c>origin/main</c> or <c>origin/master</c> is
+    /// friction we can erase whenever the clone already knows.</para>
+    /// </summary>
+    string? TryGetDefaultRemoteBranch(string canonicalRepoPath);
 }
 
 /// <summary>

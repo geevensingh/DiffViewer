@@ -82,11 +82,13 @@ public partial class App : Application
         var diffLaunchValidator = new DiffLaunchValidator(new ProcessCommandLineEnvironment());
         var diffModeRegistry = DiffModeRegistry.BuildDefault();
         var refEnumerator = new LibGit2GitRefEnumerator();
+        var clipboardService = new WpfClipboardService();
         var newDiffDialogHost = new NewDiffDialogHost(
             diffModeRegistry,
             diffLaunchValidator,
             refEnumerator,
             recents,
+            clipboardService,
             ownerLookup: () => Application.Current?.MainWindow);
 
         var services = new AppServices(

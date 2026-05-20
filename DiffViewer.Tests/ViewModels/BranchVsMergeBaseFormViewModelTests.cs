@@ -41,6 +41,7 @@ public class BranchVsMergeBaseFormViewModelTests
     private sealed class FakeEnumerator : IGitRefEnumerator
     {
         public Dictionary<(string repo, string a, string b), string> MergeBaseResults { get; } = new();
+        public Dictionary<string, string?> DefaultRemoteBranchByRepo { get; } = new();
 
         public RefEnumerationResult Enumerate(string canonicalRepoPath) => RefEnumerationResult.Empty;
 
@@ -49,6 +50,11 @@ public class BranchVsMergeBaseFormViewModelTests
             if (MergeBaseResults.TryGetValue((canonicalRepoPath, refA, refB), out var sha)) return sha;
             if (MergeBaseResults.TryGetValue((canonicalRepoPath, refB, refA), out sha)) return sha;
             return null;
+        }
+
+        public string? TryGetDefaultRemoteBranch(string canonicalRepoPath)
+        {
+            return DefaultRemoteBranchByRepo.TryGetValue(canonicalRepoPath, out var name) ? name : null;
         }
     }
 
@@ -270,5 +276,106 @@ public class BranchVsMergeBaseFormViewModelTests
         form.BranchPicker.IsEnabled.Should().BeFalse();
         form.MergeBasePartnerPicker.CanonicalRepoPath.Should().BeNull();
         form.MergeBasePartnerPicker.IsEnabled.Should().BeFalse();
+    }
+
+    // === Default-partner auto-seed (A2) ===
+
+    [Fact]
+    public void Seed_OnConstruction_WhenPrefilledRepoAndPartnerEmpty_SetsPartnerToOriginDefault()
+    {
+        // Dominant case: dialog opens with prefilled repo (the active
+        // context's path) and an empty partner. The form should query
+        // the enumerator's origin/HEAD and pre-fill the partner so the
+        // user only needs to type the branch and hit OK.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        var e = new FakeEnumerator();
+        e.DefaultRemoteBranchByRepo[@"C:\repo"] = "origin/main";
+
+        var form = new BranchVsMergeBaseFormViewModel(Deps(v, e, prefilledRepoPath: @"C:\repo"));
+
+        form.MergeBasePartner.Should().Be("origin/main");
+    }
+
+    [Fact]
+    public void Seed_OnConstruction_WhenEnumeratorReturnsNull_LeavesPartnerEmpty()
+    {
+        // Repos without origin/HEAD (older clones, no remote, etc.) —
+        // enumerator returns null and the form leaves the field blank
+        // for the user to type. No crash, no surprise default.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        var e = new FakeEnumerator();
+        // No entry in DefaultRemoteBranchByRepo => TryGetDefaultRemoteBranch returns null.
+
+        var form = new BranchVsMergeBaseFormViewModel(Deps(v, e, prefilledRepoPath: @"C:\repo"));
+
+        form.MergeBasePartner.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Seed_NeverOverwrites_NonEmptyPartner()
+    {
+        // User explicitly set partner (or it was carried forward via
+        // form caching after a mode switch). Switching repos must not
+        // overwrite a partner the user already chose.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo-a"] = new RepoPathValidation.Valid(@"C:\repo-a");
+        v.RepoResults[@"C:\repo-b"] = new RepoPathValidation.Valid(@"C:\repo-b");
+        var e = new FakeEnumerator();
+        e.DefaultRemoteBranchByRepo[@"C:\repo-a"] = "origin/main";
+        e.DefaultRemoteBranchByRepo[@"C:\repo-b"] = "origin/master";
+
+        var form = new BranchVsMergeBaseFormViewModel(Deps(v, e, prefilledRepoPath: @"C:\repo-a"))
+        {
+            // Override the auto-seed with a custom value before
+            // switching repos. (In practice the user would type this
+            // — here we just write the property directly.)
+            MergeBasePartner = "release/2025-q4",
+        };
+
+        form.RepoPath = @"C:\repo-b";
+
+        form.MergeBasePartner.Should().Be("release/2025-q4",
+            "non-empty partner is a positive user choice and must not be overwritten on repo switch");
+    }
+
+    [Fact]
+    public void Seed_OnRepoSwitch_AfterUserClearedPartner_ReSeedsForNewRepo()
+    {
+        // Per the design call (A2 Option 1): empty partner is never a
+        // positive choice (HasRequiredInputs requires it non-empty), so
+        // when the user clears partner then switches repos, re-filling
+        // it with the new repo's default is help, not magic.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo-a"] = new RepoPathValidation.Valid(@"C:\repo-a");
+        v.RepoResults[@"C:\repo-b"] = new RepoPathValidation.Valid(@"C:\repo-b");
+        var e = new FakeEnumerator();
+        e.DefaultRemoteBranchByRepo[@"C:\repo-a"] = "origin/main";
+        e.DefaultRemoteBranchByRepo[@"C:\repo-b"] = "origin/master";
+
+        var form = new BranchVsMergeBaseFormViewModel(Deps(v, e, prefilledRepoPath: @"C:\repo-a"));
+        form.MergeBasePartner.Should().Be("origin/main");
+
+        form.MergeBasePartner = string.Empty;
+        form.RepoPath = @"C:\repo-b";
+
+        form.MergeBasePartner.Should().Be("origin/master");
+    }
+
+    [Fact]
+    public void Seed_OnConstruction_WhenRepoPathInvalid_LeavesPartnerEmpty()
+    {
+        // Repo path doesn't canonicalize, so we can't ask the
+        // enumerator anything. Partner stays empty; user will edit
+        // RepoPath and the seed re-attempts on the next change.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\nope"] = new RepoPathValidation.Invalid("not a repo");
+        var e = new FakeEnumerator();
+        e.DefaultRemoteBranchByRepo[@"C:\nope"] = "origin/main"; // ignored
+
+        var form = new BranchVsMergeBaseFormViewModel(Deps(v, e, prefilledRepoPath: @"C:\nope"));
+
+        form.MergeBasePartner.Should().BeEmpty();
     }
 }

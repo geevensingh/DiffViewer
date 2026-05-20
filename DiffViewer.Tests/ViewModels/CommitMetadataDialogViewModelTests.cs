@@ -34,7 +34,13 @@ public class CommitMetadataDialogViewModelTests
     {
         public string? LastText { get; private set; }
         public int CallCount { get; private set; }
+        public string? NextText { get; set; }
         public void SetText(string text) { LastText = text; CallCount++; }
+        public bool TryGetText([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out string? text)
+        {
+            text = NextText;
+            return text is not null;
+        }
     }
 
     [Fact]
