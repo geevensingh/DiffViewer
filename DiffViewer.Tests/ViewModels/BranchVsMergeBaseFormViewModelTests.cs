@@ -233,4 +233,42 @@ public class BranchVsMergeBaseFormViewModelTests
 
         form.MergeBasePartner.Should().Be("origin/main");
     }
+
+    [Fact]
+    public void BothPickers_AreEnabled_OnceRepoPathIsValid()
+    {
+        // Regression guard mirroring the WorkingTreeVsCommit /
+        // CommitVsCommit cases: both Branch and MergeBasePartner
+        // pickers must be reachable as soon as the repo path
+        // canonicalises, independent of the other inputs.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        var form = new BranchVsMergeBaseFormViewModel(Deps(v, new FakeEnumerator()))
+        {
+            RepoPath = @"C:\repo",
+        };
+
+        form.BranchPicker.CanonicalRepoPath.Should().Be(@"C:\repo");
+        form.BranchPicker.IsEnabled.Should().BeTrue();
+        form.MergeBasePartnerPicker.CanonicalRepoPath.Should().Be(@"C:\repo");
+        form.MergeBasePartnerPicker.IsEnabled.Should().BeTrue();
+        form.Branch.Should().BeEmpty();
+        form.MergeBasePartner.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BothPickers_StayDisabled_WhenRepoPathInvalid()
+    {
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\nope"] = new RepoPathValidation.Invalid("not a repo");
+        var form = new BranchVsMergeBaseFormViewModel(Deps(v, new FakeEnumerator()))
+        {
+            RepoPath = @"C:\nope",
+        };
+
+        form.BranchPicker.CanonicalRepoPath.Should().BeNull();
+        form.BranchPicker.IsEnabled.Should().BeFalse();
+        form.MergeBasePartnerPicker.CanonicalRepoPath.Should().BeNull();
+        form.MergeBasePartnerPicker.IsEnabled.Should().BeFalse();
+    }
 }

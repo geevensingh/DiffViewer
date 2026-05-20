@@ -12,6 +12,23 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Fixed
+
+- **New Diff dialog: `Pick…` ref-picker buttons now actually open.**
+  The buttons next to the commit-ish fields in the *Working tree vs
+  commit*, *Commit vs commit*, and *Branch vs merge-base* forms were
+  stuck disabled until you also typed a commit-ish — defeating the
+  point of the picker. They now enable as soon as the repo path
+  resolves, including when the dialog opens with a prefilled repo
+  path from the active context. Under the hood, the form view-models
+  no longer canonicalise the repo path as a side effect of
+  `ComputeValidationError` (which short-circuited on empty
+  commit-ish fields), so the picker's `CanonicalRepoPath` is in sync
+  with the user's repo-path input on every keystroke. No behaviour
+  change to the OK button or the deferred error-message UX:
+  validation errors still suppress until every required field is
+  populated.
+
 ## [1.2.0] - 2026-05-19
 
 ### Added

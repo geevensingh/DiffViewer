@@ -168,6 +168,41 @@ public class NewDiffFormViewModelTests
         form.IsValid.Should().BeTrue("picker write-back should re-trigger validation");
     }
 
+    [Fact]
+    public void WorkingTreeVsCommit_CommitIshPicker_IsEnabled_OnceRepoPathIsValid()
+    {
+        // Regression guard for the bug that made the Pick… button dead
+        // until the user also typed a commit-ish: the picker reads
+        // CanonicalRepoPath off the form, which used to be a side
+        // effect of ComputeValidationError. ComputeValidationError
+        // bailed early when CommitIsh was empty, so the picker stayed
+        // disabled forever. The form now canonicalises on
+        // OnRepoPathChanged, independent of the commit-ish field.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        var form = new WorkingTreeVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\repo" };
+
+        form.CommitIshPicker.CanonicalRepoPath.Should().Be(@"C:\repo");
+        form.CommitIshPicker.IsEnabled.Should().BeTrue(
+            "the picker should be reachable as soon as the repo path validates");
+        form.CommitIsh.Should().BeEmpty("commit-ish must still be empty for the regression case to hold");
+    }
+
+    [Fact]
+    public void WorkingTreeVsCommit_CommitIshPicker_StaysDisabled_WhenRepoPathInvalid()
+    {
+        // An invalid repo path can't drive a meaningful branch
+        // enumeration — keep the picker disabled and the canonical
+        // path null. (The deferred error message itself is gated by
+        // HasRequiredInputs and so doesn't surface here.)
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\nope"] = new RepoPathValidation.Invalid("not a repo");
+        var form = new WorkingTreeVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\nope" };
+
+        form.CommitIshPicker.CanonicalRepoPath.Should().BeNull();
+        form.CommitIshPicker.IsEnabled.Should().BeFalse();
+    }
+
     // === CommitVsCommitFormViewModel ===
 
     [Fact]
@@ -291,6 +326,38 @@ public class NewDiffFormViewModelTests
         form.BaseCommit.Should().Be("main");
         form.CompareCommit.Should().Be("feature");
         form.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void CommitVsCommit_BothPickers_AreEnabled_OnceRepoPathIsValid()
+    {
+        // Regression guard mirroring the WorkingTreeVsCommit case:
+        // both commit-ish pickers must be reachable as soon as the
+        // repo path canonicalises, independent of the commit-ish
+        // fields.
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\repo"] = new RepoPathValidation.Valid(@"C:\repo");
+        var form = new CommitVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\repo" };
+
+        form.BaseCommitPicker.CanonicalRepoPath.Should().Be(@"C:\repo");
+        form.BaseCommitPicker.IsEnabled.Should().BeTrue();
+        form.CompareCommitPicker.CanonicalRepoPath.Should().Be(@"C:\repo");
+        form.CompareCommitPicker.IsEnabled.Should().BeTrue();
+        form.BaseCommit.Should().BeEmpty();
+        form.CompareCommit.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CommitVsCommit_BothPickers_StayDisabled_WhenRepoPathInvalid()
+    {
+        var v = new FakeValidator();
+        v.RepoResults[@"C:\nope"] = new RepoPathValidation.Invalid("not a repo");
+        var form = new CommitVsCommitFormViewModel(Deps(v)) { RepoPath = @"C:\nope" };
+
+        form.BaseCommitPicker.CanonicalRepoPath.Should().BeNull();
+        form.BaseCommitPicker.IsEnabled.Should().BeFalse();
+        form.CompareCommitPicker.CanonicalRepoPath.Should().BeNull();
+        form.CompareCommitPicker.IsEnabled.Should().BeFalse();
     }
 
     // === GitHubPullRequestFormViewModel ===

@@ -29,6 +29,7 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
 {
     private readonly IGitRefEnumerator _enumerator;
     private string? _canonicalRepoPath;
+    private string? _repoPathError;
     private string? _resolvedMergeBaseSha;
 
     [ObservableProperty]
@@ -56,14 +57,20 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         MergeBasePartnerPicker = new RefPickerViewModel(
             deps.RefEnumerator, deps.RecentContexts,
             writeBack: value => MergeBasePartner = value);
-        Validate();
+        // Canonicalize the prefilled repo path BEFORE the first
+        // Validate() so both pickers are enabled on dialog open when
+        // launching with an already-open context. Mirrors the
+        // OnRepoPathChanged ordering.
+        TryUpdateCanonicalRepoPath();
         SyncPickerRepoPath();
+        Validate();
     }
 
     partial void OnRepoPathChanged(string value)
     {
-        Validate();
+        TryUpdateCanonicalRepoPath();
         SyncPickerRepoPath();
+        Validate();
     }
 
     partial void OnBranchChanged(string value) => Validate();
@@ -74,25 +81,46 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         && !string.IsNullOrWhiteSpace(Branch)
         && !string.IsNullOrWhiteSpace(MergeBasePartner);
 
-    protected override string? ComputeValidationError()
+    /// <summary>
+    /// Resolve the user's repo-path input into either a canonical
+    /// repository root (stored in <see cref="_canonicalRepoPath"/>,
+    /// consumed by both pickers for branch enumeration and by
+    /// <see cref="BuildLaunchSource"/>) or a deferred validation
+    /// message (stored in <see cref="_repoPathError"/>, surfaced by
+    /// <see cref="ComputeValidationError"/> once the rest of the form
+    /// is populated). See the WorkingTreeVsCommit form's copy of this
+    /// method for the bug-history rationale behind decoupling
+    /// canonicalization from validation.
+    /// </summary>
+    private void TryUpdateCanonicalRepoPath()
     {
         _canonicalRepoPath = null;
+        _repoPathError = null;
+        if (string.IsNullOrWhiteSpace(RepoPath)) return;
+
+        var result = Validator.ValidateRepoPath(RepoPath);
+        if (result is RepoPathValidation.Valid v)
+        {
+            _canonicalRepoPath = v.CanonicalPath;
+        }
+        else
+        {
+            _repoPathError = ((RepoPathValidation.Invalid)result).Message;
+        }
+    }
+
+    protected override string? ComputeValidationError()
+    {
         _resolvedMergeBaseSha = null;
         if (!HasRequiredInputs) return null;
-
-        var repoResult = Validator.ValidateRepoPath(RepoPath);
-        if (repoResult is not RepoPathValidation.Valid v)
-        {
-            return ((RepoPathValidation.Invalid)repoResult).Message;
-        }
-        _canonicalRepoPath = v.CanonicalPath;
+        if (_repoPathError is not null) return _repoPathError;
 
         // Validate both refs first so the user sees the most
         // diagnostic error (an unresolvable ref) rather than the
         // less-informative "no common ancestor" that would come back
         // if we jumped straight to FindMergeBase.
-        var branchResult = Validator.ValidateCommitIsh(v.CanonicalPath, Branch);
-        var partnerResult = Validator.ValidateCommitIsh(v.CanonicalPath, MergeBasePartner);
+        var branchResult = Validator.ValidateCommitIsh(_canonicalRepoPath!, Branch);
+        var partnerResult = Validator.ValidateCommitIsh(_canonicalRepoPath!, MergeBasePartner);
 
         var branchError = (branchResult as CommitIshValidation.Invalid)?.Message;
         var partnerError = (partnerResult as CommitIshValidation.Invalid)?.Message;
@@ -100,7 +128,7 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         if (branchError is not null) return branchError;
         if (partnerError is not null) return partnerError;
 
-        var mergeBase = _enumerator.TryComputeMergeBase(v.CanonicalPath, Branch, MergeBasePartner);
+        var mergeBase = _enumerator.TryComputeMergeBase(_canonicalRepoPath!, Branch, MergeBasePartner);
         if (mergeBase is null)
         {
             return $"No common ancestor between `{Branch}` and `{MergeBasePartner}`.";
