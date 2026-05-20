@@ -54,7 +54,7 @@ public sealed class RepositoryService : IRepositoryService
         {
             try
             {
-                return _repo.Lookup<Commit>(reference)?.Sha;
+                return CommitIshResolver.PeelToCommit(_repo, reference)?.Sha;
             }
             catch (LibGit2SharpException)
             {
@@ -70,7 +70,7 @@ public sealed class RepositoryService : IRepositoryService
         {
             try
             {
-                var commit = _repo.Lookup<Commit>(commitIsh);
+                var commit = CommitIshResolver.PeelToCommit(_repo, commitIsh);
                 if (commit is null) return null;
 
                 var author = commit.Author;
@@ -392,9 +392,9 @@ public sealed class RepositoryService : IRepositoryService
 
     private List<FileChange> EnumerateCommitVsCommit(string leftRef, string rightRef)
     {
-        var leftCommit = _repo.Lookup<Commit>(leftRef)
+        var leftCommit = CommitIshResolver.PeelToCommit(_repo, leftRef)
             ?? throw new InvalidOperationException($"Cannot resolve `{leftRef}` in repo {_repoPath}");
-        var rightCommit = _repo.Lookup<Commit>(rightRef)
+        var rightCommit = CommitIshResolver.PeelToCommit(_repo, rightRef)
             ?? throw new InvalidOperationException($"Cannot resolve `{rightRef}` in repo {_repoPath}");
 
         var compareOptions = BuildCompareOptions();
@@ -418,7 +418,7 @@ public sealed class RepositoryService : IRepositoryService
         bool unbornHead = _repo.Info.IsHeadUnborn;
         bool leftIsUnbornHead = unbornHead && IsHeadAlias(leftRef);
 
-        Commit? leftCommit = leftIsUnbornHead ? null : _repo.Lookup<Commit>(leftRef);
+        Commit? leftCommit = leftIsUnbornHead ? null : CommitIshResolver.PeelToCommit(_repo, leftRef);
         if (!leftIsUnbornHead && leftCommit is null)
         {
             throw new InvalidOperationException($"Cannot resolve `{leftRef}` in repo {_repoPath}");

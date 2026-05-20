@@ -694,4 +694,51 @@ public class RepositoryServiceTests
         rename.OldPath.Should().Be("old.txt");
         rename.IsRenameOrCopy.Should().BeTrue();
     }
+
+    [Fact]
+    public void EnumerateChanges_AnnotatedTagOnLeft_Succeeds()
+    {
+        // Regression for the user-reported bug: picking an annotated
+        // tag (e.g. v0.2.0) in the New Diff dialog landed the tag
+        // name in the commit-ish field, validation passed (after the
+        // earlier ProcessCommandLineEnvironment fix), but the diff
+        // engine then threw "Cannot resolve `v0.2.0`" because the
+        // enumeration internals still called Lookup<Commit> directly
+        // and that returns null for the TagAnnotation wrapper. The
+        // shared CommitIshResolver helper peels through the wrapper,
+        // so the dialog path from picker → validator → enumeration
+        // now works end-to-end.
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "v1\n");
+        var c1 = t.InitialCommit("c1");
+        t.WriteFile("a.txt", "v2\n");
+        var c2 = t.Commit("c2");
+        t.CreateAnnotatedTag("v0.2.0", c1, "Release v0.2.0");
+
+        using var svc = new RepositoryService(t.Path);
+
+        var changes = svc.EnumerateChanges(
+            new DiffSide.CommitIsh("v0.2.0"),
+            new DiffSide.CommitIsh(c2.Sha));
+
+        changes.Should().ContainSingle(x => x.Path == "a.txt" && x.Status == FileStatus.Modified);
+    }
+
+    [Fact]
+    public void ResolveCommitIsh_AnnotatedTag_ReturnsCommitSha()
+    {
+        // Public-API counterpart to the enumeration regression
+        // above. Before the fix, ResolveCommitIsh silently returned
+        // null for annotated tags, so anything reading commit
+        // metadata for a tag-named ref would think the ref didn't
+        // exist.
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "1\n");
+        var c1 = t.InitialCommit("c1");
+        t.CreateAnnotatedTag("v1.2.0", c1, "Release v1.2.0");
+
+        using var svc = new RepositoryService(t.Path);
+
+        svc.ResolveCommitIsh("v1.2.0").Should().Be(c1.Sha);
+    }
 }
