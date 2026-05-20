@@ -667,4 +667,26 @@ public class MainWindowCoordinatorTests
             return Task.FromResult(NextResult);
         }
     }
+
+    // ---- IsStashRef tests ----
+
+    [Theory]
+    [InlineData("stash@{0}", true)]
+    [InlineData("stash@{0}^1", true)]
+    [InlineData("stash@{3}", true)]
+    [InlineData("stash@{10}^2", true)]
+    [InlineData("HEAD", false)]
+    [InlineData("master", false)]
+    [InlineData("refs/stash", false)]
+    public void IsStashRef_DetectsStashReferences(string reference, bool expected)
+    {
+        var side = new DiffSide.CommitIsh(reference);
+        MainWindowCoordinator.IsStashRef(side).Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsStashRef_WorkingTree_ReturnsFalse()
+    {
+        MainWindowCoordinator.IsStashRef(new DiffSide.WorkingTree()).Should().BeFalse();
+    }
 }

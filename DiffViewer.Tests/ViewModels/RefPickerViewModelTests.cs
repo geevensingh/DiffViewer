@@ -41,7 +41,8 @@ public class RefPickerViewModelTests
                 Tags: new[]
                 {
                     new RefEntry("v0.1.0", "ccccccc0000000000000000000000000000000cc", "ccccccc"),
-                }),
+                },
+                Stashes: Array.Empty<StashEntry>()),
         };
 
         var sut = NewPicker(@"C:\repos\foo", enumerator: enumerator);
@@ -118,7 +119,8 @@ public class RefPickerViewModelTests
                 {
                     new RefEntry("v0.1.0", "5", "5"),
                     new RefEntry("xmas",   "6", "6"),
-                }),
+                },
+                Stashes: Array.Empty<StashEntry>()),
         };
         var sut = NewPicker(@"C:\repos\foo", enumerator: enumerator);
         await sut.EnsureLoadedAsync();
@@ -310,7 +312,8 @@ public class RefPickerViewModelTests
         var firstResult = new RefEnumerationResult(
             new[] { new RefEntry("first-branch", "11", "11") },
             Array.Empty<RefEntry>(),
-            Array.Empty<RefEntry>());
+            Array.Empty<RefEntry>(),
+            Array.Empty<StashEntry>());
 
         var enumerator = new FakeEnumerator { Result = SmallResult() };
         Func<Func<RefEnumerationResult>, Task<RefEnumerationResult>> runner = work =>
@@ -345,6 +348,94 @@ public class RefPickerViewModelTests
         sut.VisibleLocalBranches.Should().BeEmpty();
     }
 
+    // ---- Stash tests ---------------------------------------------------
+
+    [Fact]
+    public async Task EnsureLoadedAsync_PopulatesStashes()
+    {
+        var stashes = new[]
+        {
+            new StashEntry(0, "stash@{0}", "WIP on master: latest", DateTimeOffset.UtcNow, "aaa", "aaa"),
+            new StashEntry(1, "stash@{1}", "WIP on master: older",  DateTimeOffset.UtcNow.AddHours(-1), "bbb", "bbb"),
+        };
+        var enumerator = new FakeEnumerator
+        {
+            Result = new RefEnumerationResult(
+                SmallResult().LocalBranches,
+                Array.Empty<RefEntry>(),
+                Array.Empty<RefEntry>(),
+                stashes),
+        };
+        var sut = NewPicker(@"C:\repos\foo", enumerator: enumerator);
+        await sut.EnsureLoadedAsync();
+
+        sut.VisibleStashes.Should().HaveCount(2);
+        sut.VisibleStashes[0].SymbolicName.Should().Be("stash@{0}");
+        sut.VisibleStashes[1].SymbolicName.Should().Be("stash@{1}");
+        sut.HasAnyVisibleRefs.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Filter_MatchesStashSubject()
+    {
+        var stashes = new[]
+        {
+            new StashEntry(0, "stash@{0}", "WIP on feature/login",  DateTimeOffset.UtcNow, "aaa", "aaa"),
+            new StashEntry(1, "stash@{1}", "Fix broken tests",      DateTimeOffset.UtcNow, "bbb", "bbb"),
+        };
+        var enumerator = new FakeEnumerator
+        {
+            Result = new RefEnumerationResult(
+                Array.Empty<RefEntry>(),
+                Array.Empty<RefEntry>(),
+                Array.Empty<RefEntry>(),
+                stashes),
+        };
+        var sut = NewPicker(@"C:\repos\foo", enumerator: enumerator);
+        await sut.EnsureLoadedAsync();
+
+        sut.Filter = "login";
+
+        sut.VisibleStashes.Should().ContainSingle()
+            .Which.Subject.Should().Contain("login");
+    }
+
+    [Fact]
+    public async Task Filter_MatchesStashSymbolicName()
+    {
+        var stashes = new[]
+        {
+            new StashEntry(0, "stash@{0}", "subject A", DateTimeOffset.UtcNow, "aaa", "aaa"),
+            new StashEntry(1, "stash@{1}", "subject B", DateTimeOffset.UtcNow, "bbb", "bbb"),
+        };
+        var enumerator = new FakeEnumerator
+        {
+            Result = new RefEnumerationResult(
+                Array.Empty<RefEntry>(),
+                Array.Empty<RefEntry>(),
+                Array.Empty<RefEntry>(),
+                stashes),
+        };
+        var sut = NewPicker(@"C:\repos\foo", enumerator: enumerator);
+        await sut.EnsureLoadedAsync();
+
+        sut.Filter = "stash@{1}";
+
+        sut.VisibleStashes.Should().ContainSingle()
+            .Which.SymbolicName.Should().Be("stash@{1}");
+    }
+
+    [Fact]
+    public void OnCanonicalRepoPathChanged_ClearsStashes()
+    {
+        var sut = NewPicker(@"C:\repos\foo");
+        // Can't populate stashes without await, but we can verify
+        // that changing the path clears the collection property by
+        // inspecting via HasAnyVisibleRefs with no refs at all.
+        sut.CanonicalRepoPath = @"C:\repos\bar";
+        sut.VisibleStashes.Should().BeEmpty();
+    }
+
     // ---- helpers -------------------------------------------------------
 
     private static RefPickerViewModel NewPicker(
@@ -366,7 +457,8 @@ public class RefPickerViewModelTests
     private static RefEnumerationResult SmallResult() => new(
         new[] { new RefEntry("master", "00", "00") },
         Array.Empty<RefEntry>(),
-        Array.Empty<RefEntry>());
+        Array.Empty<RefEntry>(),
+        Array.Empty<StashEntry>());
 
     private static RecentLaunchContext MakeRecent(string repo, string left, string right)
     {

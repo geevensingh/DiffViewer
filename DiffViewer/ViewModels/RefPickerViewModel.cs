@@ -81,6 +81,7 @@ public sealed partial class RefPickerViewModel : ObservableObject
         _localBranches = Array.Empty<RefEntry>();
         _remoteBranches = Array.Empty<RefEntry>();
         _tags = Array.Empty<RefEntry>();
+        _stashes = Array.Empty<StashEntry>();
         _recentRefs = Array.Empty<string>();
         MergeBaseError = null;
         ComputedMergeBase = null;
@@ -104,6 +105,7 @@ public sealed partial class RefPickerViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(VisibleLocalBranches))]
     [NotifyPropertyChangedFor(nameof(VisibleRemoteBranches))]
     [NotifyPropertyChangedFor(nameof(VisibleTags))]
+    [NotifyPropertyChangedFor(nameof(VisibleStashes))]
     [NotifyPropertyChangedFor(nameof(HasAnyVisibleRefs))]
     private string _filter = string.Empty;
 
@@ -111,6 +113,7 @@ public sealed partial class RefPickerViewModel : ObservableObject
     private IReadOnlyList<RefEntry> _localBranches = Array.Empty<RefEntry>();
     private IReadOnlyList<RefEntry> _remoteBranches = Array.Empty<RefEntry>();
     private IReadOnlyList<RefEntry> _tags = Array.Empty<RefEntry>();
+    private IReadOnlyList<StashEntry> _stashes = Array.Empty<StashEntry>();
 
     /// <summary>Read-only view of the recent refs after applying <see cref="Filter"/>.</summary>
     public IReadOnlyList<string> VisibleRecentRefs =>
@@ -125,6 +128,14 @@ public sealed partial class RefPickerViewModel : ObservableObject
     public IReadOnlyList<RefEntry> VisibleTags =>
         _tags.Where(e => MatchesFilter(e.FriendlyName)).ToArray();
 
+    /// <summary>Read-only view of the stash entries after applying <see cref="Filter"/>.
+    /// Matches against <see cref="StashEntry.SymbolicName"/>, <see cref="StashEntry.Subject"/>,
+    /// and <see cref="StashEntry.TipShortSha"/>.</summary>
+    public IReadOnlyList<StashEntry> VisibleStashes =>
+        _stashes.Where(s => MatchesFilter(s.SymbolicName)
+                          || MatchesFilter(s.Subject)
+                          || MatchesFilter(s.TipShortSha)).ToArray();
+
     /// <summary>True iff at least one of the four visible groups has
     /// at least one entry. Drives the "no refs found" empty-state
     /// hint in the popup.</summary>
@@ -132,7 +143,8 @@ public sealed partial class RefPickerViewModel : ObservableObject
         VisibleRecentRefs.Count > 0
         || VisibleLocalBranches.Count > 0
         || VisibleRemoteBranches.Count > 0
-        || VisibleTags.Count > 0;
+        || VisibleTags.Count > 0
+        || VisibleStashes.Count > 0;
 
     /// <summary>The user's inputs for the inline merge-base composer.</summary>
     [ObservableProperty]
@@ -181,6 +193,7 @@ public sealed partial class RefPickerViewModel : ObservableObject
             _localBranches = result.LocalBranches;
             _remoteBranches = result.RemoteBranches;
             _tags = result.Tags;
+            _stashes = result.Stashes;
             _recentRefs = ComputeRecentRefs(repoPath!);
             IsLoaded = true;
             RaiseFilteredCollectionsChanged();
@@ -277,6 +290,7 @@ public sealed partial class RefPickerViewModel : ObservableObject
         OnPropertyChanged(nameof(VisibleLocalBranches));
         OnPropertyChanged(nameof(VisibleRemoteBranches));
         OnPropertyChanged(nameof(VisibleTags));
+        OnPropertyChanged(nameof(VisibleStashes));
         OnPropertyChanged(nameof(HasAnyVisibleRefs));
     }
 }

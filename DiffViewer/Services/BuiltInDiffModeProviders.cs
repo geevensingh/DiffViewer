@@ -58,3 +58,16 @@ public sealed class GitHubPullRequestProvider : IDiffModeProvider
     public NewDiffFormViewModelBase CreateForm(FormDependencies deps)
         => new GitHubPullRequestFormViewModel(deps);
 }
+
+/// <summary>"View stash" provider — inline stash list. One-click setup
+/// for viewing a stash's changes against its parent (HEAD at stash
+/// time), matching <c>git stash show</c> semantics.</summary>
+public sealed class ViewStashProvider : IDiffModeProvider
+{
+    public const string ProviderId = "local.view-stash";
+    public string Id => ProviderId;
+    public string DisplayName => "View stash";
+
+    public NewDiffFormViewModelBase CreateForm(FormDependencies deps)
+        => new ViewStashFormViewModel(deps);
+}

@@ -84,7 +84,7 @@
                                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}"/>
                 </Grid>
 
-                <!-- Four ref groups (Recent / Local / Remote / Tags). -->
+                <!-- Five ref groups (Recent / Local / Remote / Tags / Stashes). -->
                 <ScrollViewer Grid.Row="1"
                               VerticalScrollBarVisibility="Auto"
                               Margin="0,8,0,0">
@@ -159,6 +159,31 @@
                                                 Click="OnRefRowClicked">
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="{Binding FriendlyName}"/>
+                                                <TextBlock Text="{Binding TipShortSha, StringFormat=' · {0}'}"
+                                                           Foreground="#888" Margin="6,0,0,0"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- Stashes. -->
+                        <StackPanel Visibility="{Binding VisibleStashes.Count, Converter={StaticResource CountToVisibility}}">
+                            <TextBlock Text="Stashes" Style="{StaticResource GroupHeader}"/>
+                            <ItemsControl ItemsSource="{Binding VisibleStashes}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource RefRow}"
+                                                Command="{Binding DataContext.PickRefCommand, ElementName=Self}"
+                                                CommandParameter="{Binding SymbolicName}"
+                                                Click="OnRefRowClicked">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding SymbolicName}"
+                                                           FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding Subject}"
+                                                           Foreground="#555" Margin="8,0,0,0"
+                                                           MaxWidth="200" TextTrimming="CharacterEllipsis"/>
                                                 <TextBlock Text="{Binding TipShortSha, StringFormat=' · {0}'}"
                                                            Foreground="#888" Margin="6,0,0,0"/>
                                             </StackPanel>

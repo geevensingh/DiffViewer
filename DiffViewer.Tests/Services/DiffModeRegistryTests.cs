@@ -7,22 +7,24 @@ namespace DiffViewer.Tests.Services;
 public class DiffModeRegistryTests
 {
     [Fact]
-    public void BuildDefault_ListsFiveProvidersInExpectedOrder()
+    public void BuildDefault_ListsSixProvidersInExpectedOrder()
     {
         // Order is part of the contract — it's what the dialog's
         // left-rail ListBox renders top-to-bottom. "Working tree vs
         // HEAD" leads as the cheapest interaction; the local
-        // comparison family stays grouped; "Branch vs merge-base"
-        // (the dominant PR-style workflow) lives alongside the
-        // local family above the cross-network GitHub-PR mode.
+        // comparison family stays grouped (including "View stash");
+        // "Branch vs merge-base" (the dominant PR-style workflow)
+        // lives alongside the local family above the cross-network
+        // GitHub-PR mode.
         var registry = DiffModeRegistry.BuildDefault();
 
-        registry.Providers.Should().HaveCount(5);
+        registry.Providers.Should().HaveCount(6);
         registry.Providers[0].Id.Should().Be(WorkingTreeVsHeadProvider.ProviderId);
         registry.Providers[1].Id.Should().Be(WorkingTreeVsCommitProvider.ProviderId);
         registry.Providers[2].Id.Should().Be(CommitVsCommitProvider.ProviderId);
         registry.Providers[3].Id.Should().Be(BranchVsMergeBaseProvider.ProviderId);
-        registry.Providers[4].Id.Should().Be(GitHubPullRequestProvider.ProviderId);
+        registry.Providers[4].Id.Should().Be(ViewStashProvider.ProviderId);
+        registry.Providers[5].Id.Should().Be(GitHubPullRequestProvider.ProviderId);
     }
 
     [Fact]

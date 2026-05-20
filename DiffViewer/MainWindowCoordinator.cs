@@ -554,6 +554,14 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     {
         try
         {
+            // Stash refs (stash@{N}, stash@{N}^1) are reflog aliases
+            // that rebind on every `git stash push`, so caching them as
+            // a "recent" creates stale pointers. Skip recording.
+            if (IsStashRef(parsed.Left) || IsStashRef(parsed.Right))
+            {
+                return;
+            }
+
             var identity = ContextIdentityFactory.Create(parsed.RepoPath, parsed.Left, parsed.Right);
             await _services.RecentContextsService.RecordLaunchAsync(
                 identity, parsed.Left, parsed.Right, review, ct).ConfigureAwait(true);
@@ -563,6 +571,19 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
             // Recording is best-effort: a launch should not be failed
             // because we couldn't update recents.json.
         }
+    }
+
+    /// <summary>
+    /// True when the side looks like a stash reflog alias
+    /// (<c>stash@{N}</c> or <c>stash@{N}^1</c>). Used to suppress
+    /// recents recording for stash comparisons (stash aliases are
+    /// transient and rebind on every <c>git stash push</c>).
+    /// </summary>
+    internal static bool IsStashRef(DiffSide side)
+    {
+        if (side is not DiffSide.CommitIsh commitIsh) return false;
+        var reference = commitIsh.Reference;
+        return reference.StartsWith("stash@{", StringComparison.Ordinal);
     }
 
     /// <summary>

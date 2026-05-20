@@ -145,6 +145,19 @@ internal sealed class TempRepo : IDisposable
         repo.Refs.Add(name, target, allowOverwrite: true);
     }
 
+    /// <summary>Create a stash from the current working-tree state.
+    /// Requires at least one commit on HEAD and at least one dirty
+    /// tracked file. Returns the stash's working-tree <see cref="Commit"/>
+    /// (the commit <c>stash@{0}</c> resolves to).</summary>
+    public Commit Stash(string? message = null)
+    {
+        using var repo = new Repository(_tempPath);
+        var stash = repo.Stashes.Add(
+            _author,
+            message ?? $"WIP stash at {DateTimeOffset.UtcNow:O}");
+        return stash.WorkTree;
+    }
+
     public void Dispose()
     {
         try

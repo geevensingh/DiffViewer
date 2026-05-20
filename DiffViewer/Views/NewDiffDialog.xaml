@@ -13,6 +13,7 @@
         ShowInTaskbar="False"
         ResizeMode="NoResize">
     <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style TargetType="TextBlock" x:Key="FieldLabel">
             <Setter Property="Margin" Value="0,8,0,2"/>
             <Setter Property="Foreground" Value="#444"/>
@@ -242,6 +243,67 @@
                 <TextBlock Text="Example: https://github.com/owner/repo/pull/123"
                            Margin="0,4,0,0" Foreground="#888" TextWrapping="Wrap"/>
                 <TextBlock Text="DiffViewer will look up the merge-base and head SHAs from GitHub. If the repo isn't cloned locally yet, you'll be prompted to browse to it or clone it."
+                           Margin="0,10,0,0" Foreground="#888" TextWrapping="Wrap"/>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- "View stash" form. -->
+        <DataTemplate DataType="{x:Type vm:ViewStashFormViewModel}">
+            <StackPanel>
+                <TextBlock Text="Repository path"
+                           Style="{StaticResource FieldLabel}"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0"
+                             Style="{StaticResource FieldInput}"
+                             Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"
+                             Tag="RepoPath"/>
+                    <Button Grid.Column="1"
+                            Content="Browse…"
+                            Margin="6,0,0,0" Padding="10,4"
+                            Click="OnBrowseRepoPathClick"
+                            Tag="RepoPath"/>
+                </Grid>
+
+                <TextBlock Text="Select a stash"
+                           Style="{StaticResource FieldLabel}"/>
+
+                <!-- Loading indicator. -->
+                <TextBlock Text="Loading stashes…"
+                           Foreground="#888" FontStyle="Italic"
+                           Margin="0,4,0,0"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
+
+                <!-- Inline stash list (no popup — this mode is
+                     dedicated to picking a stash, so the list
+                     IS the primary control). -->
+                <ListBox ItemsSource="{Binding Stashes}"
+                         SelectedItem="{Binding SelectedStash, Mode=TwoWay}"
+                         MaxHeight="180"
+                         Margin="0,4,0,0"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="2,3">
+                                <TextBlock Text="{Binding SymbolicName}"
+                                           FontFamily="Consolas"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding Subject}"
+                                           Foreground="#555" Margin="8,0,0,0"
+                                           MaxWidth="260" TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding TipShortSha, StringFormat=' · {0}'}"
+                                           Foreground="#888" Margin="6,0,0,0"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <TextBlock Text="Compares the stash's working-tree snapshot against HEAD at the time the stash was created."
                            Margin="0,10,0,0" Foreground="#888" TextWrapping="Wrap"/>
             </StackPanel>
         </DataTemplate>

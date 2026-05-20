@@ -61,7 +61,9 @@ public sealed class LibGit2GitRefEnumerator : IGitRefEnumerator
                 .OrderBy(e => e.FriendlyName, StringComparer.Ordinal)
                 .ToArray();
 
-            return new RefEnumerationResult(local, remote, tags);
+            var stashes = EnumerateStashes(repo);
+
+            return new RefEnumerationResult(local, remote, tags, stashes);
         }
         catch (LibGit2SharpException)
         {
@@ -154,4 +156,45 @@ public sealed class LibGit2GitRefEnumerator : IGitRefEnumerator
     }
 
     private static string ShortSha(string sha) => sha.Length >= 7 ? sha[..7] : sha;
+
+    /// <summary>
+    /// Read <see cref="Repository.Stashes"/> into a list of
+    /// <see cref="StashEntry"/> records, ordered most-recent-first
+    /// (matching <c>git stash list</c>). Returns an empty list on any
+    /// failure — stash enumeration should never break the picker.
+    /// </summary>
+    private static IReadOnlyList<StashEntry> EnumerateStashes(Repository repo)
+    {
+        try
+        {
+            var stashCollection = repo.Stashes;
+            if (stashCollection is null) return Array.Empty<StashEntry>();
+
+            var result = new List<StashEntry>();
+            int index = 0;
+            foreach (var stash in stashCollection)
+            {
+                var workTreeCommit = stash.WorkTree;
+                if (workTreeCommit is null)
+                {
+                    index++;
+                    continue;
+                }
+
+                result.Add(new StashEntry(
+                    Index: index,
+                    SymbolicName: $"stash@{{{index}}}",
+                    Subject: stash.Message ?? string.Empty,
+                    CreatedAt: workTreeCommit.Author?.When ?? default,
+                    TipSha: workTreeCommit.Sha,
+                    TipShortSha: ShortSha(workTreeCommit.Sha)));
+                index++;
+            }
+            return result;
+        }
+        catch
+        {
+            return Array.Empty<StashEntry>();
+        }
+    }
 }

@@ -280,4 +280,82 @@ public class GitRefEnumeratorTests
         // VM just treats the result as a string seed.
         sut.TryGetDefaultRemoteBranch(t.Path).Should().Be("origin/develop");
     }
+
+    // ---- Stash enumeration tests ----
+
+    [Fact]
+    public void Enumerate_NoStashes_ReturnsEmptyStashList()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "a\n");
+        t.InitialCommit("c1");
+
+        var sut = new LibGit2GitRefEnumerator();
+        var result = sut.Enumerate(t.Path);
+
+        result.Stashes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Enumerate_ReturnsStashesMostRecentFirst()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "initial\n");
+        t.InitialCommit("c1");
+
+        // Create three stashes, each with a different subject.
+        t.WriteFile("a.txt", "change-1\n");
+        t.Stash("first stash");
+        t.WriteFile("a.txt", "change-2\n");
+        t.Stash("second stash");
+        t.WriteFile("a.txt", "change-3\n");
+        t.Stash("third stash");
+
+        var sut = new LibGit2GitRefEnumerator();
+        var result = sut.Enumerate(t.Path);
+
+        result.Stashes.Should().HaveCount(3);
+
+        // Most-recent-first: index 0 = newest, matching git stash list.
+        result.Stashes[0].Index.Should().Be(0);
+        result.Stashes[0].SymbolicName.Should().Be("stash@{0}");
+        result.Stashes[0].Subject.Should().Contain("third stash");
+
+        result.Stashes[1].Index.Should().Be(1);
+        result.Stashes[1].SymbolicName.Should().Be("stash@{1}");
+        result.Stashes[1].Subject.Should().Contain("second stash");
+
+        result.Stashes[2].Index.Should().Be(2);
+        result.Stashes[2].SymbolicName.Should().Be("stash@{2}");
+        result.Stashes[2].Subject.Should().Contain("first stash");
+    }
+
+    [Fact]
+    public void Enumerate_StashEntriesHaveValidShaAndTimestamp()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "initial\n");
+        t.InitialCommit("c1");
+        t.WriteFile("a.txt", "changed\n");
+        var stashCommit = t.Stash("test stash");
+
+        var sut = new LibGit2GitRefEnumerator();
+        var result = sut.Enumerate(t.Path);
+
+        var entry = result.Stashes.Should().ContainSingle().Which;
+        entry.TipSha.Should().Be(stashCommit.Sha);
+        entry.TipShortSha.Should().Be(stashCommit.Sha[..7]);
+        entry.CreatedAt.Should().NotBe(default);
+    }
+
+    [Fact]
+    public void Enumerate_OnFreshRepoWithNoCommits_ReturnsEmptyStashList()
+    {
+        using var t = new TempRepo();
+        var sut = new LibGit2GitRefEnumerator();
+
+        var result = sut.Enumerate(t.Path);
+
+        result.Stashes.Should().BeEmpty();
+    }
 }

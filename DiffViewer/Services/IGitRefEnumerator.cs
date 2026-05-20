@@ -74,19 +74,50 @@ public interface IGitRefEnumerator
 public sealed record RefEntry(string FriendlyName, string TipSha, string TipShortSha);
 
 /// <summary>
+/// One stash entry returned by <see cref="IGitRefEnumerator.Enumerate"/>.
+/// Carries the positional index, the human-readable symbolic name
+/// (<c>stash@{0}</c>), the stash message, creation timestamp, and the
+/// tip SHA of the stash's working-tree commit (the commit
+/// <c>stash@{N}</c> resolves to).
+/// </summary>
+/// <param name="Index">Zero-based positional index in the stash reflog
+/// (0 = most recent, matching <c>git stash list</c> order).</param>
+/// <param name="SymbolicName">The symbolic reflog name, e.g.
+/// <c>stash@{0}</c>. This is the string written back into a commit-ish
+/// textbox when the user picks a stash.</param>
+/// <param name="Subject">The stash message — either the auto-generated
+/// <c>"WIP on branch: …"</c> text or a user-supplied
+/// <c>git stash push -m "…"</c> message.</param>
+/// <param name="CreatedAt">Timestamp of the stash operation, read from
+/// the stash commit's author date.</param>
+/// <param name="TipSha">Full SHA of the stash's working-tree commit.</param>
+/// <param name="TipShortSha">7-char abbreviated SHA for display.</param>
+public sealed record StashEntry(
+    int Index,
+    string SymbolicName,
+    string Subject,
+    DateTimeOffset CreatedAt,
+    string TipSha,
+    string TipShortSha);
+
+/// <summary>
 /// Result of <see cref="IGitRefEnumerator.Enumerate"/>. Empty lists
-/// (never <c>null</c>) when the repo couldn't be opened. Lists are
-/// pre-sorted alphabetically by <see cref="RefEntry.FriendlyName"/>
-/// using the ordinal comparer for deterministic UI ordering.
+/// (never <c>null</c>) when the repo couldn't be opened. Branch and
+/// tag lists are pre-sorted alphabetically by
+/// <see cref="RefEntry.FriendlyName"/> using the ordinal comparer for
+/// deterministic UI ordering. <see cref="Stashes"/> is ordered
+/// most-recent-first (index 0 = newest), matching <c>git stash list</c>.
 /// </summary>
 public sealed record RefEnumerationResult(
     IReadOnlyList<RefEntry> LocalBranches,
     IReadOnlyList<RefEntry> RemoteBranches,
-    IReadOnlyList<RefEntry> Tags)
+    IReadOnlyList<RefEntry> Tags,
+    IReadOnlyList<StashEntry> Stashes)
 {
     /// <summary>Singleton empty result returned on any failure.</summary>
     public static RefEnumerationResult Empty { get; } = new(
         System.Array.Empty<RefEntry>(),
         System.Array.Empty<RefEntry>(),
-        System.Array.Empty<RefEntry>());
+        System.Array.Empty<RefEntry>(),
+        System.Array.Empty<StashEntry>());
 }
