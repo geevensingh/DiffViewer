@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-20
+
 ### Added
 
 - **Stash support in the ref-picker popup.** The "Pick…" popup next
