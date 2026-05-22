@@ -37,6 +37,15 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
     /// <summary>The enumerated stash list. Bound to the inline ListBox.</summary>
     public IReadOnlyList<StashEntry> Stashes => _stashes;
 
+    /// <summary>True when enumeration completed and at least one stash exists.
+    /// Drives ListBox visibility so an empty box doesn't render as a
+    /// confusing thin line.</summary>
+    public bool HasStashes => IsLoaded && _stashes.Count > 0;
+
+    /// <summary>True when enumeration completed and zero stashes exist.
+    /// Drives the inline empty-state hint.</summary>
+    public bool IsEmpty => IsLoaded && _stashes.Count == 0;
+
     /// <summary>The stash the user clicked. <c>null</c> when nothing is
     /// selected yet.</summary>
     [ObservableProperty]
@@ -64,6 +73,8 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
         SelectedStash = null;
         IsLoaded = false;
         OnPropertyChanged(nameof(Stashes));
+        OnPropertyChanged(nameof(HasStashes));
+        OnPropertyChanged(nameof(IsEmpty));
         Validate();
 
         if (!string.IsNullOrWhiteSpace(value))
@@ -131,6 +142,8 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
             _stashes = result.Stashes;
             IsLoaded = true;
             OnPropertyChanged(nameof(Stashes));
+            OnPropertyChanged(nameof(HasStashes));
+            OnPropertyChanged(nameof(IsEmpty));
             Validate();
         }
         finally

@@ -277,14 +277,25 @@
                            Margin="0,4,0,0"
                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"/>
 
-                <!-- Inline stash list (no popup — this mode is
-                     dedicated to picking a stash, so the list
-                     IS the primary control). -->
+                <!-- Empty-state hint (visible after enumeration when zero stashes). -->
+                <Border Margin="0,4,0,0" Padding="12,16"
+                        Background="#F9F9F9" BorderBrush="#DDD" BorderThickness="1"
+                        CornerRadius="3"
+                        Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="No stashes in this repository."
+                               Foreground="#999" FontStyle="Italic"
+                               HorizontalAlignment="Center"
+                               TextWrapping="Wrap"/>
+                </Border>
+
+                <!-- Inline stash list — hidden when empty so an
+                     empty bordered box doesn't confuse. -->
                 <ListBox ItemsSource="{Binding Stashes}"
                          SelectedItem="{Binding SelectedStash, Mode=TwoWay}"
                          MaxHeight="180"
                          Margin="0,4,0,0"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         Visibility="{Binding HasStashes, Converter={StaticResource BoolToVis}}">
                     <ListBox.ItemTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal" Margin="2,3">
