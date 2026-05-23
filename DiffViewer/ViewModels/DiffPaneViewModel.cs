@@ -159,18 +159,53 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// <summary>Standard binary-file placeholder text. Exposed for the image-diff dispatch path so it can fall back to the same string when an image-shaped blob fails to decode.</summary>
     internal const string BinaryPlaceholderMessage = "Binary file - diff not displayed.";
 
-    public bool ShowImageDiff => ImageDiff is not null;
+    public bool ShowImageDiff => ImageDiff is not null && !ShowSvgTextView;
     /// <summary>
     /// Gates the toolbar's image-mode radio group: visible only when an
     /// image is dispatched <em>and</em> both sides have a bitmap. For
     /// add-only / delete-only changes the modes don't apply (nothing
     /// to compose against), so the group is hidden.
     /// </summary>
-    public bool ShowImageDiffModeControls => ImageDiff is not null && ImageDiff.HasBothImages;
-    public bool ShowPlaceholder => PlaceholderMessage is not null && ImageDiff is null;
-    public bool ShowEditors => PlaceholderMessage is null && ImageDiff is null;
+    public bool ShowImageDiffModeControls => ShowImageDiff && ImageDiff is not null && ImageDiff.HasBothImages;
+    public bool ShowPlaceholder => PlaceholderMessage is not null && !ShowImageDiff;
+    public bool ShowEditors => !ShowImageDiff && !ShowPlaceholder;
     public bool ShowSideBySide => ShowEditors && IsSideBySide;
     public bool ShowInline => ShowEditors && !IsSideBySide;
+
+    /// <summary>
+    /// <c>true</c> when the currently-loaded entry is an SVG (by
+    /// extension). Set during <see cref="LoadAsync"/>. Drives the SVG-
+    /// specific "Rendered" toolbar toggle and its dependent visibility
+    /// gates. Independent of <see cref="RenderSvgImage"/>: a true value
+    /// means "this is an SVG file"; the user's choice of text vs image
+    /// view is a separate flag.
+    /// </summary>
+    [ObservableProperty] private bool _isSvgFile;
+
+    /// <summary>
+    /// <c>true</c> when the current SVG entry rasterised successfully on
+    /// at least one side. Used to hide the "Rendered" toolbar toggle on
+    /// malformed SVGs so we don't offer a button that does nothing —
+    /// in that case the diff pane stays on the XML text view and the
+    /// toggle is invisible. Has no meaning when
+    /// <see cref="IsSvgFile"/> is <c>false</c>.
+    /// </summary>
+    [ObservableProperty] private bool _isSvgRenderable;
+
+    /// <summary>
+    /// Whether the SVG-only "Rendered" toolbar toggle should be shown.
+    /// True only when the current file is an SVG <em>and</em> at least
+    /// one side rasterised successfully.
+    /// </summary>
+    public bool ShowSvgRenderedToggle => IsSvgFile && IsSvgRenderable;
+
+    /// <summary>
+    /// Whether the diff pane should show the SVG XML text view (the
+    /// editors) instead of the rasterised image. True when the file is
+    /// an SVG and either the user toggled "Rendered" off or no side
+    /// rasterised successfully (the auto-fallback).
+    /// </summary>
+    public bool ShowSvgTextView => IsSvgFile && (!RenderSvgImage || !IsSvgRenderable);
 
     // ---- Toolbar toggle state ----
 
@@ -178,6 +213,17 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _showIntraLineDiff = true;
     [ObservableProperty] private bool _isSideBySide = true;
     [ObservableProperty] private bool _showVisibleWhitespace;
+
+    /// <summary>
+    /// SVG-only "Rendered" toolbar toggle (issue #15). When <c>true</c>,
+    /// SVG entries show the rasterised image diff; when <c>false</c>,
+    /// the XML text diff. Defaults to <c>true</c> — the rasterised
+    /// diff is the headline feature, and the user opted in by opening
+    /// an SVG. Persisted across launches via
+    /// <see cref="AppSettings.RenderSvgImage"/>. Has no effect for
+    /// non-SVG files; the toolbar hides the toggle in that case.
+    /// </summary>
+    [ObservableProperty] private bool _renderSvgImage = true;
 
     /// <summary>
     /// Which sides of the side-by-side view are visible. Driven by the
@@ -260,6 +306,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 ShowVisibleWhitespace = s.ShowVisibleWhitespace;
                 LiveUpdates = s.LiveUpdates;
                 SideVisibility = s.SideVisibility;
+                RenderSvgImage = s.RenderSvgImage;
                 FontSize = s.FontSize;
                 FontFamily = s.FontFamily;
                 TabWidth = s.TabWidth;
@@ -315,6 +362,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 WordWrap = e.Current.WordWrap;
             if (e.Previous.SideVisibility != e.Current.SideVisibility)
                 SideVisibility = e.Current.SideVisibility;
+            if (e.Previous.RenderSvgImage != e.Current.RenderSvgImage)
+                RenderSvgImage = e.Current.RenderSvgImage;
         }
         finally { _suppressSettingsWrite = false; }
     }
@@ -431,6 +480,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             // doesn't false-positive skip against a stale prior load.
             _lastLoadSignature = null;
             ImageDiff = null;
+            IsSvgFile = false;
+            IsSvgRenderable = false;
             ApplyResult(string.Empty, string.Empty, "Select a file to see its diff.",
                 Array.Empty<DiffHunk>(), DiffHighlightMap.Empty, InlineDiffBuilder.Empty, false);
             LastLoadTask = Task.CompletedTask;
@@ -440,6 +491,23 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         var change = entry.Change;
         var shapePlaceholder = ResolvePlaceholderForShape(change);
         var largePlaceholder = ResolveLargeFilePlaceholder(change);
+
+        // SVG dispatch (issue #15): SVG is text (no NUL bytes) so the
+        // existing binary-image path below never catches it. It also
+        // has two natural views — the XML text diff and a rasterised
+        // image diff — so we load *both* eagerly and let the toolbar's
+        // "Rendered" toggle flip visibility without re-reading bytes.
+        // The branch sits ahead of the binary-shape check intentionally.
+        bool isSvg = _imageDecoder is not null
+            && shapePlaceholder is null
+            && largePlaceholder is null
+            && ImageFormatDetector.DetectByExtension(change.Path) == ImageFormat.Svg;
+        if (isSvg)
+        {
+            return BeginSvgDispatch(entry, change, _imageDecoder!, ct);
+        }
+        IsSvgFile = false;
+        IsSvgRenderable = false;
 
         // Image-diff dispatch: when the only reason we'd show a
         // placeholder is "binary file" (no LFS / sparse / large-file /
@@ -616,6 +684,115 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
+    /// Async dispatch path for SVG entries (issue #15). Reads both
+    /// sides once and runs the text-diff load <em>and</em> the
+    /// image-decode in parallel, so flipping the toolbar's "Rendered"
+    /// toggle later doesn't re-read bytes or re-rasterise.
+    ///
+    /// <para>On success: <see cref="IsSvgFile"/> is <c>true</c>,
+    /// <see cref="ImageDiff"/> is populated if at least one side
+    /// rasterised, <see cref="IsSvgRenderable"/> reflects that, and
+    /// the editors are seeded with the XML text. Visibility is then
+    /// driven by <see cref="RenderSvgImage"/> through the cascading
+    /// <see cref="ShowImageDiff"/> / <see cref="ShowEditors"/> /
+    /// <see cref="ShowSvgRenderedToggle"/> properties.</para>
+    ///
+    /// <para>On rasterise failure (both sides errored or both sides
+    /// empty): the user falls back to the XML text diff and the
+    /// toggle hides — see the plan's "fallback when SVG parse fails"
+    /// decision. SVG is text, so the XML view is the natural
+    /// fallback (not the binary placeholder).</para>
+    /// </summary>
+    private Task BeginSvgDispatch(
+        FileEntryViewModel entry,
+        FileChange change,
+        IImageDecoder decoder,
+        CancellationToken ct)
+    {
+        IsLoading = true;
+        var options = BuildDiffOptions();
+        bool intraLine = ShowIntraLineDiff;
+
+        var task = Task.Run(() =>
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // Read each side once. Failures degrade to BlobContent.Empty
+            // so a single broken side doesn't sink the whole dispatch.
+            BlobContent leftBlob;
+            try { leftBlob = _repository.ReadSide(change, ChangeSide.Left); }
+            catch { leftBlob = BlobContent.Empty; }
+
+            BlobContent rightBlob;
+            try { rightBlob = _repository.ReadSide(change, ChangeSide.Right); }
+            catch { rightBlob = BlobContent.Empty; }
+
+            string leftText = leftBlob.Text ?? string.Empty;
+            string rightText = rightBlob.Text ?? string.Empty;
+
+            var diffArtifacts = ComputeDiffArtifacts(leftText, rightText, options, intraLine);
+
+            ImageDecodeResult? leftResult = leftBlob.Bytes.Length > 0
+                ? decoder.Decode(leftBlob.Bytes, change.Path)
+                : null;
+            ImageDecodeResult? rightResult = rightBlob.Bytes.Length > 0
+                ? decoder.Decode(rightBlob.Bytes, change.Path)
+                : null;
+
+            return (leftText, rightText, diffArtifacts, leftResult, rightResult);
+        }, ct).ContinueWith(t =>
+        {
+            if (ct.IsCancellationRequested) return;
+
+            if (t.IsFaulted)
+            {
+                _lastLoadSignature = null;
+                ImageDiff = null;
+                IsSvgFile = true;
+                IsSvgRenderable = false;
+                ApplyResult(
+                    string.Empty,
+                    string.Empty,
+                    $"Failed to read blobs: {t.Exception?.GetBaseException().Message}",
+                    Array.Empty<DiffHunk>(),
+                    DiffHighlightMap.Empty,
+                    InlineDiffBuilder.Empty,
+                    false);
+                IsLoading = false;
+                return;
+            }
+
+            var (leftText, rightText, diffArtifacts, leftResult, rightResult) = t.Result;
+            var (hunks, map, inline, ws) = diffArtifacts;
+
+            _cachedLeftText = leftText;
+            _cachedRightText = rightText;
+
+            bool canRender = leftResult?.Image is not null || rightResult?.Image is not null;
+            // Order matters: set IsSvgFile *before* ImageDiff so the
+            // ShowImageDiff / ShowSvgTextView gates have the right
+            // IsSvgFile reading when they recompute. Same for
+            // IsSvgRenderable.
+            IsSvgFile = true;
+            IsSvgRenderable = canRender;
+            ImageDiff = canRender
+                ? new ImageDiffViewModel(
+                    leftResult?.Image, rightResult?.Image,
+                    leftResult?.Metadata, rightResult?.Metadata)
+                : null;
+
+            _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
+            ApplyResult(leftText, rightText, null, hunks, map, inline, ws);
+
+            IsLoading = false;
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+
+        LastLoadTask = task;
+        return task;
+    }
+
+    /// <summary>
+    /// Like <see cref="LoadAsync"/> but also auto-jumps to the first hunk
     /// once the load completes. The jump is chained inside
     /// <see cref="LastLoadTask"/> itself, so any caller that awaits
     /// <see cref="LastLoadTask"/> also waits for the auto-jump to land. If
@@ -839,6 +1016,46 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowInline));
     }
 
+    partial void OnIsSvgFileChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowSvgRenderedToggle));
+        OnPropertyChanged(nameof(ShowSvgTextView));
+        // ShowSvgTextView feeds ShowImageDiff / ShowEditors / etc.
+        OnPropertyChanged(nameof(ShowImageDiff));
+        OnPropertyChanged(nameof(ShowImageDiffModeControls));
+        OnPropertyChanged(nameof(ShowPlaceholder));
+        OnPropertyChanged(nameof(ShowEditors));
+        OnPropertyChanged(nameof(ShowSideBySide));
+        OnPropertyChanged(nameof(ShowInline));
+    }
+
+    partial void OnIsSvgRenderableChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowSvgRenderedToggle));
+        OnPropertyChanged(nameof(ShowSvgTextView));
+        OnPropertyChanged(nameof(ShowImageDiff));
+        OnPropertyChanged(nameof(ShowImageDiffModeControls));
+        OnPropertyChanged(nameof(ShowPlaceholder));
+        OnPropertyChanged(nameof(ShowEditors));
+        OnPropertyChanged(nameof(ShowSideBySide));
+        OnPropertyChanged(nameof(ShowInline));
+    }
+
+    partial void OnRenderSvgImageChanged(bool value)
+    {
+        // ShowSvgTextView depends on RenderSvgImage and cascades into
+        // every other visibility gate. Notify the lot so the bindings
+        // flip atomically without an intermediate visual state.
+        OnPropertyChanged(nameof(ShowSvgTextView));
+        OnPropertyChanged(nameof(ShowImageDiff));
+        OnPropertyChanged(nameof(ShowImageDiffModeControls));
+        OnPropertyChanged(nameof(ShowPlaceholder));
+        OnPropertyChanged(nameof(ShowEditors));
+        OnPropertyChanged(nameof(ShowSideBySide));
+        OnPropertyChanged(nameof(ShowInline));
+        PersistToolbarToSettings();
+    }
+
     partial void OnIsSideBySideChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowSideBySide));
@@ -896,6 +1113,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             SideVisibility = SideVisibility,
             ShowLineNumbers = ShowLineNumbers,
             WordWrap = WordWrap,
+            RenderSvgImage = RenderSvgImage,
         });
     }
 

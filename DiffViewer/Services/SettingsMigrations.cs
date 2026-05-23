@@ -31,6 +31,12 @@ namespace DiffViewer.Services;
 /// repo-roots list, a <c>null</c> default clone destination, and an
 /// empty mappings dictionary, which exactly reflects the "no PR-review
 /// configuration yet" state.</para>
+///
+/// <para>v6 introduced <c>renderSvgImage</c> for the SVG-only
+/// "Rendered" toolbar toggle (issue #15). The migration is a no-op
+/// because the field has a sensible default (<c>true</c>) — pre-v6
+/// files deserialize with the rasterised view enabled, matching the
+/// headline behaviour the feature was designed to deliver.</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -51,6 +57,7 @@ internal static class SettingsMigrations
                 2 => MigrateV2ToV3, // adds suppressRevertFileConfirmation (bool, default false)
                 3 => MigrateV3ToV4, // adds fileListPaneWidthPixels (double, default 320)
                 4 => MigrateV4ToV5, // adds repoRoots, defaultCloneDestination, repoUrlMappings (all defaultable)
+                5 => MigrateV5ToV6, // adds renderSvgImage (bool, default true)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -100,4 +107,13 @@ internal static class SettingsMigrations
     /// list, a <c>null</c> destination, and an empty mappings dictionary.
     /// </summary>
     private static JsonObject MigrateV4ToV5(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v6 adds <c>renderSvgImage</c> (SVG-only "Rendered" toolbar
+    /// toggle). A missing field means "rasterised view" (the headline
+    /// behaviour of issue #15) so the migration is a no-op; the
+    /// deserializer fills in
+    /// <see cref="AppSettings.RenderSvgImage"/> as <c>true</c>.
+    /// </summary>
+    private static JsonObject MigrateV5ToV6(JsonObject obj) => obj;
 }

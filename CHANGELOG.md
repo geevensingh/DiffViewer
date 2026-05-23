@@ -12,6 +12,22 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **SVG diff rendering (text + rasterized image).** `.svg` files now
+  decode through a new SharpVectors-backed image decoder and render in
+  the existing image-diff pane alongside PNG / JPEG / GIF / BMP / ICO,
+  using the same Side-by-side / Swipe / Onion-skin modes. A new
+  **Rendered** toolbar toggle (visible only on `.svg` files where at
+  least one side rasterised successfully) flips between the rendered
+  bitmap view and the underlying XML text diff; the preference is
+  persisted per `AppSettings.RenderSvgImage`. SVGs that fail to parse
+  fall back to the XML text view rather than the binary-blob
+  placeholder, and the Rendered toggle auto-hides so users aren't
+  offered a button that does nothing. Rasterisation runs at up to a
+  1024 px max-dimension (aspect preserved), letting WPF down-sample
+  for fit-to-frame without re-rasterising on resize. Resolves #15.
+
 ## [1.3.0] - 2026-05-20
 
 ### Added

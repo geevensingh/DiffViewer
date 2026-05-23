@@ -16,7 +16,7 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -49,6 +49,17 @@ public sealed record AppSettings
     public bool ShowVisibleWhitespace { get; init; }
     public bool LiveUpdates { get; init; } = true;
     public DiffSideVisibility SideVisibility { get; init; } = DiffSideVisibility.Both;
+
+    /// <summary>
+    /// SVG-only "Rendered" toolbar toggle (added in v6). When
+    /// <c>true</c>, the diff pane shows the rasterised image-diff view
+    /// of the SVG; when <c>false</c>, the XML text diff. Defaults to
+    /// <c>true</c> because rasterised diffing is the headline feature
+    /// of issue #15 — the user opted in by opening an SVG. Has no
+    /// effect for non-SVG files; the toolbar hides the toggle in that
+    /// case. Persisted across launches like the other toolbar toggles.
+    /// </summary>
+    public bool RenderSvgImage { get; init; } = true;
 
     // ---- File-list display mode ----
     public FileListDisplayMode DisplayMode { get; init; } = FileListDisplayMode.RepoRelative;

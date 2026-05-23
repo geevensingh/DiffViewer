@@ -6,10 +6,12 @@ namespace DiffViewer.Models;
 /// dispatch in <see cref="DiffViewer.ViewModels.DiffPaneViewModel"/> and
 /// the animated-GIF hint in the image-diff header strip.
 ///
-/// <para>SVG is intentionally absent — it is XML and never trips the
-/// binary detector, and routing it through the image pane requires a
-/// new WPF SVG renderer plus a UX decision about text-vs-image dispatch.
-/// Tracked separately as issue #15.</para>
+/// <para><b>SVG</b> is the one entry that isn't a binary container — it
+/// is XML, and never trips <see cref="DiffViewer.Utility.BinaryDetector"/>.
+/// The dispatch logic in <see cref="DiffViewer.ViewModels.DiffPaneViewModel"/>
+/// special-cases it so the user can flip between an XML text diff and a
+/// SharpVectors-rasterised image diff via the <c>Rendered</c> toolbar
+/// toggle (issue #15).</para>
 /// </summary>
 public enum ImageFormat
 {
@@ -19,4 +21,5 @@ public enum ImageFormat
     Gif,
     Bmp,
     Ico,
+    Svg,
 }

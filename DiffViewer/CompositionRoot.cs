@@ -137,7 +137,11 @@ internal static class CompositionRoot
 
         // Stateless decoder; constructed per-context for simplicity.
         // Could be hoisted to AppServices later if it ever grows state.
-        var imageDecoder = new WpfImageDecoder();
+        // The composite routes SVG bytes through SharpVectors and every
+        // other raster format through the WPF stack — see issue #15.
+        var imageDecoder = new CompositeImageDecoder(
+            rasterDecoder: new WpfImageDecoder(),
+            svgDecoder: new SharpVectorsSvgDecoder());
 
         var vm = new MainViewModel(
             repo, parsed.Left, parsed.Right,

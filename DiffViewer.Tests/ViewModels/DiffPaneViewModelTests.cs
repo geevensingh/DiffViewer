@@ -234,6 +234,228 @@ public class DiffPaneViewModelTests
     }
 
     [Fact]
+    public async Task LoadAsync_SvgFile_BothSidesDecode_RendersImageAndKeepsText()
+    {
+        // Issue #15: SVG eagerly loads both the XML text diff AND the
+        // rasterised image. With RenderSvgImage = true (default), the
+        // image view is shown; the toggle is visible so the user can
+        // flip to text without re-reading bytes.
+        const string leftSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"/>";
+        const string rightSvg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"8\"/>";
+        var repo = new FakeRepository
+        {
+            LeftText = leftSvg,
+            RightText = rightSvg,
+        };
+        var decoder = new FakeImageDecoder();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var bitmap = MakeFrozenBitmap(4, 4);
+            decoder.DecodeFunc = (_, _) => new ImageDecodeResult(
+                bitmap,
+                new ImageMetadata(4, 4, 99, ImageFormat.Svg, 1),
+                null);
+
+            var vm = new DiffPaneViewModel(repo, new DiffService(), imageDecoder: decoder);
+            await vm.LoadAsync(Entry(ModifiedTextFile("icon.svg")));
+            await vm.LastLoadTask;
+
+            vm.IsSvgFile.Should().BeTrue();
+            vm.IsSvgRenderable.Should().BeTrue();
+            vm.RenderSvgImage.Should().BeTrue("default toolbar state is image-mode");
+            vm.ShowSvgRenderedToggle.Should().BeTrue("toggle is visible when SVG renders successfully");
+            vm.ShowSvgTextView.Should().BeFalse("rendered-mode hides the text diff");
+            vm.ImageDiff.Should().NotBeNull();
+            vm.ShowImageDiff.Should().BeTrue();
+            vm.ShowEditors.Should().BeFalse();
+            vm.LeftDocument.Text.Should().Be(leftSvg,
+                "text diff is loaded even in rendered-mode so the toggle flip is instant");
+            decoder.CallCount.Should().Be(2, "both sides have SVG bytes");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_SvgFile_ToggleRenderSvgImage_FlipsViewWithoutRereadingBytes()
+    {
+        // After the eager dual-load, flipping RenderSvgImage off must
+        // switch to the XML text view without going back to the
+        // repository for bytes or re-invoking the decoder.
+        var repo = new FakeRepository
+        {
+            LeftText = "<svg width=\"4\" height=\"4\"/>",
+            RightText = "<svg width=\"8\" height=\"8\"/>",
+        };
+        var decoder = new FakeImageDecoder();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var bitmap = MakeFrozenBitmap(2, 2);
+            decoder.DecodeFunc = (_, _) => new ImageDecodeResult(
+                bitmap,
+                new ImageMetadata(2, 2, 6, ImageFormat.Svg, 1),
+                null);
+
+            var vm = new DiffPaneViewModel(repo, new DiffService(), imageDecoder: decoder);
+            await vm.LoadAsync(Entry(ModifiedTextFile("icon.svg")));
+            await vm.LastLoadTask;
+
+            int decodeCountAfterLoad = decoder.CallCount;
+            int readCountAfterLoad = repo.ReadCount;
+
+            vm.RenderSvgImage = false;
+
+            vm.ShowSvgTextView.Should().BeTrue();
+            vm.ShowImageDiff.Should().BeFalse("toggling off must hide the image view");
+            vm.ShowEditors.Should().BeTrue();
+            vm.ImageDiff.Should().NotBeNull("rasterised bitmap is retained for instant flip-back");
+            decoder.CallCount.Should().Be(decodeCountAfterLoad,
+                "flipping the toggle must not redecode");
+            repo.ReadCount.Should().Be(readCountAfterLoad,
+                "flipping the toggle must not re-read bytes");
+
+            vm.RenderSvgImage = true;
+
+            vm.ShowSvgTextView.Should().BeFalse();
+            vm.ShowImageDiff.Should().BeTrue();
+            decoder.CallCount.Should().Be(decodeCountAfterLoad);
+            repo.ReadCount.Should().Be(readCountAfterLoad);
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_SvgFile_DecoderFails_FallsBackToXmlTextAndHidesToggle()
+    {
+        // When neither side rasterises, the natural fallback is the
+        // XML text view (SVG is text). The toggle hides so the user
+        // isn't offered a button that does nothing.
+        var repo = new FakeRepository
+        {
+            LeftText = "<svg/>",
+            RightText = "<svg width=\"8\"/>",
+        };
+        var decoder = new FakeImageDecoder
+        {
+            DecodeFunc = (_, _) => new ImageDecodeResult(null, null, "fake parse error"),
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService(), imageDecoder: decoder);
+            await vm.LoadAsync(Entry(ModifiedTextFile("broken.svg")));
+            await vm.LastLoadTask;
+
+            vm.IsSvgFile.Should().BeTrue();
+            vm.IsSvgRenderable.Should().BeFalse("neither side decoded");
+            vm.ShowSvgRenderedToggle.Should().BeFalse("hide the toggle when there's nothing to render");
+            vm.ShowSvgTextView.Should().BeTrue("XML text is the natural fallback for an SVG that failed to rasterise");
+            vm.ShowImageDiff.Should().BeFalse();
+            vm.ShowPlaceholder.Should().BeFalse("SVG is text, not binary; no binary placeholder");
+            vm.ShowEditors.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_SvgFile_NoDecoder_FallsBackToXmlTextSilently()
+    {
+        // CompositionRoot always wires a decoder, but tests / future
+        // refactors might not. Without a decoder the SVG dispatch
+        // gate fails on `_imageDecoder is not null` and we land on the
+        // plain text-diff path. IsSvgFile stays false in that case.
+        var repo = new FakeRepository
+        {
+            LeftText = "<svg width=\"4\" height=\"4\"/>",
+            RightText = "<svg width=\"8\" height=\"8\"/>",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("icon.svg")));
+            await vm.LastLoadTask;
+
+            vm.IsSvgFile.Should().BeFalse("SVG branch only fires when a decoder is wired");
+            vm.ShowSvgRenderedToggle.Should().BeFalse();
+            vm.ShowSvgTextView.Should().BeFalse();
+            vm.ShowEditors.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_TextFileAfterSvg_ResetsSvgFlags()
+    {
+        // Navigating from an SVG to a plain text file must clear
+        // IsSvgFile and IsSvgRenderable so the toolbar toggle and
+        // visibility cascade don't leak across loads.
+        var repo = new FakeRepository
+        {
+            LeftText = "<svg width=\"4\"/>",
+            RightText = "<svg width=\"8\"/>",
+        };
+        var decoder = new FakeImageDecoder();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var bitmap = MakeFrozenBitmap(2, 2);
+            decoder.DecodeFunc = (_, _) => new ImageDecodeResult(
+                bitmap,
+                new ImageMetadata(2, 2, 6, ImageFormat.Svg, 1),
+                null);
+
+            var vm = new DiffPaneViewModel(repo, new DiffService(), imageDecoder: decoder);
+            await vm.LoadAsync(Entry(ModifiedTextFile("icon.svg")));
+            await vm.LastLoadTask;
+            vm.IsSvgFile.Should().BeTrue();
+
+            repo.LeftText = "alpha\n";
+            repo.RightText = "beta\n";
+            await vm.LoadAsync(Entry(ModifiedTextFile("notes.txt")));
+            await vm.LastLoadTask;
+
+            vm.IsSvgFile.Should().BeFalse();
+            vm.IsSvgRenderable.Should().BeFalse();
+            vm.ShowSvgRenderedToggle.Should().BeFalse();
+            vm.ShowSvgTextView.Should().BeFalse();
+            vm.ImageDiff.Should().BeNull();
+            vm.ShowEditors.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task RenderSvgImage_TogglePersistsToSettings()
+    {
+        // The toolbar Rendered toggle is a persisted setting, same
+        // pattern as IsSideBySide / IgnoreWhitespace. Flipping it on
+        // the view-model must write through to ISettingsService.
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { RenderSvgImage = true });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        vm.RenderSvgImage.Should().BeTrue("seeded from settings.RenderSvgImage");
+
+        vm.RenderSvgImage = false;
+        settings.Current.RenderSvgImage.Should().BeFalse();
+
+        vm.RenderSvgImage = true;
+        settings.Current.RenderSvgImage.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RenderSvgImage_ExternalSettingsChange_PushesIntoViewModel()
+    {
+        // Settings changes from outside the toolbar (e.g. another
+        // window or a fresh load) must propagate back into the
+        // view-model so the toggle visibly tracks settings.
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { RenderSvgImage = true });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        settings.Save(settings.Current with { RenderSvgImage = false });
+
+        vm.RenderSvgImage.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task LoadAsync_LfsPointer_ShowsLfsPlaceholder()
     {
         var repo = new FakeRepository();

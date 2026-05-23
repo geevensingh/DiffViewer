@@ -445,10 +445,13 @@ public sealed class SettingsServiceTests : IDisposable
     [Fact]
     public void Load_V4File_MigratesToV5_PRReviewFieldsHydrateToDefaults()
     {
-        // v4 schema (current minus 1) had no PR-review fields. After
+        // v4 schema (current minus 2) had no PR-review fields. After
         // v4->v5 migration the three fields should hydrate to their
         // safe defaults (empty list / null / empty dict) and other
-        // fields should be preserved unchanged.
+        // fields should be preserved unchanged. The follow-up v5->v6
+        // migration then adds RenderSvgImage default; both run during
+        // a single load() chain so the assertions below cover the
+        // full v4->current outcome.
         var v4 = new JsonObject
         {
             ["schemaVersion"] = 4,
@@ -467,6 +470,32 @@ public sealed class SettingsServiceTests : IDisposable
         svc.Current.RepoRoots.Should().BeEmpty();
         svc.Current.DefaultCloneDestination.Should().BeNull();
         svc.Current.RepoUrlMappings.Should().BeEmpty();
+        svc.Current.RenderSvgImage.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Load_V5File_MigratesToV6_RenderSvgImageDefaultsToTrue()
+    {
+        // v5 schema (current minus 1) had no RenderSvgImage field.
+        // After v5->v6 migration the field should hydrate to its
+        // default (true) and other fields should be preserved.
+        // Issue #15.
+        var v5 = new JsonObject
+        {
+            ["schemaVersion"] = 5,
+            ["fontSize"] = 18,
+            ["tabWidth"] = 5,
+            ["isSideBySide"] = false,
+        };
+        File.WriteAllText(_settingsPath, v5.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
+        svc.Current.FontSize.Should().Be(18);
+        svc.Current.TabWidth.Should().Be(5);
+        svc.Current.IsSideBySide.Should().BeFalse();
+        svc.Current.RenderSvgImage.Should().BeTrue();
     }
 
     [Fact]

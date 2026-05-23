@@ -1,6 +1,7 @@
 using DiffViewer.Models;
 using DiffViewer.Utility;
 using FluentAssertions;
+using System.Linq;
 using Xunit;
 
 namespace DiffViewer.Tests.Utility;
@@ -114,6 +115,7 @@ public class ImageFormatDetectorTests
     [InlineData(".gif", ImageFormat.Gif)]
     [InlineData(".bmp", ImageFormat.Bmp)]
     [InlineData(".ico", ImageFormat.Ico)]
+    [InlineData(".svg", ImageFormat.Svg)]
     public void DetectByExtension_BareExtensionDotPrefix_Resolves(string path, ImageFormat expected)
         => ImageFormatDetector.DetectByExtension(path).Should().Be(expected);
 
@@ -122,12 +124,75 @@ public class ImageFormatDetectorTests
     [InlineData("")]
     [InlineData("no-extension")]
     [InlineData("trailing.dot.")]
-    [InlineData(".svg")]
     [InlineData(".webp")]
     [InlineData(".tiff")]
     [InlineData(".cur")]
     public void DetectByExtension_UnsupportedOrMissing_ReturnsNotAnImage(string? path)
         => ImageFormatDetector.DetectByExtension(path).Should().Be(ImageFormat.NotAnImage);
+
+    [Theory]
+    [InlineData("icon.svg")]
+    [InlineData("LOGO.SVG")]
+    [InlineData("nested\\path\\to\\drawing.svg")]
+    public void DetectByExtension_Svg_ResolvesByExtension(string path)
+        => ImageFormatDetector.DetectByExtension(path).Should().Be(ImageFormat.Svg);
+
+    [Fact]
+    public void Detect_SvgWithXmlProlog_ReturnsSvg()
+    {
+        // Real-world SVG: leading XML declaration + namespace.
+        var bytes = System.Text.Encoding.UTF8.GetBytes(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\"/>\n");
+        ImageFormatDetector.Detect(bytes, "icon.svg").Should().Be(ImageFormat.Svg);
+    }
+
+    [Fact]
+    public void Detect_SvgNoExtension_ContentSniffMatches()
+    {
+        // No path hint - the content sniff must still catch it.
+        var bytes = System.Text.Encoding.UTF8.GetBytes(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"/>");
+        ImageFormatDetector.Detect(bytes, null).Should().Be(ImageFormat.Svg);
+    }
+
+    [Fact]
+    public void Detect_SvgWithUtf8Bom_ContentSniffMatches()
+    {
+        // UTF-8 BOM (EF BB BF) before the SVG content - must not defeat
+        // the sniff.
+        var preamble = new byte[] { 0xEF, 0xBB, 0xBF };
+        var body = System.Text.Encoding.UTF8.GetBytes("<svg/>");
+        var bytes = preamble.Concat(body).ToArray();
+        ImageFormatDetector.Detect(bytes, null).Should().Be(ImageFormat.Svg);
+    }
+
+    [Fact]
+    public void Detect_SvgWithLeadingWhitespace_ContentSniffMatches()
+    {
+        // Tab + newline + whitespace before the opening tag.
+        var bytes = System.Text.Encoding.UTF8.GetBytes("  \t\n<svg/>");
+        ImageFormatDetector.Detect(bytes, null).Should().Be(ImageFormat.Svg);
+    }
+
+    [Fact]
+    public void Detect_BinaryBytesWithSvgExtension_ContentBeatsExtension()
+    {
+        // A PNG-shaped blob labelled .svg should classify as Png. Magic
+        // bytes are authoritative — same rule as the other formats.
+        ImageFormatDetector.Detect(PngSignature, "trick.svg")
+            .Should().Be(ImageFormat.Png);
+    }
+
+    [Fact]
+    public void Detect_PlainTextWithSvgExtension_FallsBackToExtension()
+    {
+        // The file says .svg but the first 1 KiB has no <svg or SVG-NS
+        // marker. Extension-based dispatch still classifies it as Svg
+        // so the decoder gets a chance to reject it cleanly.
+        var bytes = System.Text.Encoding.UTF8.GetBytes("not really an svg\n");
+        ImageFormatDetector.Detect(bytes, "broken.svg").Should().Be(ImageFormat.Svg);
+    }
 
     [Fact]
     public void DetectByExtension_PathWithDirectories_ResolvesByTrailingExtension()
