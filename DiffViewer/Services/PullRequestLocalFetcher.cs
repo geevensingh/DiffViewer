@@ -1,11 +1,15 @@
+using System.ComponentModel;
+using System.IO;
 using LibGit2Sharp;
 
 namespace DiffViewer.Services;
 
 /// <summary>
-/// Production <see cref="IPullRequestLocalFetcher"/> wrapping LibGit2Sharp's
-/// fetch / lookup / merge-base APIs. Operates on the local clone path that
-/// the orchestrator resolved via <see cref="ILocalRepoLocator"/>.
+/// Production <see cref="IPullRequestLocalFetcher"/>. Uses <c>git.exe</c>
+/// (via <see cref="IProcessRunner"/>) for network fetches and LibGit2Sharp
+/// for local operations (ref resolution, commit lookup, merge-base).
+/// Operates on the local clone path that the orchestrator resolved via
+/// <see cref="ILocalRepoLocator"/>.
 /// </summary>
 /// <remarks>
 /// <para>The fetch shape is:
@@ -25,6 +29,12 @@ namespace DiffViewer.Services;
 /// </list>
 /// </para>
 ///
+/// <para>Network fetches use <c>git -C &lt;repoPath&gt; fetch &lt;url&gt;
+/// &lt;refspec&gt;</c> instead of LibGit2Sharp's in-process fetch, because
+/// LibGit2Sharp 0.31.0's bundled TLS stack (OpenSSL) fails to negotiate
+/// with some endpoints. System <c>git.exe</c> uses the OS-native TLS
+/// stack (Schannel on Windows) and is more robust.</para>
+///
 /// <para>Refs in <c>refs/diffviewer/pr/N/head</c> and
 /// <c>refs/diffviewer/base/&lt;branch&gt;</c> accumulate over time. v1
 /// leaves them in place; a "clean up DiffViewer refs" follow-up is
@@ -32,7 +42,14 @@ namespace DiffViewer.Services;
 /// </remarks>
 internal sealed class PullRequestLocalFetcher : IPullRequestLocalFetcher
 {
-    public Task<PullRequestFetchResult> FetchAsync(
+    private readonly IProcessRunner _processRunner;
+
+    public PullRequestLocalFetcher(IProcessRunner processRunner)
+    {
+        _processRunner = processRunner ?? throw new ArgumentNullException(nameof(processRunner));
+    }
+
+    public async Task<PullRequestFetchResult> FetchAsync(
         string repoPath,
         PullRequestInfo info,
         CancellationToken ct)
@@ -40,57 +57,39 @@ internal sealed class PullRequestLocalFetcher : IPullRequestLocalFetcher
         ArgumentException.ThrowIfNullOrWhiteSpace(repoPath);
         ArgumentNullException.ThrowIfNull(info);
 
-        return Task.Run(() => RunFetch(repoPath, info, ct), ct);
-    }
-
-    private static PullRequestFetchResult RunFetch(
-        string repoPath,
-        PullRequestInfo info,
-        CancellationToken ct)
-    {
-        using var repo = new Repository(repoPath);
-
         var prNumber = info.Number;
         var headRefName = $"refs/diffviewer/pr/{prNumber}/head";
-
-        var fetchOptions = new FetchOptions
-        {
-            OnTransferProgress = p => !ct.IsCancellationRequested,
-            OnUpdateTips = (refName, oldId, newId) => !ct.IsCancellationRequested,
-        };
-
         var prHeadRefspec = $"+refs/pull/{prNumber}/head:{headRefName}";
 
-        try
-        {
-            FetchFromUrl(repo, info.BaseRepoCloneUrl, new[] { prHeadRefspec },
-                fetchOptions);
-        }
-        catch (UserCancelledException)
-        {
-            throw new OperationCanceledException(ct);
-        }
-        catch (LibGit2SharpException ex)
-        {
-            throw new PullRequestFetchException(
-                $"Failed to fetch refs/pull/{prNumber}/head from " +
-                $"{info.BaseRepoCloneUrl}: {ex.Message}", ex);
-        }
+        await GitFetchAsync(repoPath, info.BaseRepoCloneUrl, prHeadRefspec,
+            $"refs/pull/{prNumber}/head", ct).ConfigureAwait(false);
 
-        ct.ThrowIfCancellationRequested();
+        // Ensure the base commit is present locally before reading
+        // refs + computing merge-base.
+        await EnsureBaseCommitAsync(repoPath, info, ct).ConfigureAwait(false);
+
+        // LibGit2Sharp local operations run on a background thread to
+        // keep the UI thread free (they hold the ODB lock and can block).
+        return await Task.Run(() =>
+        {
+            ct.ThrowIfCancellationRequested();
+            return ReadLocalState(repoPath, info, headRefName);
+        }, ct).ConfigureAwait(false);
+    }
+
+    private static PullRequestFetchResult ReadLocalState(
+        string repoPath,
+        PullRequestInfo info,
+        string headRefName)
+    {
+        using var repo = new Repository(repoPath);
 
         var prHeadRef = repo.Refs[headRefName];
         var headSha = prHeadRef?.ResolveToDirectReference()?.TargetIdentifier
             ?? throw new PullRequestFetchException(
-                $"refs/pull/{prNumber}/head was not advertised by " +
+                $"refs/pull/{info.Number}/head was not advertised by " +
                 $"{info.BaseRepoCloneUrl}. The PR may have been deleted or its head " +
                 "pruned. Try opening it on GitHub.");
-
-        // Ensure the base commit is present locally.
-        if (repo.Lookup<Commit>(info.BaseSha) is null)
-        {
-            FetchBaseCommit(repo, info, fetchOptions, ct);
-        }
 
         var baseCommit = repo.Lookup<Commit>(info.BaseSha)
             ?? throw new PullRequestFetchException(
@@ -107,45 +106,53 @@ internal sealed class PullRequestLocalFetcher : IPullRequestLocalFetcher
         return new PullRequestFetchResult(mergeBase.Sha, headSha);
     }
 
-    private static void FetchBaseCommit(
-        Repository repo,
+    /// <summary>
+    /// Ensures the base commit is present in the local clone, fetching it
+    /// from upstream if necessary. Tries the base branch first; falls back
+    /// to fetching the SHA directly.
+    /// </summary>
+    internal async Task EnsureBaseCommitAsync(
+        string repoPath,
         PullRequestInfo info,
-        FetchOptions fetchOptions,
         CancellationToken ct)
     {
+        bool basePresent;
+        using (var repo = new Repository(repoPath))
+        {
+            basePresent = repo.Lookup<Commit>(info.BaseSha) is not null;
+        }
+
+        if (basePresent)
+        {
+            return;
+        }
+
         // Try the branch refspec first (cheap, works in the common case).
         var branchRefspec = $"+refs/heads/{info.BaseRef}:refs/diffviewer/base/{info.BaseRef}";
         try
         {
-            FetchFromUrl(repo, info.BaseRepoCloneUrl, new[] { branchRefspec },
-                fetchOptions);
+            await GitFetchAsync(repoPath, info.BaseRepoCloneUrl, branchRefspec,
+                $"refs/heads/{info.BaseRef}", ct).ConfigureAwait(false);
+
+            using var repo = new Repository(repoPath);
             if (repo.Lookup<Commit>(info.BaseSha) is not null)
             {
                 return;
             }
         }
-        catch (UserCancelledException)
-        {
-            throw new OperationCanceledException(ct);
-        }
-        catch (LibGit2SharpException)
+        catch (PullRequestFetchException)
         {
             // Branch renamed or deleted upstream — fall through to the
             // by-SHA fetch.
         }
 
-        // Last resort: fetch the SHA directly. Server-side support is
-        // common but not universal; if it fails, surface a clear error.
+        // Last resort: fetch the SHA directly.
         try
         {
-            FetchFromUrl(repo, info.BaseRepoCloneUrl, new[] { $"+{info.BaseSha}" },
-                fetchOptions);
+            await GitFetchAsync(repoPath, info.BaseRepoCloneUrl, $"+{info.BaseSha}",
+                $"base commit {info.BaseSha}", ct).ConfigureAwait(false);
         }
-        catch (UserCancelledException)
-        {
-            throw new OperationCanceledException(ct);
-        }
-        catch (LibGit2SharpException ex)
+        catch (PullRequestFetchException ex)
         {
             throw new PullRequestFetchException(
                 $"Base commit {info.BaseSha} is not in the local clone and the " +
@@ -155,31 +162,49 @@ internal sealed class PullRequestLocalFetcher : IPullRequestLocalFetcher
     }
 
     /// <summary>
-    /// Anonymous-remote fetch helper. LibGit2Sharp 0.31.0's
-    /// <c>Commands.Fetch(repo, url, ...)</c> and <c>repo.Network.Fetch(url, ...)</c>
-    /// paths fail for URL forms that libgit2 rejects as a "remote name"
-    /// before falling back to anonymous-remote-create (e.g. <c>file://</c>
-    /// URLs throw <c>InvalidSpecificationException</c> instead of returning
-    /// not-found). The workaround is to add a transient remote with a
-    /// unique name, fetch from it, and remove it in a finally block — this
-    /// produces no net mutation of the user's remote configuration.
+    /// Runs <c>git -C &lt;repoPath&gt; fetch &lt;url&gt; &lt;refspec&gt;</c>.
+    /// Maps non-zero exit codes and missing-executable errors to
+    /// <see cref="PullRequestFetchException"/>.
     /// </summary>
-    private static void FetchFromUrl(
-        Repository repo,
+    /// <param name="repoPath">Path to the local clone.</param>
+    /// <param name="url">Remote URL to fetch from.</param>
+    /// <param name="refspec">Refspec (e.g. <c>+refs/pull/N/head:refs/diffviewer/pr/N/head</c>).</param>
+    /// <param name="humanLabel">Human-readable label for the ref being
+    /// fetched, used in error messages (e.g. <c>"refs/pull/42/head"</c>).</param>
+    /// <param name="ct">Cancellation token.</param>
+    private async Task GitFetchAsync(
+        string repoPath,
         string url,
-        IEnumerable<string> refspecs,
-        FetchOptions fetchOptions)
+        string refspec,
+        string humanLabel,
+        CancellationToken ct)
     {
-        var remoteName = "diffviewer-transient-" + Guid.NewGuid().ToString("N");
-        var remote = repo.Network.Remotes.Add(remoteName, url);
+        ProcessRunResult result;
         try
         {
-            Commands.Fetch(repo, remote.Name, refspecs, fetchOptions, logMessage: null);
+            result = await _processRunner.RunAsync(
+                "git",
+                ["-C", repoPath, "fetch", url, refspec],
+                ct).ConfigureAwait(false);
         }
-        finally
+        catch (OperationCanceledException)
         {
-            try { repo.Network.Remotes.Remove(remoteName); } catch { /* best-effort */ }
+            throw;
+        }
+        catch (Exception ex) when (ex is Win32Exception or FileNotFoundException)
+        {
+            throw new PullRequestFetchException(
+                "git is not installed or not on PATH. DiffViewer needs git " +
+                "to fetch pull request refs. Install Git for Windows from " +
+                "https://git-scm.com and ensure git.exe is on your PATH.", ex);
+        }
+
+        if (result.ExitCode != 0)
+        {
+            var stderr = result.Stderr.Trim();
+            throw new PullRequestFetchException(
+                $"Failed to fetch {humanLabel} from {url}: " +
+                (string.IsNullOrEmpty(stderr) ? $"git exited with code {result.ExitCode}" : stderr));
         }
     }
-
 }

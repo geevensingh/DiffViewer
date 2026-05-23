@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using DiffViewer.Services;
 using FluentAssertions;
@@ -141,7 +142,7 @@ public sealed class PullRequestLocalFetcherTests : IDisposable
         var prNumber = 42;
         using var fx = new FixtureHandle(CreateFixture(prNumber));
         var info = MakeInfo(fx.Inner, prNumber);
-        var fetcher = new PullRequestLocalFetcher();
+        var fetcher = new PullRequestLocalFetcher(new DefaultProcessRunner());
 
         var result = await fetcher.FetchAsync(fx.Inner.ClonePath, info, CancellationToken.None);
 
@@ -165,7 +166,7 @@ public sealed class PullRequestLocalFetcherTests : IDisposable
         // ignore it and re-read the real value from the local ref.
         var info = MakeInfo(fx.Inner, prNumber,
             headShaOverride: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
-        var fetcher = new PullRequestLocalFetcher();
+        var fetcher = new PullRequestLocalFetcher(new DefaultProcessRunner());
 
         var result = await fetcher.FetchAsync(fx.Inner.ClonePath, info, CancellationToken.None);
 
@@ -178,7 +179,7 @@ public sealed class PullRequestLocalFetcherTests : IDisposable
         var prNumber = 99;
         using var fx = new FixtureHandle(CreateFixture(prNumber, publishPrHead: false));
         var info = MakeInfo(fx.Inner, prNumber);
-        var fetcher = new PullRequestLocalFetcher();
+        var fetcher = new PullRequestLocalFetcher(new DefaultProcessRunner());
 
         var act = () => fetcher.FetchAsync(fx.Inner.ClonePath, info, CancellationToken.None);
 
@@ -192,7 +193,7 @@ public sealed class PullRequestLocalFetcherTests : IDisposable
         var prNumber = 7;
         using var fx = new FixtureHandle(CreateFixture(prNumber));
         var info = MakeInfo(fx.Inner, prNumber);
-        var fetcher = new PullRequestLocalFetcher();
+        var fetcher = new PullRequestLocalFetcher(new DefaultProcessRunner());
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
@@ -204,7 +205,7 @@ public sealed class PullRequestLocalFetcherTests : IDisposable
     [Fact]
     public async Task FetchAsync_NullRepoPath_Throws()
     {
-        var fetcher = new PullRequestLocalFetcher();
+        var fetcher = new PullRequestLocalFetcher(new DefaultProcessRunner());
         var info = new PullRequestInfo(
             1, "t", "open", false, "main", "b", "feat", "h",
             "https://example.com/r.git", "https://example.com/r.git");
@@ -217,7 +218,7 @@ public sealed class PullRequestLocalFetcherTests : IDisposable
     [Fact]
     public async Task FetchAsync_NullInfo_Throws()
     {
-        var fetcher = new PullRequestLocalFetcher();
+        var fetcher = new PullRequestLocalFetcher(new DefaultProcessRunner());
 
         var act = () => fetcher.FetchAsync("path", null!, CancellationToken.None);
 
@@ -251,6 +252,109 @@ public sealed class PullRequestLocalFetcherTests : IDisposable
                 }
                 catch { /* best-effort */ }
             }
+        }
+    }
+}
+
+/// <summary>
+/// Unit tests for <see cref="PullRequestLocalFetcher"/> error handling
+/// using a fake <see cref="IProcessRunner"/>. No disk I/O or git.exe.
+/// </summary>
+public sealed class PullRequestLocalFetcherErrorTests
+{
+    private static PullRequestInfo MakeDummyInfo() => new(
+        Number: 1, Title: "t", State: "open", Merged: false,
+        BaseRef: "main", BaseSha: "b", HeadRef: "feat", HeadSha: "h",
+        HeadRepoCloneUrl: "https://example.com/r.git",
+        BaseRepoCloneUrl: "https://example.com/r.git");
+
+    [Fact]
+    public async Task FetchAsync_GitNotOnPath_ThrowsWithHelpfulMessage()
+    {
+        var runner = new ThrowingProcessRunner(
+            new Win32Exception(2, "The system cannot find the file specified"));
+        var fetcher = new PullRequestLocalFetcher(runner);
+
+        var act = () => fetcher.FetchAsync("C:\\fake", MakeDummyInfo(), CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<PullRequestFetchException>();
+        exception.Which.Message.Should().Contain("git is not installed");
+        exception.Which.InnerException.Should().BeOfType<Win32Exception>();
+    }
+
+    [Fact]
+    public async Task FetchAsync_GitNotOnPath_FileNotFoundException_ThrowsWithHelpfulMessage()
+    {
+        var runner = new ThrowingProcessRunner(
+            new FileNotFoundException("git not found"));
+        var fetcher = new PullRequestLocalFetcher(runner);
+
+        var act = () => fetcher.FetchAsync("C:\\fake", MakeDummyInfo(), CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<PullRequestFetchException>();
+        exception.Which.Message.Should().Contain("git is not installed");
+        exception.Which.InnerException.Should().BeOfType<FileNotFoundException>();
+    }
+
+    [Fact]
+    public async Task FetchAsync_GitReturnsNonZero_ThrowsWithStderr()
+    {
+        var runner = new FixedProcessRunner(new ProcessRunResult(
+            128, "", "fatal: could not read from remote repository"));
+        var fetcher = new PullRequestLocalFetcher(runner);
+
+        var act = () => fetcher.FetchAsync("C:\\fake", MakeDummyInfo(), CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<PullRequestFetchException>();
+        exception.Which.Message.Should().Contain("could not read from remote repository");
+    }
+
+    [Fact]
+    public async Task FetchAsync_GitReturnsNonZero_EmptyStderr_ShowsExitCode()
+    {
+        var runner = new FixedProcessRunner(new ProcessRunResult(1, "", ""));
+        var fetcher = new PullRequestLocalFetcher(runner);
+
+        var act = () => fetcher.FetchAsync("C:\\fake", MakeDummyInfo(), CancellationToken.None);
+
+        var exception = await act.Should().ThrowAsync<PullRequestFetchException>();
+        exception.Which.Message.Should().Contain("git exited with code 1");
+    }
+
+    [Fact]
+    public async Task FetchAsync_Cancelled_ThrowsOperationCancelled()
+    {
+        var runner = new ThrowingProcessRunner(new OperationCanceledException());
+        var fetcher = new PullRequestLocalFetcher(runner);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var act = () => fetcher.FetchAsync("C:\\fake", MakeDummyInfo(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private sealed class ThrowingProcessRunner : IProcessRunner
+    {
+        private readonly Exception _exception;
+        public ThrowingProcessRunner(Exception exception) { _exception = exception; }
+
+        public Task<ProcessRunResult> RunAsync(
+            string fileName, IReadOnlyList<string> arguments, CancellationToken ct)
+        {
+            throw _exception;
+        }
+    }
+
+    private sealed class FixedProcessRunner : IProcessRunner
+    {
+        private readonly ProcessRunResult _result;
+        public FixedProcessRunner(ProcessRunResult result) { _result = result; }
+
+        public Task<ProcessRunResult> RunAsync(
+            string fileName, IReadOnlyList<string> arguments, CancellationToken ct)
+        {
+            return Task.FromResult(_result);
         }
     }
 }

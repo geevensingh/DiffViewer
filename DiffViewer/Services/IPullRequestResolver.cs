@@ -16,15 +16,17 @@ public interface IPullRequestMetadataResolver
 }
 
 /// <summary>
-/// Fetches the PR's head and base into the local clone via libgit2, then
-/// returns the SHAs the diff viewer should compare. Free-threaded;
-/// callers wrap in <see cref="Task.Run(Action)"/> to keep libgit2 work
-/// off the UI thread.
+/// Fetches the PR's head and base into the local clone, then returns the
+/// SHAs the diff viewer should compare. Network fetches use
+/// <c>git.exe</c> (system TLS); local operations (ref resolution,
+/// merge-base) use LibGit2Sharp in-process. Free-threaded; the
+/// implementation manages its own background work.
 /// </summary>
 /// <remarks>
-/// The fetcher uses LibGit2Sharp's anonymous-remote-URL fetch shape so
-/// it never mutates the user's remote configuration. It always fetches
-/// from <see cref="PullRequestInfo.BaseRepoCloneUrl"/> — for fork PRs,
+/// The fetcher uses <c>git -C &lt;path&gt; fetch &lt;url&gt;
+/// &lt;refspec&gt;</c> so it never mutates the user's remote
+/// configuration. It always fetches from
+/// <see cref="PullRequestInfo.BaseRepoCloneUrl"/> — for fork PRs,
 /// <c>refs/pull/N/head</c> is published on the base/upstream repo, not
 /// on the fork.
 /// </remarks>

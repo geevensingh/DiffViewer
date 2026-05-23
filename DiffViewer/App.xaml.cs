@@ -62,7 +62,7 @@ public partial class App : Application
         var repoInspector = new LibGit2RepoInspector();
         var localRepoLocator = new LocalRepoLocator(settingsService, repoInspector, recents);
         var metadataResolver = new PullRequestMetadataResolver(githubClient);
-        var fetcher = new PullRequestLocalFetcher();
+        var fetcher = new PullRequestLocalFetcher(processRunner);
         var prResolver = new PullRequestResolver(localRepoLocator, metadataResolver, fetcher);
         var cloner = new LibGit2GitHubCloner();
         // ownerLookup runs at dialog-show time so it picks up whichever
