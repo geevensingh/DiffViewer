@@ -12,6 +12,19 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Fixed
+
+- **UTF-16 / UTF-32 source files no longer show "Binary file - diff
+  not displayed."** The binary-detection heuristic — git's "any NUL
+  byte in the first 8 KiB" rule — used to fire on UTF-16-encoded text
+  files because every ASCII character is paired with a NUL high byte.
+  The detector now exempts buffers that start with a recognised text
+  BOM (UTF-8, UTF-16 LE/BE, UTF-32 LE/BE), and the same exemption is
+  applied to LibGit2Sharp's blob-side `IsBinary` check so committed
+  UTF-16 blobs decode correctly too. The downstream encoding
+  detector already handled all five BOM forms; only the binary
+  short-circuit needed teaching.
+
 ### Added
 
 - **SVG diff rendering (text + rasterized image).** `.svg` files now

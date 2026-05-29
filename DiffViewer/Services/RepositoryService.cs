@@ -664,9 +664,14 @@ public sealed class RepositoryService : IRepositoryService
             var span = buf.AsSpan(0, read);
 
             bool isLfs = LfsPointerDetector.IsLfsPointer(span);
-            // Honour blob.IsBinary (which reads .gitattributes 'binary' attribute), then
-            // fall back to the NUL-byte heuristic on the raw bytes.
-            bool isBinary = blob.IsBinary || BinaryDetector.IsBinary(span);
+            // A recognised text BOM (UTF-8 / UTF-16 / UTF-32) is a strong
+            // text signal — strong enough to override LibGit2Sharp's own
+            // NUL-byte heuristic, which otherwise mis-flags UTF-16 source
+            // files as binary. EncodingDetector handles all five BOM
+            // forms downstream. Honour blob.IsBinary (which also reads
+            // .gitattributes 'binary') only when no BOM is present.
+            bool isBinary = !BinaryDetector.HasTextBom(span)
+                && (blob.IsBinary || BinaryDetector.IsBinary(span));
             return (isBinary, isLfs);
         }
         catch (Exception) when (!IsCriticalException())

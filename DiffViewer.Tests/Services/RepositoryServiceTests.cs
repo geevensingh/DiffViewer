@@ -532,6 +532,42 @@ public class RepositoryServiceTests
     }
 
     [Fact]
+    public void ReadSide_Utf16LeWithBom_IsTreatedAsText()
+    {
+        // Regression: a UTF-16 LE source file (BOM FF FE, every other
+        // byte NUL for ASCII content) used to be mis-flagged as binary
+        // because both LibGit2Sharp's blob.IsBinary and our own
+        // NUL-byte heuristic fired on the inter-character NULs.
+        // The BOM exemption in BinaryDetector.HasTextBom now keeps the
+        // blob on the text path so EncodingDetector can decode it.
+        using var t = new TempRepo();
+        var leftBytes = System.Text.Encoding.Unicode.GetPreamble()
+            .Concat(System.Text.Encoding.Unicode.GetBytes("namespace Foo;"))
+            .ToArray();
+        var rightBytes = System.Text.Encoding.Unicode.GetPreamble()
+            .Concat(System.Text.Encoding.Unicode.GetBytes("namespace Bar;"))
+            .ToArray();
+
+        t.WriteBytes("Program.cs", leftBytes);
+        t.InitialCommit("c1");
+        t.WriteBytes("Program.cs", rightBytes);
+
+        using var svc = new RepositoryService(t.Path);
+        var changes = svc.EnumerateChanges(new DiffSide.CommitIsh("HEAD"), new DiffSide.WorkingTree());
+        var change = changes.Single(c => c.Path == "Program.cs" && c.Layer == WorkingTreeLayer.Unstaged);
+
+        change.IsBinary.Should().BeFalse();
+
+        var leftContent = svc.ReadSide(change, ChangeSide.Left);
+        leftContent.IsBinary.Should().BeFalse();
+        leftContent.Text.Should().Be("namespace Foo;");
+
+        var rightContent = svc.ReadSide(change, ChangeSide.Right);
+        rightContent.IsBinary.Should().BeFalse();
+        rightContent.Text.Should().Be("namespace Bar;");
+    }
+
+    [Fact]
     public void ReadSide_ReturnsLfsPointerFlag()
     {
         using var t = new TempRepo();
