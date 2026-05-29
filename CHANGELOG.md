@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-29
+
 ### Changed
 
 - **Lines with no intra-line spans now paint with the strong
