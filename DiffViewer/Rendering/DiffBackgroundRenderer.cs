@@ -33,6 +33,10 @@ public enum DiffSide
 /// its highlight dictionary from <see cref="LineHighlights"/> on every
 /// <see cref="Draw"/>, so updating the map plus calling
 /// <c>TextView.Redraw()</c> is enough to repaint.
+///
+/// <para>Brush selection is delegated to
+/// <see cref="LineBackgroundBrushSelector"/>; see its summary for the
+/// strong-vs-soft rule.</para>
 /// </summary>
 public sealed class DiffBackgroundRenderer : IBackgroundRenderer
 {
@@ -59,7 +63,7 @@ public sealed class DiffBackgroundRenderer : IBackgroundRenderer
             int docLine = visualLine.FirstDocumentLine.LineNumber;
             if (!LineHighlights.TryGetValue(docLine, out var highlight)) continue;
 
-            Brush brush = PickBrush(highlight.Kind);
+            Brush brush = LineBackgroundBrushSelector.Pick(_side, highlight.Kind, _scheme);
 
             // Paint the full line width so the tint extends to the right edge
             // even on short lines; matches GitHub / VS Code line-diff style.
@@ -75,13 +79,4 @@ public sealed class DiffBackgroundRenderer : IBackgroundRenderer
             }
         }
     }
-
-    private Brush PickBrush(DiffLineKind kind) => (_side, kind) switch
-    {
-        (DiffSide.Left, DiffLineKind.Deleted) => _scheme.RemovedLineBackground,
-        (DiffSide.Left, DiffLineKind.Modified) => _scheme.ModifiedLineBackground,
-        (DiffSide.Right, DiffLineKind.Inserted) => _scheme.AddedLineBackground,
-        (DiffSide.Right, DiffLineKind.Modified) => _scheme.ModifiedLineBackground,
-        _ => Brushes.Transparent,
-    };
 }

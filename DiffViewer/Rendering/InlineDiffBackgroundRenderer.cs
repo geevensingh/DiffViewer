@@ -11,6 +11,10 @@ namespace DiffViewer.Rendering;
 /// <see cref="Draw"/> and paints the appropriate brush for that kind.
 /// Hunk-header lines and blank separators are absent from the dictionary
 /// and rendered without a tint.
+///
+/// <para>Brush selection is delegated to
+/// <see cref="LineBackgroundBrushSelector"/> (with <see cref="DiffSide.Inline"/>);
+/// see its summary for the strong-vs-soft rule.</para>
 /// </summary>
 public sealed class InlineDiffBackgroundRenderer : IBackgroundRenderer
 {
@@ -35,13 +39,7 @@ public sealed class InlineDiffBackgroundRenderer : IBackgroundRenderer
             int docLine = visualLine.FirstDocumentLine.LineNumber;
             if (!LineHighlights.TryGetValue(docLine, out var highlight)) continue;
 
-            Brush brush = highlight.Kind switch
-            {
-                DiffLineKind.Inserted => _scheme.AddedLineBackground,
-                DiffLineKind.Deleted => _scheme.RemovedLineBackground,
-                DiffLineKind.Modified => _scheme.ModifiedLineBackground,
-                _ => Brushes.Transparent,
-            };
+            Brush brush = LineBackgroundBrushSelector.Pick(DiffSide.Inline, highlight.Kind, _scheme);
 
             foreach (var rect in BackgroundGeometryBuilder.GetRectsFromVisualSegment(
                 textView, visualLine, 0, int.MaxValue))

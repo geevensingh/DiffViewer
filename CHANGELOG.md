@@ -12,6 +12,22 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Changed
+
+- **Lines with no intra-line spans now paint with the strong
+  (intra-line) tint across the full row, not the soft line tint.**
+  Previously, pure inserts/deletes and paired-but-not-shown changes
+  (intra-line off, or paired lines the similarity policy demoted)
+  rendered with the same faint background as everything else in the
+  hunk — leaving the user with a subtle "something changed" signal
+  but no visual emphasis on the changed line itself. The new rule is
+  uniform: if there are no inner red/green spans, the whole row gets
+  the strong tint ("all of this is the change"); if there are spans,
+  the soft yellow ModifiedLineBackground stays as the base layer and
+  the colorizer overlays the strong spans on top. This applies in
+  side-by-side and inline modes, and matches the strong colors the
+  hunk overview bar already uses for its mini-map markers.
+
 ### Fixed
 
 - **Paired delete+insert lines no longer render as yellow "Modified"
