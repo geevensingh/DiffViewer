@@ -20,14 +20,20 @@ public enum DiffLineKind
     /// Line that exists on both sides with intra-line modifications.
     ///
     /// <para>Produced only by <see cref="Rendering.DiffHighlightMap.FromHunks"/>
-    /// for two lines that were paired positionally (via <c>min(D, I)</c>) AND
-    /// that the pairing-viability policy
-    /// (<c>DiffHighlightMap.IsPairingViable</c>) corroborated. When the
-    /// similarity policy rejects a positional pair,
-    /// <see cref="Rendering.DiffHighlightMap.FromHunks"/> demotes both sides
-    /// to unpaired <see cref="Deleted"/> / <see cref="Inserted"/> instead, so
-    /// the rendered red/green signal matches the algorithm's "these lines
-    /// aren't really paired" conclusion.</para>
+    /// when intra-line diff is enabled AND the pair clears the
+    /// pairing-viability policy (<c>DiffHighlightMap.IsPairingViable</c>).
+    /// Both conditions are required:</para>
+    /// <list type="bullet">
+    /// <item><description>Intra-line disabled ⇒ no pairing at all; every
+    /// change is <see cref="Deleted"/>+<see cref="Inserted"/>. Yellow without
+    /// inner red/green spans gives the user a "changed" signal with no
+    /// indication of <em>where</em>, so the renderer is never asked to
+    /// produce that state.</description></item>
+    /// <item><description>Intra-line enabled but pair non-viable ⇒
+    /// demoted to <see cref="Deleted"/>+<see cref="Inserted"/> for the same
+    /// reason — the spans would highlight essentially everything, which is
+    /// indistinguishable from a plain delete+insert.</description></item>
+    /// </list>
     ///
     /// <para><see cref="Services.IDiffService"/> never emits
     /// <see cref="Modified"/> on raw <see cref="DiffLine"/>s — every change

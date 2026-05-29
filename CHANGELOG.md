@@ -14,6 +14,17 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- **Paired delete+insert lines no longer render as yellow "Modified"
+  when intra-line diff is off.** The side-by-side renderer used to
+  treat any positionally-paired delete/insert as `Modified` (yellow
+  tint) regardless of the intra-line toggle. With intra-line off, that
+  yellow had no inner red/green spans to back it up — the user got a
+  "changed" signal with no indication of *where* the change was, which
+  is the opposite of what yellow is supposed to mean. Yellow is now
+  emitted only when intra-line is enabled *and* the pair clears the
+  viability policy (so the user can actually see the changed tokens
+  inside the line); otherwise both sides render as plain
+  Deleted/Inserted (red/green).
 - **UTF-16 / UTF-32 source files no longer show "Binary file - diff
   not displayed."** The binary-detection heuristic — git's "any NUL
   byte in the first 8 KiB" rule — used to fire on UTF-16-encoded text

@@ -30,15 +30,24 @@ public sealed class DiffHighlightMap
     }
 
     /// <summary>
-    /// Walk a hunk model and produce highlight maps for both sides. When
-    /// <paramref name="enableIntraLine"/> is true, blocks with both deletes
-    /// and inserts get word-level spans paired up <c>min(D, I)</c> lines at
-    /// a time. If the pairing-viability policy
-    /// (<see cref="IsPairingViable"/>) rejects a positional pair, both sides
-    /// are demoted to unpaired <see cref="DiffLineKind.Deleted"/> /
+    /// Walk a hunk model and produce highlight maps for both sides.
+    ///
+    /// <para>When <paramref name="enableIntraLine"/> is true, blocks with
+    /// both deletes and inserts get word-level spans paired up
+    /// <c>min(D, I)</c> lines at a time. If the pairing-viability policy
+    /// (<see cref="IsPairingViable"/>) rejects a positional pair, both
+    /// sides are demoted to unpaired <see cref="DiffLineKind.Deleted"/> /
     /// <see cref="DiffLineKind.Inserted"/> so the rendered signal matches
-    /// the algorithm's "these lines aren't really paired" conclusion. See
-    /// the canonical doc on <see cref="DiffLineKind.Modified"/>.
+    /// the algorithm's "these lines aren't really paired" conclusion.</para>
+    ///
+    /// <para>When <paramref name="enableIntraLine"/> is false, no pairing
+    /// happens at all — every delete becomes <see cref="DiffLineKind.Deleted"/>
+    /// and every insert becomes <see cref="DiffLineKind.Inserted"/>.
+    /// <see cref="DiffLineKind.Modified"/> (yellow) is never emitted on
+    /// the intra-line-off path because there would be no inner red/green
+    /// span to justify the yellow tint — the user would see a "changed"
+    /// signal with no indication of <em>where</em> the change is. See the
+    /// canonical doc on <see cref="DiffLineKind.Modified"/>.</para>
     /// </summary>
     public static DiffHighlightMap FromHunks(
         IReadOnlyList<DiffHunk> hunks,
@@ -73,7 +82,13 @@ public sealed class DiffHighlightMap
 
                 int deletedCount = deletedEnd - blockStart;
                 int insertedCount = insertedEnd - deletedEnd;
-                int paired = Math.Min(deletedCount, insertedCount);
+                // Intra-line off: never pair. Modified (yellow) requires a
+                // visible intra-line span to justify the tint; without
+                // spans, yellow gives the user no "where did it change"
+                // signal. Falling through to the spill loops below emits
+                // every delete as Deleted and every insert as Inserted
+                // (red/green), which is what the user can actually act on.
+                int paired = enableIntraLine ? Math.Min(deletedCount, insertedCount) : 0;
 
                 // Paired lines: try intra-line spans, demote pairs the
                 // similarity policy rejects to unpaired Deleted / Inserted.
