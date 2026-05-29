@@ -30,6 +30,25 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- **Inline-mode line-number gutter now shows source-file lines
+  instead of sequential inline-buffer row indices.** The inline
+  view interleaves rows from the old and new files into a single
+  buffer; AvalonEdit's built-in `ShowLineNumbers` margin numbered
+  those rows 1, 2, 3 ... — so a row that was actually line 15 of
+  the new file could display as 17 if two earlier rows were
+  deletions with no new-side counterpart. A new
+  `InlineLineNumberMargin` (backed by the pure-logic
+  `InlineLineNumberResolver`) reads the per-row
+  `(OldLine, NewLine)` mapping the inline builder already
+  produces and shows `NewLine ?? OldLine`: context and insertion
+  rows show their new-file line, pure-deletion rows show their
+  old-file line. The red/green row tint already distinguishes
+  which side a row came from, so paired delete+insert blocks can
+  legitimately show the same number on two adjacent rows — that
+  is intentional (each row is naming its own source position).
+  The `ShowLineNumbers` toggle still works; side-by-side mode is
+  untouched because its editors hold the raw file text and
+  AvalonEdit's built-in margin is already correct there.
 - **Faint horizontal stripes between adjacent same-coloured diff
   rows are gone.** The background renderers
   (<c>DiffBackgroundRenderer</c> and <c>InlineDiffBackgroundRenderer</c>)

@@ -34,6 +34,8 @@ public partial class DiffPaneView : UserControl
     private IntraLineColorizer? _rightIntra;
     private IntraLineColorizer? _inlineIntra;
     private InlineDiffBackgroundRenderer? _inlineBg;
+    private InlineLineNumberMargin? _inlineLineNumberMargin;
+    private System.Windows.UIElement? _inlineLineNumberSeparator;
     private DiffPaneViewModel? _vm;
 
     public DiffPaneView()
@@ -252,6 +254,52 @@ public partial class DiffPaneView : UserControl
     }
 
     /// <summary>
+    /// Add the inline editor's custom line-number margin (source-file
+    /// line numbers from <see cref="DiffPaneViewModel.InlineLineToSourceLines"/>
+    /// instead of sequential row indices) plus a dotted separator
+    /// matching AvalonEdit's built-in <c>ShowLineNumbers</c> styling.
+    /// Idempotent; safe to call repeatedly.
+    /// </summary>
+    private void InstallInlineLineNumberMargin()
+    {
+        if (_inlineLineNumberMargin is not null) return;
+        _inlineLineNumberMargin = new InlineLineNumberMargin();
+        _inlineLineNumberSeparator = ICSharpCode.AvalonEdit.Editing.DottedLineMargin.Create();
+        InlineEditor.TextArea.LeftMargins.Insert(0, _inlineLineNumberMargin);
+        InlineEditor.TextArea.LeftMargins.Insert(1, _inlineLineNumberSeparator);
+        ApplyInlineSourceLines();
+    }
+
+    private void RemoveInlineLineNumberMargin()
+    {
+        if (_inlineLineNumberMargin is not null)
+        {
+            InlineEditor.TextArea.LeftMargins.Remove(_inlineLineNumberMargin);
+            _inlineLineNumberMargin = null;
+        }
+        if (_inlineLineNumberSeparator is not null)
+        {
+            InlineEditor.TextArea.LeftMargins.Remove(_inlineLineNumberSeparator);
+            _inlineLineNumberSeparator = null;
+        }
+    }
+
+    private void ApplyInlineSourceLines()
+    {
+        if (_inlineLineNumberMargin is null || _vm is null) return;
+        _inlineLineNumberMargin.SourceLines = _vm.InlineLineToSourceLines;
+    }
+
+    private void ApplyInlineLineNumberVisibility()
+    {
+        if (_vm is null) return;
+        if (_vm.ShowLineNumbers)
+            InstallInlineLineNumberMargin();
+        else
+            RemoveInlineLineNumberMargin();
+    }
+
+    /// <summary>
     /// Tear down all renderers and rebuild them with <paramref name="scheme"/>.
     /// Used when the user picks a new color-scheme preset in the Settings
     /// dialog - <see cref="DiffPaneViewModel.ColorSchemeChanged"/> fires and
@@ -289,6 +337,7 @@ public partial class DiffPaneView : UserControl
         RemoveColorizer(RightEditor, ref _rightIntra);
         RemoveRenderer(InlineEditor, ref _inlineBg);
         RemoveColorizer(InlineEditor, ref _inlineIntra);
+        RemoveInlineLineNumberMargin();
     }
 
     private static void RemoveRenderer<T>(TextEditor editor, ref T? renderer)
@@ -328,6 +377,7 @@ public partial class DiffPaneView : UserControl
         ApplyHighlightMap();
         ApplyVisibleWhitespace();
         ApplyTabWidth();
+        ApplyInlineLineNumberVisibility();
     }
 
     private void DetachFromViewModel()
@@ -375,6 +425,10 @@ public partial class DiffPaneView : UserControl
             // bar's viewport indicator doesn't lag a frame behind.
             UpdateViewport();
         }
+        else if (e.PropertyName == nameof(DiffPaneViewModel.ShowLineNumbers))
+        {
+            ApplyInlineLineNumberVisibility();
+        }
     }
 
     /// <summary>
@@ -416,6 +470,7 @@ public partial class DiffPaneView : UserControl
         if (_rightIntra is not null) _rightIntra.LineHighlights = map.RightLines;
         if (_inlineBg is not null) _inlineBg.LineHighlights = _vm.InlineLineHighlights;
         if (_inlineIntra is not null) _inlineIntra.LineHighlights = _vm.InlineLineHighlights;
+        ApplyInlineSourceLines();
 
         ApplySyntaxHighlighting();
 
