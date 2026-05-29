@@ -30,6 +30,38 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- **Inline mode now shows intra-line red/green spans on paired
+  delete/insert lines instead of swallowing them under a strong
+  full-row tint.** When intra-line diff was enabled and a
+  delete+insert pair produced inner spans, the inline view kept the
+  per-line kind as `Deleted`/`Inserted`. Combined with the
+  "strong-when-no-spans" row rule, that painted the entire row in
+  the strong red/green tint *and* drew the matching strong-tint
+  spans on top — making the spans invisible against the same color.
+  The inline builder now reuses the highlight map's verdict
+  verbatim, so paired lines with spans render as yellow `Modified`
+  rows with the strong red/green spans showing through, exactly
+  like side-by-side mode. The same fix also handles the asymmetric
+  case where the map paired a line but produced no spans on this
+  side (e.g. a pure-insertion intra-line change): the row now stays
+  yellow `Modified` instead of falling back to a misleading strong
+  red/green tint.
+- **Inline mode + Both view now hides the redundant all-yellow
+  half of an asymmetric paired change.** With intra-line diff on,
+  it is common for a delete/insert pair to produce real spans on
+  only one side (e.g. `Dictionary<int,int> map = new()` →
+  `var map = new Dictionary<int,int>()` shows the insertion-side
+  change but has nothing to highlight on the deletion side). The
+  inline + Both view used to emit both rows — the partner with the
+  spans, *and* a fully-yellow row right next to it that said
+  "something changed here" without naming what. Those all-yellow
+  rows are now suppressed when their partner carries the actual
+  spans, since the partner already conveys the change. Single-side
+  views (Left only, Right only) are untouched — the yellow row is
+  preserved there because no partner is on screen to carry the
+  signal. Symmetric no-spans pairs (e.g. whitespace-only diffs
+  with Ignore Whitespace on) are also untouched, since the yellow
+  is the only signal that a change exists at all.
 - **Paired delete+insert lines no longer render as yellow "Modified"
   when intra-line diff is off.** The side-by-side renderer used to
   treat any positionally-paired delete/insert as `Modified` (yellow

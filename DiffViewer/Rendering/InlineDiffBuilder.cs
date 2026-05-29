@@ -154,19 +154,98 @@ public static class InlineDiffBuilder
             // tint and the IntraLineColorizer's word-level spans — i.e. the
             // same channel side-by-side mode uses, keeping the two views
             // visually consistent.
-            foreach (var line in hunk.Lines)
+            //
+            // Block-walk the hunk in delete-then-insert groups (mirroring
+            // DiffHighlightMap.FromHunks) so we can identify positionally
+            // paired (delete, insert) lines and suppress the redundant side
+            // of an asymmetric Modified pair. "Redundant" here means a
+            // Modified line whose own intra-line spans are empty — i.e. an
+            // all-yellow row that contributes no information the partner
+            // line doesn't already show via its span overlay (e.g. a pure
+            // intra-line insertion: the left row would be all-yellow with
+            // nothing to highlight, while the right row carries the green
+            // insert span). Skipping happens only when the partner has
+            // spans; symmetric no-spans pairs (e.g. whitespace-only diffs
+            // with Ignore-WS on) keep both sides so the yellow row still
+            // signals "something changed here, even if I can't show you
+            // exactly where". Unpaired extras (more deletes than inserts,
+            // or vice versa) always emit — they have no partner that could
+            // make them redundant.
+            int j = 0;
+            while (j < hunk.Lines.Count)
             {
-                sb.Append(line.Text).Append('\n');
-                if (line.Kind != DiffLineKind.Context)
+                var first = hunk.Lines[j];
+                if (first.Kind == DiffLineKind.Context)
                 {
-                    lineHighlights[currentOutputLine] = BuildHighlight(line, map);
+                    EmitHunkLine(first, map, sb, lineHighlights, lineToSourceLines, ref currentOutputLine);
+                    j++;
+                    continue;
                 }
-                // DiffLine already carries the per-side line numbers: both
-                // set for Context/Modified, OldLineNumber=null for Inserted,
-                // NewLineNumber=null for Deleted. That's exactly the shape
-                // the viewport indicator's "nearest non-null" lookup wants.
-                lineToSourceLines.Add((line.OldLineNumber, line.NewLineNumber));
-                currentOutputLine++;
+
+                int blockStart = j;
+                while (j < hunk.Lines.Count && hunk.Lines[j].Kind == DiffLineKind.Deleted) j++;
+                int deletedEnd = j;
+                while (j < hunk.Lines.Count && hunk.Lines[j].Kind == DiffLineKind.Inserted) j++;
+                int insertedEnd = j;
+
+                int deletedCount = deletedEnd - blockStart;
+                int insertedCount = insertedEnd - deletedEnd;
+                int paired = Math.Min(deletedCount, insertedCount);
+
+                // Pre-resolve highlights for the paired slice so we can
+                // decide which side to suppress in each pair without
+                // re-resolving when we later emit. Unpaired extras fall
+                // through to the map-resolving emit path.
+                var delHighlights = new LineHighlight?[paired];
+                var insHighlights = new LineHighlight?[paired];
+                var skipDel = new bool[paired];
+                var skipIns = new bool[paired];
+
+                for (int k = 0; k < paired; k++)
+                {
+                    var delHl = BuildHighlight(hunk.Lines[blockStart + k], map);
+                    var insHl = BuildHighlight(hunk.Lines[deletedEnd + k], map);
+                    delHighlights[k] = delHl;
+                    insHighlights[k] = insHl;
+
+                    bool delAllYellow = IsModifiedNoSpans(delHl);
+                    bool insAllYellow = IsModifiedNoSpans(insHl);
+
+                    skipDel[k] = delAllYellow && !insAllYellow;
+                    skipIns[k] = insAllYellow && !delAllYellow;
+                }
+
+                // Emit deletes in hunk order, skipping the suppressed side of
+                // any pair. Hunk order = "all deletes, then all inserts" — keep
+                // that grouping so multi-line edits read top-to-bottom like a
+                // unified diff (rather than interleaved by pair).
+                for (int k = 0; k < deletedCount; k++)
+                {
+                    if (k < paired && skipDel[k]) continue;
+                    var del = hunk.Lines[blockStart + k];
+                    if (k < paired)
+                    {
+                        EmitHunkLine(del, delHighlights[k]!, sb, lineHighlights, lineToSourceLines, ref currentOutputLine);
+                    }
+                    else
+                    {
+                        EmitHunkLine(del, map, sb, lineHighlights, lineToSourceLines, ref currentOutputLine);
+                    }
+                }
+
+                for (int k = 0; k < insertedCount; k++)
+                {
+                    if (k < paired && skipIns[k]) continue;
+                    var ins = hunk.Lines[deletedEnd + k];
+                    if (k < paired)
+                    {
+                        EmitHunkLine(ins, insHighlights[k]!, sb, lineHighlights, lineToSourceLines, ref currentOutputLine);
+                    }
+                    else
+                    {
+                        EmitHunkLine(ins, map, sb, lineHighlights, lineToSourceLines, ref currentOutputLine);
+                    }
+                }
             }
 
             // Advance cursors past the consumed regions on each side.
@@ -325,47 +404,114 @@ public static class InlineDiffBuilder
     }
 
     /// <summary>
-    /// Look up the intra-line spans for <paramref name="line"/> in <paramref name="map"/>
-    /// (keyed by Old/NewLineNumber) and pack them with the line's kind into a
-    /// <see cref="LineHighlight"/>. The kind on the returned highlight stays
-    /// Deleted / Inserted (not Modified, which is what the map stamps for
-    /// high-similarity paired lines) so the inline background renderer keeps
-    /// tinting red/green rather than the side-by-side modified yellow.
+    /// Pull the per-side <see cref="LineHighlight"/> for <paramref name="line"/>
+    /// out of <paramref name="map"/> (keyed by Old/NewLineNumber) and use it
+    /// verbatim — same <see cref="LineHighlight.Kind"/> and same
+    /// <see cref="LineHighlight.IntraLineSpans"/> the side-by-side renderer
+    /// would draw.
     ///
-    /// <para>After the demote fix in
-    /// <see cref="DiffHighlightMap.FromHunks"/>, low-similarity pairs already
-    /// arrive on the map side as <see cref="DiffLineKind.Deleted"/> /
-    /// <see cref="DiffLineKind.Inserted"/>; this override only matters for
-    /// high-similarity pairs (which the map stamps as
-    /// <see cref="DiffLineKind.Modified"/>). Removing the override would
-    /// silently re-introduce yellow on inline mode for those pairs.</para>
+    /// <para>The map is the authority on Kind. In particular, a line that
+    /// was paired by <see cref="DiffHighlightMap.FromHunks"/> is stamped
+    /// <see cref="DiffLineKind.Modified"/> on <em>both</em> sides even when
+    /// the intra-line diff yielded zero spans on one side (e.g. a pure
+    /// insertion of "Any, " inside "from typing import Optional" gives the
+    /// left side no Deleted spans but the line is still part of a Modified
+    /// pair). Deriving the kind from <c>spans.Count &gt; 0</c> here would
+    /// drop that side back to <see cref="DiffLineKind.Deleted"/> /
+    /// <see cref="DiffLineKind.Inserted"/> and the
+    /// <see cref="LineBackgroundBrushSelector"/> would paint a strong
+    /// red/green row instead of the soft yellow the side-by-side view
+    /// shows — a visible inconsistency between the two modes.</para>
     ///
-    /// <para>Spans are returned unchanged: <see cref="BuildFullFile"/> emits
-    /// each line verbatim with no prefix character, so the colorizer's
-    /// <c>lineStart + StartColumn</c> arithmetic lands directly on the
-    /// changed characters.</para>
+    /// <para>When the line is absent from the map (intra-line disabled, or
+    /// the map was simply not built for this diff), fall back to
+    /// <c>line.Kind</c> with no spans — the row gets the strong full-line
+    /// red/green tint, which is the "this whole line is what changed"
+    /// signal when there's no Modified-pair information to refine it.</para>
+    ///
+    /// <para>Span columns are returned unchanged: <see cref="BuildFullFile"/>
+    /// emits each line verbatim with no prefix character, so the
+    /// colorizer's <c>lineStart + StartColumn</c> arithmetic lands directly
+    /// on the changed characters.</para>
     /// </summary>
     private static LineHighlight BuildHighlight(DiffLine line, DiffHighlightMap map)
     {
-        IReadOnlyList<IntraLineSpan>? spans = null;
         switch (line.Kind)
         {
             case DiffLineKind.Deleted:
                 if (line.OldLineNumber is int oldLn &&
                     map.LeftLines.TryGetValue(oldLn, out var leftHl))
                 {
-                    spans = leftHl.IntraLineSpans;
+                    return leftHl;
                 }
                 break;
             case DiffLineKind.Inserted:
                 if (line.NewLineNumber is int newLn &&
                     map.RightLines.TryGetValue(newLn, out var rightHl))
                 {
-                    spans = rightHl.IntraLineSpans;
+                    return rightHl;
                 }
                 break;
         }
-        return new LineHighlight(line.Kind, spans);
+
+        return new LineHighlight(line.Kind, null);
+    }
+
+    /// <summary>
+    /// Append <paramref name="line"/>'s text to <paramref name="sb"/>, record its
+    /// per-line highlight (if non-Context), and push its source-line tuple
+    /// onto <paramref name="lineToSourceLines"/>. Single-line emission used
+    /// by <see cref="BuildBoth"/> when walking hunk blocks.
+    /// </summary>
+    private static void EmitHunkLine(
+        DiffLine line, DiffHighlightMap map,
+        StringBuilder sb, Dictionary<int, LineHighlight> lineHighlights,
+        List<(int? OldLine, int? NewLine)> lineToSourceLines, ref int currentOutputLine)
+    {
+        sb.Append(line.Text).Append('\n');
+        if (line.Kind != DiffLineKind.Context)
+        {
+            lineHighlights[currentOutputLine] = BuildHighlight(line, map);
+        }
+        // DiffLine already carries the per-side line numbers: both set for
+        // Context/Modified, OldLineNumber=null for Inserted, NewLineNumber=null
+        // for Deleted. That's exactly the shape the viewport indicator's
+        // "nearest non-null" lookup wants.
+        lineToSourceLines.Add((line.OldLineNumber, line.NewLineNumber));
+        currentOutputLine++;
+    }
+
+    /// <summary>
+    /// Same as the map-resolving overload, but takes a pre-resolved
+    /// <see cref="LineHighlight"/> for the line — used in the paired-block
+    /// path of <see cref="BuildBoth"/>, where we already had to resolve
+    /// both sides' highlights to decide whether to suppress one.
+    /// </summary>
+    private static void EmitHunkLine(
+        DiffLine line, LineHighlight highlight,
+        StringBuilder sb, Dictionary<int, LineHighlight> lineHighlights,
+        List<(int? OldLine, int? NewLine)> lineToSourceLines, ref int currentOutputLine)
+    {
+        sb.Append(line.Text).Append('\n');
+        // Paired sides are always Deleted/Inserted (Context never enters the
+        // block walk), so the highlight always belongs in the map.
+        lineHighlights[currentOutputLine] = highlight;
+        lineToSourceLines.Add((line.OldLineNumber, line.NewLineNumber));
+        currentOutputLine++;
+    }
+
+    /// <summary>
+    /// True when <paramref name="highlight"/> describes a paired Modified
+    /// line whose own intra-line spans contribute nothing — i.e. an
+    /// all-yellow row. Used to detect the redundant side of an asymmetric
+    /// Modified pair in inline + Both mode (the partner line carries the
+    /// substantive span overlay; this side would only show "something
+    /// changed somewhere" with no visible where).
+    /// </summary>
+    private static bool IsModifiedNoSpans(LineHighlight highlight)
+    {
+        return highlight.Kind == DiffLineKind.Modified
+            && (highlight.IntraLineSpans is null || highlight.IntraLineSpans.Count == 0);
     }
 
     private static List<string> SplitLines(string text)

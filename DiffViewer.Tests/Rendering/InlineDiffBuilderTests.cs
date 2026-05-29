@@ -199,18 +199,22 @@ public class InlineDiffBuilderTests
 
         doc.Text.Should().Be("foo bar baz\nfoo XYZ baz\n");
 
-        // Line 1 = 'foo bar baz' (Deleted), should carry the LEFT-side spans
-        // (intra-line Deleted spans covering 'bar').
+        // Line 1 = 'foo bar baz' has Deleted spans from the LEFT side. With
+        // spans present, the kind upgrades to Modified so the row gets the
+        // soft yellow background and the colorizer's strong-red span overlay
+        // shows through. Without the upgrade, the row would be strong red
+        // and the strong-red span would be invisible against it.
         var deleted = doc.LineHighlights[1];
-        deleted.Kind.Should().Be(DiffLineKind.Deleted);
+        deleted.Kind.Should().Be(DiffLineKind.Modified);
         deleted.IntraLineSpans.Should().NotBeNull();
         deleted.IntraLineSpans!.Should().NotBeEmpty();
         deleted.IntraLineSpans.Should().OnlyContain(s => s.Kind == IntraLineSpanKind.Deleted);
 
-        // Line 2 = 'foo XYZ baz' (Inserted), should carry the RIGHT-side spans
-        // (intra-line Inserted spans covering 'XYZ').
+        // Line 2 = 'foo XYZ baz' has Inserted spans from the RIGHT side.
+        // Same upgrade rule: spans present → Modified → yellow row → strong-
+        // green span overlay is visible.
         var inserted = doc.LineHighlights[2];
-        inserted.Kind.Should().Be(DiffLineKind.Inserted);
+        inserted.Kind.Should().Be(DiffLineKind.Modified);
         inserted.IntraLineSpans.Should().NotBeNull();
         inserted.IntraLineSpans!.Should().NotBeEmpty();
         inserted.IntraLineSpans.Should().OnlyContain(s => s.Kind == IntraLineSpanKind.Inserted);
@@ -226,6 +230,326 @@ public class InlineDiffBuilderTests
         inserted.IntraLineSpans.Should().ContainSingle()
             .Which.StartColumn.Should().Be(4);
         inserted.IntraLineSpans!.Single().EndColumn.Should().Be(7);
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_Both_SuppressesAsymmetricNoSpansLeftSide()
+    {
+        // Paired Modified line where the intra-line diff yielded zero spans
+        // on the LEFT side (the right is a pure insertion within the line).
+        // In Both visibility the left row is "all yellow with nothing to
+        // highlight" — redundant because the right row's green insert span
+        // already shows what changed. Suppress it; emit only the right.
+        //
+        // Real-world example: "from typing import Optional" →
+        // "from typing import Any, Optional". The right side adds "Any, ";
+        // the left side has nothing to remove.
+        var left = "from typing import Optional\n";
+        var right = "from typing import Any, Optional\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 1,
+            NewStartLine: 1, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 1, NewLineNumber: null, Text: "from typing import Optional"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "from typing import Any, Optional"),
+            },
+            FunctionContext: null);
+
+        var diffService = new DiffViewer.Services.DiffService();
+        var map = DiffHighlightMap.FromHunks(
+            new[] { hunk }, diffService, enableIntraLine: true, ignoreWhitespace: false);
+
+        // Pre-condition: the map must stamp the left side as Modified with
+        // empty spans (asymmetric intra-line). If the diff service ever
+        // changes behavior to put a Deleted span on the left, this test
+        // would be exercising a different code path — flag it.
+        var leftMapEntry = map.LeftLines[1];
+        leftMapEntry.Kind.Should().Be(DiffLineKind.Modified);
+        (leftMapEntry.IntraLineSpans is null || leftMapEntry.IntraLineSpans.Count == 0)
+            .Should().BeTrue("the left side of this pair has no chars to delete");
+
+        var doc = InlineDiffBuilder.BuildFullFile(left, right, new[] { hunk }, map);
+
+        // Left "from typing import Optional" is suppressed — the document
+        // contains only the right line. Editor sees a single emitted line.
+        doc.Text.Should().Be("from typing import Any, Optional\n");
+        doc.LineHighlights.Should().HaveCount(1);
+        doc.LineHighlights.Should().ContainKey(1);
+        var inserted = doc.LineHighlights[1];
+        inserted.Kind.Should().Be(DiffLineKind.Modified);
+        inserted.IntraLineSpans.Should().NotBeNullOrEmpty();
+        inserted.IntraLineSpans!.Should().OnlyContain(s => s.Kind == IntraLineSpanKind.Inserted);
+
+        // Line-to-source mapping for the emitted line points at the right
+        // file's line 1 (and the left file's line 1, since the pair did
+        // touch the left even though the left isn't shown).
+        doc.LineToSourceLines.Should().HaveCount(1);
+        doc.LineToSourceLines[0].Should().Be(((int?)null, (int?)1));
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_Both_SuppressesAsymmetricNoSpansRightSide()
+    {
+        // Symmetric counterpart of the previous test: the right side has no
+        // Inserted spans (pure deletion within the line), so it's the
+        // redundant all-yellow row. The left carries the red delete span.
+        var left = "from typing import Any, Optional\n";
+        var right = "from typing import Optional\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 1,
+            NewStartLine: 1, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 1, NewLineNumber: null, Text: "from typing import Any, Optional"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "from typing import Optional"),
+            },
+            FunctionContext: null);
+
+        var diffService = new DiffViewer.Services.DiffService();
+        var map = DiffHighlightMap.FromHunks(
+            new[] { hunk }, diffService, enableIntraLine: true, ignoreWhitespace: false);
+
+        var rightMapEntry = map.RightLines[1];
+        rightMapEntry.Kind.Should().Be(DiffLineKind.Modified);
+        (rightMapEntry.IntraLineSpans is null || rightMapEntry.IntraLineSpans.Count == 0)
+            .Should().BeTrue("the right side of this pair has no chars to insert");
+
+        var doc = InlineDiffBuilder.BuildFullFile(left, right, new[] { hunk }, map);
+
+        // Right "from typing import Optional" is suppressed; only the left
+        // is emitted, carrying the Deleted span overlay.
+        doc.Text.Should().Be("from typing import Any, Optional\n");
+        doc.LineHighlights.Should().HaveCount(1);
+        doc.LineHighlights.Should().ContainKey(1);
+        var deleted = doc.LineHighlights[1];
+        deleted.Kind.Should().Be(DiffLineKind.Modified);
+        deleted.IntraLineSpans.Should().NotBeNullOrEmpty();
+        deleted.IntraLineSpans!.Should().OnlyContain(s => s.Kind == IntraLineSpanKind.Deleted);
+
+        doc.LineToSourceLines.Should().HaveCount(1);
+        doc.LineToSourceLines[0].Should().Be(((int?)1, (int?)null));
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_Both_KeepsSymmetricNoSpansPair()
+    {
+        // Symmetric Modified pair where NEITHER side has spans — happens
+        // when the diff service reports zero Deleted/Inserted pieces for
+        // both sides (e.g. lines that differ only in characters the
+        // intra-line algorithm collapsed away, like whitespace under Ignore
+        // WS). The suppression rule must NOT hide both sides; the yellow
+        // row(s) still signal "something changed here, even if I can't
+        // show you exactly where" — matching the user's stated preference
+        // for whitespace-only diffs.
+        var left = "alpha\n";
+        var right = "beta\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 1,
+            NewStartLine: 1, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 1, NewLineNumber: null, Text: "alpha"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "beta"),
+            },
+            FunctionContext: null);
+
+        // Hand-build a map that represents the symmetric-no-spans state.
+        // (Doing this via DiffService would require finding inputs the
+        // intra-line algorithm reports as fully-Unchanged on both sides,
+        // which is implementation-specific. The hand-built map exercises
+        // the suppression rule's "keep both when symmetric" branch
+        // directly.)
+        var map = new DiffHighlightMap(
+            leftLines: new Dictionary<int, LineHighlight>
+            {
+                [1] = new LineHighlight(DiffLineKind.Modified, Array.Empty<IntraLineSpan>()),
+            },
+            rightLines: new Dictionary<int, LineHighlight>
+            {
+                [1] = new LineHighlight(DiffLineKind.Modified, Array.Empty<IntraLineSpan>()),
+            });
+
+        var doc = InlineDiffBuilder.BuildFullFile(left, right, new[] { hunk }, map);
+
+        // Both lines emitted (neither suppressed). Both carry the Modified
+        // kind so the row gets yellow.
+        doc.Text.Should().Be("alpha\nbeta\n");
+        doc.LineHighlights.Should().HaveCount(2);
+        doc.LineHighlights[1].Kind.Should().Be(DiffLineKind.Modified);
+        doc.LineHighlights[2].Kind.Should().Be(DiffLineKind.Modified);
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_Both_KeepsBothWhenBothSidesHaveSpans()
+    {
+        // Sanity: the common case (intra-line diff produced spans on both
+        // sides) is unaffected by the suppression rule. Both rows emit
+        // with their respective span overlays.
+        var left = "foo bar baz\n";
+        var right = "foo XYZ baz\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 1,
+            NewStartLine: 1, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 1, NewLineNumber: null, Text: "foo bar baz"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "foo XYZ baz"),
+            },
+            FunctionContext: null);
+
+        var diffService = new DiffViewer.Services.DiffService();
+        var map = DiffHighlightMap.FromHunks(
+            new[] { hunk }, diffService, enableIntraLine: true, ignoreWhitespace: false);
+
+        var doc = InlineDiffBuilder.BuildFullFile(left, right, new[] { hunk }, map);
+
+        doc.Text.Should().Be("foo bar baz\nfoo XYZ baz\n");
+        doc.LineHighlights.Should().HaveCount(2);
+        doc.LineHighlights[1].IntraLineSpans.Should().NotBeNullOrEmpty();
+        doc.LineHighlights[2].IntraLineSpans.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_Both_KeepsUnpairedDeleteWithNoPartner()
+    {
+        // Extra delete with no partner on the insert side (deletedCount >
+        // insertedCount) — falls in the unpaired tail. Even if the map
+        // entry were Modified-with-no-spans (unlikely but possible if the
+        // map were hand-built), an unpaired line has no partner to make it
+        // redundant, so it must always emit.
+        var left = "alpha\nbeta\ngamma\n";
+        var right = "alpha\nGAMMA\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 2, OldLineCount: 2,
+            NewStartLine: 2, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 2, NewLineNumber: null, Text: "beta"),
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 3, NewLineNumber: null, Text: "gamma"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 2, Text: "GAMMA"),
+            },
+            FunctionContext: null);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, DiffHighlightMap.Empty);
+
+        // All three diff lines emit (no partner-driven suppression). Output
+        // = "alpha" (context) + "beta" + "gamma" (deletes) + "GAMMA" (insert).
+        doc.Text.Should().Be("alpha\nbeta\ngamma\nGAMMA\n");
+        doc.LineHighlights.Should().HaveCount(3);
+        doc.LineHighlights[2].Kind.Should().Be(DiffLineKind.Deleted);
+        doc.LineHighlights[3].Kind.Should().Be(DiffLineKind.Deleted);
+        doc.LineHighlights[4].Kind.Should().Be(DiffLineKind.Inserted);
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_LeftOnly_KeepsAsymmetricNoSpansLeftSide()
+    {
+        // The suppression rule applies only in Both visibility. In LeftOnly
+        // the partner isn't shown, so the all-yellow left row is the only
+        // signal for the user that this line changed — keep it.
+        var left = "from typing import Optional\n";
+        var right = "from typing import Any, Optional\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 1,
+            NewStartLine: 1, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 1, NewLineNumber: null, Text: "from typing import Optional"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "from typing import Any, Optional"),
+            },
+            FunctionContext: null);
+
+        var diffService = new DiffViewer.Services.DiffService();
+        var map = DiffHighlightMap.FromHunks(
+            new[] { hunk }, diffService, enableIntraLine: true, ignoreWhitespace: false);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, map, DiffSideVisibility.LeftOnly);
+
+        doc.Text.Should().Be("from typing import Optional\n");
+        doc.LineHighlights.Should().ContainKey(1);
+        doc.LineHighlights[1].Kind.Should().Be(DiffLineKind.Modified);
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_RightOnly_KeepsAsymmetricNoSpansRightSide()
+    {
+        // Mirror of the LeftOnly case: the right is the all-yellow side; in
+        // RightOnly visibility the partner (with the delete span) isn't
+        // shown, so keep the right.
+        var left = "from typing import Any, Optional\n";
+        var right = "from typing import Optional\n";
+
+        var hunk = new DiffHunk(
+            OldStartLine: 1, OldLineCount: 1,
+            NewStartLine: 1, NewLineCount: 1,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 1, NewLineNumber: null, Text: "from typing import Any, Optional"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 1, Text: "from typing import Optional"),
+            },
+            FunctionContext: null);
+
+        var diffService = new DiffViewer.Services.DiffService();
+        var map = DiffHighlightMap.FromHunks(
+            new[] { hunk }, diffService, enableIntraLine: true, ignoreWhitespace: false);
+
+        var doc = InlineDiffBuilder.BuildFullFile(
+            left, right, new[] { hunk }, map, DiffSideVisibility.RightOnly);
+
+        doc.Text.Should().Be("from typing import Optional\n");
+        doc.LineHighlights.Should().ContainKey(1);
+        doc.LineHighlights[1].Kind.Should().Be(DiffLineKind.Modified);
+    }
+
+    [Fact]
+    public void BuildFullFile_WithMap_KeepsDeletedInsertedKindWhenNoSpans()
+    {
+        // Pure delete + pure insert (no positional pairing in the map, so
+        // the map records Deleted / Inserted with null spans). The inline
+        // builder must keep the kind as Deleted / Inserted so the row gets
+        // the strong full-line tint. Upgrading to Modified here would yield
+        // a yellow row with no span overlay — a "something changed" signal
+        // with no indication of where, which is exactly the rule shipped in
+        // LineBackgroundBrushSelector to avoid.
+        var left = "alpha\nremoved\n";
+        var right = "alpha\nadded\nextra\n";
+
+        // Hunk shape: line 2 'removed' deleted; lines 2-3 'added'/'extra'
+        // inserted. The map will pair line 2 ('removed' ↔ 'added') and try
+        // intra-line; for unrelated short words this typically falls below
+        // the similarity threshold and demotes to Deleted + Inserted with
+        // null spans on the map side. 'extra' is an unpaired insert.
+        var hunk = new DiffHunk(
+            OldStartLine: 2, OldLineCount: 1,
+            NewStartLine: 2, NewLineCount: 2,
+            Lines: new[]
+            {
+                new DiffLine(DiffLineKind.Deleted, OldLineNumber: 2, NewLineNumber: null, Text: "removed"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 2, Text: "added"),
+                new DiffLine(DiffLineKind.Inserted, OldLineNumber: null, NewLineNumber: 3, Text: "extra"),
+            },
+            FunctionContext: null);
+
+        // Empty map → BuildHighlight finds no spans for any line. Exercises
+        // the "no spans → keep the line's original kind" branch without
+        // depending on the demote heuristic's similarity thresholds.
+        var doc = InlineDiffBuilder.BuildFullFile(left, right, new[] { hunk }, DiffHighlightMap.Empty);
+
+        doc.LineHighlights[2].Kind.Should().Be(DiffLineKind.Deleted);
+        doc.LineHighlights[2].IntraLineSpans.Should().BeNull();
+        doc.LineHighlights[3].Kind.Should().Be(DiffLineKind.Inserted);
+        doc.LineHighlights[3].IntraLineSpans.Should().BeNull();
+        doc.LineHighlights[4].Kind.Should().Be(DiffLineKind.Inserted);
+        doc.LineHighlights[4].IntraLineSpans.Should().BeNull();
     }
 
     [Fact]
