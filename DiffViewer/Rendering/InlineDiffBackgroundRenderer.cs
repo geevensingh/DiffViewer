@@ -41,18 +41,16 @@ public sealed class InlineDiffBackgroundRenderer : IBackgroundRenderer
 
             Brush brush = LineBackgroundBrushSelector.Pick(DiffSide.Inline, highlight.Kind, _scheme);
 
-            // Paint the full visual-line box (VisualTop + Height) rather
-            // than the text-segment rect from BackgroundGeometryBuilder:
-            // the segment-rect approach leaves 1-2px horizontal gaps
-            // between adjacent lines on some DPI / line-spacing settings.
-            // VisualLine.Height covers all wrapped sub-rows for the
-            // document line, so this works for word-wrap too. See the
-            // matching comment in DiffBackgroundRenderer.Draw.
-            double y = visualLine.VisualTop - textView.ScrollOffset.Y;
-            drawingContext.DrawRectangle(
-                brush,
-                pen: null,
-                new Rect(0, y, textView.ActualWidth, visualLine.Height));
+            foreach (var rect in BackgroundGeometryBuilder.GetRectsFromVisualSegment(
+                textView, visualLine, 0, int.MaxValue))
+            {
+                var fullWidth = new Rect(
+                    rect.X,
+                    rect.Y,
+                    Math.Max(rect.Width, textView.ActualWidth - rect.X),
+                    rect.Height);
+                drawingContext.DrawRectangle(brush, null, fullWidth);
+            }
         }
     }
 }

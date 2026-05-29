@@ -30,16 +30,6 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
-- **Horizontal gaps between adjacent diff-tinted lines are gone.**
-  Both background renderers used to paint each line's tint from
-  `BackgroundGeometryBuilder.GetRectsFromVisualSegment`, which
-  returns rectangles sized to the text-segment bounding box. On some
-  DPI / line-spacing combinations that left a 1–2 px sliver of
-  untinted background between adjacent rows. With the soft tints
-  those slivers were invisible; with the new strong full-line tints
-  they were obvious. The renderers now paint from `VisualLine.VisualTop`
-  for the full `VisualLine.Height`, which is the actual line-box
-  height (and handles word-wrap correctly).
 - **Paired delete+insert lines no longer render as yellow "Modified"
   when intra-line diff is off.** The side-by-side renderer used to
   treat any positionally-paired delete/insert as `Modified` (yellow
