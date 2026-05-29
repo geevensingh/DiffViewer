@@ -34,10 +34,19 @@ public sealed class InlineDiffBackgroundRenderer : IBackgroundRenderer
         if (LineHighlights is null || LineHighlights.Count == 0) return;
         if (!textView.VisualLinesValid) return;
 
+        foreach (var (rect, brush) in LineBackgroundRectCoalescer.Coalesce(
+            EnumerateRects(textView)))
+        {
+            drawingContext.DrawRectangle(brush, null, rect);
+        }
+    }
+
+    private IEnumerable<(Rect Rect, Brush Brush)> EnumerateRects(TextView textView)
+    {
         foreach (var visualLine in textView.VisualLines)
         {
             int docLine = visualLine.FirstDocumentLine.LineNumber;
-            if (!LineHighlights.TryGetValue(docLine, out var highlight)) continue;
+            if (!LineHighlights!.TryGetValue(docLine, out var highlight)) continue;
 
             Brush brush = LineBackgroundBrushSelector.Pick(DiffSide.Inline, highlight.Kind, _scheme);
 
@@ -49,7 +58,7 @@ public sealed class InlineDiffBackgroundRenderer : IBackgroundRenderer
                     rect.Y,
                     Math.Max(rect.Width, textView.ActualWidth - rect.X),
                     rect.Height);
-                drawingContext.DrawRectangle(brush, null, fullWidth);
+                yield return (fullWidth, brush);
             }
         }
     }

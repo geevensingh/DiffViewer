@@ -30,6 +30,21 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Fixed
 
+- **Faint horizontal stripes between adjacent same-coloured diff
+  rows are gone.** The background renderers
+  (<c>DiffBackgroundRenderer</c> and <c>InlineDiffBackgroundRenderer</c>)
+  used to emit one rectangle per visual line — so a block of, say,
+  five added lines was drawn as five separately-antialiased
+  rectangles stacked vertically. Each rectangle contributed a
+  sub-pixel antialiased edge at top and bottom against the
+  transparent editor background, and where two rectangles met those
+  paired AA stripes added up to a visible seam between the rows. A
+  new <c>LineBackgroundRectCoalescer</c> merges
+  vertically-adjacent same-brush rectangles into one taller rect
+  before they reach <c>DrawingContext.DrawRectangle</c>, so a block
+  of N same-coloured rows now draws as a single rectangle with AA
+  only at the outside edges. Different-brush rows, gaps, and
+  overlapping rects are left untouched.
 - **Inline mode now shows intra-line red/green spans on paired
   delete/insert lines instead of swallowing them under a strong
   full-row tint.** When intra-line diff was enabled and a
