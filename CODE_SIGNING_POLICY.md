@@ -28,13 +28,8 @@ DiffViewer is a single-maintainer open-source project.
 ## Privacy policy
 
 DiffViewer is a local-only developer tool. The only networked activity
-it performs is on direct user action: fetching a GitHub pull request
-the user has explicitly asked it to review, by calling the GitHub
-REST API on the user's behalf with credentials they obtained via
-`gh auth login`. No telemetry, usage tracking, analytics, or
-background networked activity is performed.
-
-User-supplied GitHub OAuth tokens are obtained on-demand from
-`gh auth token` at the moment of an outbound API call, held in memory
-only for the duration of that call, and are never persisted to disk
-by DiffViewer.
+it performs is on direct user action — fetching a GitHub pull request
+the user has explicitly asked it to review, using their existing
+`gh auth login` credentials. No telemetry, usage tracking, analytics,
+or background networked activity is performed. See [PRIVACY.md](PRIVACY.md)
+for the full policy.
