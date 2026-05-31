@@ -16,7 +16,7 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 7;
+    public const int CurrentSchemaVersion = 8;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -133,12 +133,21 @@ public sealed record AppSettings
     /// <summary>
     /// When <c>true</c>, the update source includes pre-release tags
     /// (e.g. <c>v1.5.0-rc1</c>). Default <c>false</c> — stable
-    /// releases only. Inert in Phase 2.2 (the Velopack adapter
-    /// hardcodes <c>prerelease: false</c>); Phase 2.3 will read this
-    /// and pass it through to
-    /// <see cref="Velopack.Sources.GithubSource"/>.
+    /// releases only. Wired through to
+    /// <see cref="Velopack.Sources.GithubSource"/> at startup in Phase 2.3.
     /// </summary>
     public bool IncludePreReleases { get; init; }
+
+    /// <summary>
+    /// Last update version the user dismissed via the banner's
+    /// "Skip this version" gesture. When the next update check
+    /// returns this same version, the banner stays hidden. Cleared
+    /// implicitly when a newer version is detected and skipped
+    /// (the new skip overwrites the old). <c>null</c> means
+    /// "nothing skipped" — the default for new installs and
+    /// pre-v8 migrated installs.
+    /// </summary>
+    public string? SkippedUpdateVersion { get; init; }
 }
 
 /// <summary>

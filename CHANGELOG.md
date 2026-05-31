@@ -14,6 +14,17 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **Auto-update banner gets a "Skip this version" button.** Persists
+  the skipped version into `settings.json` so future checks for the
+  same version stay quiet across launches. Detection of a newer
+  version overwrites the previous skip and shows the banner again.
+- **Periodic re-check timer for auto-updates.** Driven by the
+  Settings → Updates → "Check frequency" dropdown (StartupOnly /
+  Hourly / Every six hours / Daily / Weekly). `StartupOnly` opts
+  out of periodic checks entirely; the others schedule a re-check
+  after each `Check`/`Dismiss`/`Skip`. If the banner is still
+  visible at tick time the recheck is skipped (the user is still
+  looking at a previous notification).
 - **Auto-update banner at the top of the main window.** Replaces
   the silent placeholder from the previous Phase 2.1 / 2.2
   iterations:
@@ -23,9 +34,8 @@ body. Keep section headings exact and write notes in Markdown.
   - In `NotifyOnly` mode (the default), the banner appears as soon
     as an update is detected, with an **Install** button that
     triggers the download + apply-on-next-launch sequence.
-  - Either mode's banner has a **Dismiss** button that hides it
-    for the rest of the session. (A persistent "skip this
-    version" gesture is planned as a follow-up.)
+  - Either mode's banner has **Dismiss** (session-scoped) and
+    **Skip this version** (persists) buttons.
 - **Settings → Updates section.** Three new settings control how
   DiffViewer handles available updates from GitHub Releases. The
   settings are inert on portable / from-source builds (those have
@@ -35,14 +45,14 @@ body. Keep section headings exact and write notes in Markdown.
     migrated installs), `Automatic`, or `Disabled`. `NotifyOnly`
     is the safe default: silent auto-updates are opt-in.
   - **Check frequency** — `StartupOnly` / `Hourly` / `EverySixHours`
-    / `Daily` (default) / `Weekly`. Currently only the startup
-    check fires; the periodic timer that honors this setting is
-    a planned follow-up.
-  - **Include pre-release versions** — off by default. Now wired
+    / `Daily` (default) / `Weekly`.
+  - **Include pre-release versions** — off by default; wired
     through to the underlying GitHub release source.
-- `settings.json` schema bump v6 → v7. The migration is a no-op:
-  all three new fields default to safe values, so pre-v7 files load
-  with the same effective behaviour they had before.
+  - Dropdowns display friendly labels ("Every six hours" instead
+    of the raw `EverySixHours` enum identifier).
+- `settings.json` schema bumps v6 → v7 → v8. Both migrations are
+  no-ops: all new fields default to safe values, so pre-v6 files
+  load with the same effective behaviour they had before.
 
 ## [1.4.0] - 2026-05-29
 

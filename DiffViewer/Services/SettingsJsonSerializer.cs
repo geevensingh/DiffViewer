@@ -58,6 +58,7 @@ internal static class SettingsJsonSerializer
             ["autoUpdate"] = s.AutoUpdate.ToString(),
             ["updateCheckCadence"] = s.UpdateCheckCadence.ToString(),
             ["includePreReleases"] = s.IncludePreReleases,
+            ["skippedUpdateVersion"] = s.SkippedUpdateVersion,
         };
         return obj.ToJsonString(WriteOptions);
     }
@@ -95,6 +96,7 @@ internal static class SettingsJsonSerializer
             AutoUpdate = TryEnum<AutoUpdateMode>(obj, "autoUpdate") ?? defaults.AutoUpdate,
             UpdateCheckCadence = TryEnum<UpdateCheckCadence>(obj, "updateCheckCadence") ?? defaults.UpdateCheckCadence,
             IncludePreReleases = TryBool(obj, "includePreReleases") ?? defaults.IncludePreReleases,
+            SkippedUpdateVersion = TryString(obj, "skippedUpdateVersion"),
         };
     }
 

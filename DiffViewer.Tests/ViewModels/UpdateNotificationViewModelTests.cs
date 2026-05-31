@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,7 +16,7 @@ public sealed class UpdateNotificationViewModelTests
     public async Task StartAsync_WhenDisabled_DoesNotCheck()
     {
         var fake = new FakeUpdateService();
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => AutoUpdateMode.Disabled);
+        var sut = NewVm(fake, () => AutoUpdateMode.Disabled);
 
         await sut.StartAsync(CancellationToken.None);
 
@@ -28,7 +29,7 @@ public sealed class UpdateNotificationViewModelTests
     {
         var available = NewAvailable("1.5.0");
         var fake = new FakeUpdateService { CheckResult = available };
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => AutoUpdateMode.Automatic);
+        var sut = NewVm(fake, () => AutoUpdateMode.Automatic);
 
         await sut.StartAsync(CancellationToken.None);
 
@@ -45,7 +46,7 @@ public sealed class UpdateNotificationViewModelTests
     {
         var available = NewAvailable("2.0.0");
         var fake = new FakeUpdateService { CheckResult = available };
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => AutoUpdateMode.NotifyOnly);
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly);
 
         await sut.StartAsync(CancellationToken.None);
 
@@ -61,7 +62,7 @@ public sealed class UpdateNotificationViewModelTests
     public async Task StartAsync_WhenNoUpdateAvailable_LeavesBannerHidden()
     {
         var fake = new FakeUpdateService { CheckResult = UpdateCheckResult.NoUpdateAvailable };
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => AutoUpdateMode.NotifyOnly);
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly);
 
         await sut.StartAsync(CancellationToken.None);
 
@@ -72,11 +73,45 @@ public sealed class UpdateNotificationViewModelTests
     }
 
     [Fact]
+    public async Task StartAsync_WhenDetectedVersionMatchesSkipped_LeavesBannerHidden()
+    {
+        // A previously-skipped version should silently consume the
+        // detection: no banner, no download, no apply queue. The
+        // periodic re-check will still try again next interval (in
+        // case the user changes their mind).
+        var available = NewAvailable("1.5.0");
+        var fake = new FakeUpdateService { CheckResult = available };
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly, getSkipped: () => "1.5.0");
+
+        await sut.StartAsync(CancellationToken.None);
+
+        fake.CheckCalls.Should().Be(1);
+        fake.DownloadCalls.Should().BeEmpty();
+        sut.IsBannerVisible.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenDetectedVersionDiffersFromSkipped_ShowsBanner()
+    {
+        // A previously-skipped older version should NOT suppress a
+        // newer detection — Skip is per-version, not "skip everything
+        // forever".
+        var available = NewAvailable("2.0.0");
+        var fake = new FakeUpdateService { CheckResult = available };
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly, getSkipped: () => "1.5.0");
+
+        await sut.StartAsync(CancellationToken.None);
+
+        sut.IsBannerVisible.Should().BeTrue();
+        sut.StatusText.Should().Contain("2.0.0");
+    }
+
+    [Fact]
     public async Task Install_AfterNotifyOnlyCheck_DownloadsAndQueues_HidesInstallButton()
     {
         var available = NewAvailable("3.1.2");
         var fake = new FakeUpdateService { CheckResult = available };
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => AutoUpdateMode.NotifyOnly);
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly);
         await sut.StartAsync(CancellationToken.None);
 
         await sut.InstallCommand.ExecuteAsync(null);
@@ -96,7 +131,7 @@ public sealed class UpdateNotificationViewModelTests
         // command. The VM should defend against the missing _pending
         // by doing nothing rather than dereferencing null.
         var fake = new FakeUpdateService();
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => AutoUpdateMode.NotifyOnly);
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly);
 
         await sut.InstallCommand.ExecuteAsync(null);
 
@@ -107,13 +142,9 @@ public sealed class UpdateNotificationViewModelTests
     [Fact]
     public async Task Dismiss_HidesBanner_DoesNotCancelQueuedApply()
     {
-        // The "Dismiss" UX is session-scoped — it hides the banner but
-        // doesn't roll back the queued ApplyOnNextLaunch from the
-        // Automatic-mode flow. The update still installs on next exit;
-        // the user just doesn't keep seeing the notification.
         var available = NewAvailable("1.0.0");
         var fake = new FakeUpdateService { CheckResult = available };
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => AutoUpdateMode.Automatic);
+        var sut = NewVm(fake, () => AutoUpdateMode.Automatic);
         await sut.StartAsync(CancellationToken.None);
         sut.IsBannerVisible.Should().BeTrue();
 
@@ -121,6 +152,34 @@ public sealed class UpdateNotificationViewModelTests
 
         sut.IsBannerVisible.Should().BeFalse();
         fake.ApplyOnNextLaunchCalls.Should().HaveCount(1); // unchanged
+    }
+
+    [Fact]
+    public async Task Skip_HidesBanner_AndPersistsSkippedVersion()
+    {
+        var available = NewAvailable("1.5.0");
+        var fake = new FakeUpdateService { CheckResult = available };
+        var setCalls = new List<string?>();
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly, setSkipped: v => setCalls.Add(v));
+        await sut.StartAsync(CancellationToken.None);
+        sut.IsBannerVisible.Should().BeTrue();
+
+        sut.SkipCommand.Execute(null);
+
+        sut.IsBannerVisible.Should().BeFalse();
+        setCalls.Should().ContainSingle().Which.Should().Be("1.5.0");
+    }
+
+    [Fact]
+    public void Skip_WithNoPendingUpdate_NoOps()
+    {
+        var setCalls = new List<string?>();
+        var sut = NewVm(new FakeUpdateService(), () => AutoUpdateMode.NotifyOnly,
+            setSkipped: v => setCalls.Add(v));
+
+        sut.SkipCommand.Execute(null);
+
+        setCalls.Should().BeEmpty();
     }
 
     [Fact]
@@ -133,7 +192,7 @@ public sealed class UpdateNotificationViewModelTests
         // future refactor from accidentally capturing a snapshot).
         var mode = AutoUpdateMode.Disabled;
         var fake = new FakeUpdateService { CheckResult = NewAvailable("9.9.9") };
-        var sut = new UpdateNotificationViewModel(fake, getMode: () => mode);
+        var sut = NewVm(fake, () => mode);
 
         await sut.StartAsync(CancellationToken.None);
         fake.CheckCalls.Should().Be(0);
@@ -141,6 +200,22 @@ public sealed class UpdateNotificationViewModelTests
         mode = AutoUpdateMode.NotifyOnly;
         await sut.StartAsync(CancellationToken.None);
         fake.CheckCalls.Should().Be(1);
+    }
+
+    private static UpdateNotificationViewModel NewVm(
+        IUpdateService updates,
+        Func<AutoUpdateMode> getMode,
+        Func<UpdateCheckCadence>? getCadence = null,
+        Func<string?>? getSkipped = null,
+        Action<string?>? setSkipped = null)
+    {
+        return new UpdateNotificationViewModel(
+            updates,
+            getMode,
+            getCadence ?? (() => UpdateCheckCadence.Daily),
+            getSkipped ?? (() => null),
+            setSkipped ?? (_ => { }),
+            useDispatcherTimer: false);
     }
 
     private static UpdateCheckResult NewAvailable(string version) =>

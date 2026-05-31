@@ -549,6 +549,46 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_V7File_MigratesToV8_SkippedUpdateVersionDefaultsToNull()
+    {
+        // v7 schema (current minus 1) had no skippedUpdateVersion
+        // field. After v7->v8 migration the field should hydrate to
+        // null (nothing skipped) and other fields should be
+        // preserved. Auto-update fields from v7 carry through
+        // unchanged.
+        var v7 = new JsonObject
+        {
+            ["schemaVersion"] = 7,
+            ["fontSize"] = 21,
+            ["autoUpdate"] = AutoUpdateMode.Automatic.ToString(),
+            ["updateCheckCadence"] = UpdateCheckCadence.Hourly.ToString(),
+            ["includePreReleases"] = true,
+        };
+        File.WriteAllText(_settingsPath, v7.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
+        svc.Current.FontSize.Should().Be(21);
+        svc.Current.AutoUpdate.Should().Be(AutoUpdateMode.Automatic);
+        svc.Current.UpdateCheckCadence.Should().Be(UpdateCheckCadence.Hourly);
+        svc.Current.IncludePreReleases.Should().BeTrue();
+        svc.Current.SkippedUpdateVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public void Save_Then_Load_RoundTripsSkippedUpdateVersion()
+    {
+        var svc1 = new SettingsService(_settingsPath);
+        svc1.Save(svc1.Current with { SkippedUpdateVersion = "1.5.0-rc1" });
+
+        var svc2 = new SettingsService(_settingsPath);
+
+        svc2.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Loaded);
+        svc2.Current.SkippedUpdateVersion.Should().Be("1.5.0-rc1");
+    }
+
+    [Fact]
     public void RepoUrlMappings_StableOrderingOnDisk_AcrossSaves()
     {
         // Maps with the same content should serialize to the same JSON

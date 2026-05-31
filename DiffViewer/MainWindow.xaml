@@ -183,6 +183,11 @@
                         Margin="6,0,0,0"
                         Command="{Binding DismissCommand}"/>
                 <Button DockPanel.Dock="Right"
+                        Content="Skip this version"
+                        Padding="10,2"
+                        Margin="6,0,0,0"
+                        Command="{Binding SkipCommand}"/>
+                <Button DockPanel.Dock="Right"
                         Content="Install"
                         Padding="10,2"
                         Command="{Binding InstallCommand}"

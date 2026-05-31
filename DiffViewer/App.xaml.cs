@@ -172,7 +172,10 @@ public partial class App : Application
                 ?? (IUpdateService)new NullUpdateService();
         _updateNotification = new UpdateNotificationViewModel(
             updateService,
-            getMode: () => settingsService.Current.AutoUpdate);
+            getMode: () => settingsService.Current.AutoUpdate,
+            getCadence: () => settingsService.Current.UpdateCheckCadence,
+            getSkippedVersion: () => settingsService.Current.SkippedUpdateVersion,
+            setSkippedVersion: version => settingsService.Update(s => s with { SkippedUpdateVersion = version }));
         window.AttachUpdateNotification(_updateNotification);
 
         window.Closed += async (_, _) =>
@@ -206,6 +209,7 @@ public partial class App : Application
         try { _shutdownCts?.Cancel(); } catch { }
         try { _shutdownCts?.Dispose(); } catch { }
         try { _httpClient?.Dispose(); } catch { }
+        try { _updateNotification?.Dispose(); } catch { }
         base.OnExit(e);
     }
 }

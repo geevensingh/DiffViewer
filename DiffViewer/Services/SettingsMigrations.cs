@@ -46,6 +46,13 @@ namespace DiffViewer.Services;
 /// <see cref="AutoUpdateMode.NotifyOnly"/> / <see cref="UpdateCheckCadence.Daily"/> /
 /// <c>false</c>, which exactly reflects the "no auto-update opted into yet"
 /// posture Phase 2.2 ships with.</para>
+///
+/// <para>v8 introduced <c>skippedUpdateVersion</c> for the auto-update
+/// banner's "Skip this version" gesture (Phase 2.4). The migration
+/// is a no-op because the field is nullable with a <c>null</c>
+/// default — pre-v8 files deserialize to "nothing skipped", which
+/// means the banner shows for every available update (the safe
+/// default).</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -68,6 +75,7 @@ internal static class SettingsMigrations
                 4 => MigrateV4ToV5, // adds repoRoots, defaultCloneDestination, repoUrlMappings (all defaultable)
                 5 => MigrateV5ToV6, // adds renderSvgImage (bool, default true)
                 6 => MigrateV6ToV7, // adds autoUpdate / updateCheckCadence / includePreReleases (all defaultable)
+                7 => MigrateV7ToV8, // adds skippedUpdateVersion (nullable string, default null)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -136,4 +144,13 @@ internal static class SettingsMigrations
     /// <see cref="UpdateCheckCadence.Daily"/> / <c>false</c>.
     /// </summary>
     private static JsonObject MigrateV6ToV7(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v8 adds <c>skippedUpdateVersion</c> for the auto-update
+    /// banner's "Skip this version" gesture. The migration is a
+    /// no-op because the field is nullable with a <c>null</c>
+    /// default; pre-v8 files load with no skipped version, meaning
+    /// the banner shows for every available update.
+    /// </summary>
+    private static JsonObject MigrateV7ToV8(JsonObject obj) => obj;
 }
