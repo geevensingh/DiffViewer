@@ -10,6 +10,17 @@ namespace DiffViewer.Tests.Services;
 public sealed class NullUpdateServiceTests
 {
     [Fact]
+    public void CanAutoApply_IsFalse()
+    {
+        // Portable launches can't apply silently — the VM uses this
+        // flag to demote Automatic to NotifyOnly behavior so the
+        // browser-notify path doesn't surprise users.
+        var sut = new NullUpdateService();
+
+        sut.CanAutoApply.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task CheckAsync_ReturnsNoUpdateAvailableSingleton()
     {
         var sut = new NullUpdateService();

@@ -126,7 +126,19 @@ public sealed partial class UpdateNotificationViewModel : ObservableObject, IDis
 
         _pending = result;
 
-        switch (mode)
+        // Demote Automatic to NotifyOnly when the underlying service
+        // can't actually apply silently (Phase 5 — browser-notify
+        // case). Surprise-launching a browser tab on every startup
+        // would be hostile UX; instead we show the banner with an
+        // Install button just like NotifyOnly so the user opts in
+        // before the browser opens.
+        var effectiveMode = mode;
+        if (effectiveMode == AutoUpdateMode.Automatic && !_updates.CanAutoApply)
+        {
+            effectiveMode = AutoUpdateMode.NotifyOnly;
+        }
+
+        switch (effectiveMode)
         {
             case AutoUpdateMode.Automatic:
                 IsBannerVisible = true;

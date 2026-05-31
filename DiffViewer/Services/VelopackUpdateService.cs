@@ -35,6 +35,8 @@ public sealed class VelopackUpdateService : IUpdateService
         _mgr = mgr;
     }
 
+    public bool CanAutoApply => true;
+
     /// <summary>
     /// Returns a configured <see cref="VelopackUpdateService"/> when
     /// the app is running from a Velopack-installed location, else

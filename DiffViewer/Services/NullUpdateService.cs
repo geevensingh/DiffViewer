@@ -20,6 +20,8 @@ namespace DiffViewer.Services;
 /// </summary>
 public sealed class NullUpdateService : IUpdateService
 {
+    public bool CanAutoApply => false;
+
     public Task<UpdateCheckResult> CheckAsync(CancellationToken ct) =>
         Task.FromResult(UpdateCheckResult.NoUpdateAvailable);
 

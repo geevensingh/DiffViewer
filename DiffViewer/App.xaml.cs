@@ -158,17 +158,26 @@ public partial class App : Application
         window.Tag = _coordinator;
         _coordinator.CurrentChanged += (_, _) => window.DataContext = _coordinator.Current;
 
-        // Auto-update notification view-model (Phase 2.3). Constructed
-        // once per app lifetime — updates are app-wide, not per-context.
-        // Wired to the right IUpdateService at construction time based on
-        // whether we're running from a Velopack-installed location, with
-        // the user's IncludePreReleases preference flowing through to
-        // the underlying GithubSource. The banner's visibility is driven
-        // entirely by the view-model's state machine, started below
-        // after window.Show().
+        // Auto-update notification view-model (Phase 2.3 + 2.4 + 5).
+        // Constructed once per app lifetime — updates are app-wide,
+        // not per-context. Wired to the right IUpdateService at
+        // construction time:
+        //   1. Velopack-installed location → VelopackUpdateService
+        //      (silent auto-update via WaitExitThenApplyUpdates).
+        //   2. Otherwise → BrowserNotifyUpdateService (Phase 5 —
+        //      hits GitHub Releases REST API, surfaces banner with
+        //      an Install button that opens the Releases page in the
+        //      user's browser).
+        // NullUpdateService remains as a defensive fallback in case
+        // both adapters fail to construct (e.g. no HttpClient).
+        // The user's IncludePreReleases preference flows through to
+        // whichever adapter wins; the banner's visibility is driven
+        // by the view-model's state machine, started below after
+        // window.Show().
         var prereleases = settingsService.Current.IncludePreReleases;
         IUpdateService updateService =
             VelopackUpdateService.TryCreateForInstalled(prereleases)
+                ?? CreateBrowserNotifyService(_httpClient, prereleases)
                 ?? (IUpdateService)new NullUpdateService();
         _updateNotification = new UpdateNotificationViewModel(
             updateService,
@@ -211,5 +220,20 @@ public partial class App : Application
         try { _httpClient?.Dispose(); } catch { }
         try { _updateNotification?.Dispose(); } catch { }
         base.OnExit(e);
+    }
+
+    private static BrowserNotifyUpdateService? CreateBrowserNotifyService(HttpClient? http, bool includePreReleases)
+    {
+        if (http is null) return null;
+        // System.Reflection.Assembly.GetEntryAssembly().GetName().Version
+        // returns the AssemblyVersion (e.g. 1.5.0.0). On builds where
+        // version metadata is missing we fall back to 0.0.0 so the
+        // browser-notify service sees the current install as "older
+        // than anything" and always offers an update — strictly more
+        // conservative than the alternative (silently disabling
+        // notifications because we couldn't read our own version).
+        var version = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version
+            ?? new System.Version(0, 0, 0);
+        return new BrowserNotifyUpdateService(http, version, includePreReleases);
     }
 }

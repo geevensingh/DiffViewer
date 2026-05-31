@@ -12,6 +12,22 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Portable users now get update notifications too.** Previously the
+  auto-update banner only fired for installed copies; portable users
+  had to manually check the Releases page. A new `BrowserNotifyUpdateService`
+  queries the GitHub Releases REST API directly and surfaces
+  available updates via the same banner. Clicking **Install** opens
+  the Releases page in the default browser so the user can download
+  the latest `DiffViewer-Setup.exe` (recommended) or
+  `DiffViewer-portable.exe`. Honors the same Settings → Updates
+  controls (auto-update behavior, check frequency, include
+  pre-releases, skip-this-version). In `Automatic` mode the banner
+  silently demotes to `NotifyOnly` behavior — opening a browser tab
+  unprompted on every startup would be hostile UX, so portable
+  users always click Install themselves.
+
 ## [1.5.0] - 2026-05-30
 
 ### Added

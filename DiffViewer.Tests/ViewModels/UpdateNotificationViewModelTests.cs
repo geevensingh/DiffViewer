@@ -202,6 +202,48 @@ public sealed class UpdateNotificationViewModelTests
         fake.CheckCalls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task StartAsync_WhenAutomatic_ButServiceCannotAutoApply_DemotesToNotifyOnlyFlow()
+    {
+        // BrowserNotifyUpdateService can't apply silently — its "apply"
+        // launches a browser tab, which would be hostile UX in
+        // Automatic mode. The VM should silently demote to the
+        // NotifyOnly flow: show banner with Install button, don't
+        // call DownloadAsync / ApplyOnNextLaunchAsync until the user
+        // clicks Install.
+        var available = NewAvailable("2.0.0");
+        var fake = new FakeUpdateService { CheckResult = available, CanAutoApply = false };
+        var sut = NewVm(fake, () => AutoUpdateMode.Automatic);
+
+        await sut.StartAsync(CancellationToken.None);
+
+        fake.CheckCalls.Should().Be(1);
+        fake.DownloadCalls.Should().BeEmpty();
+        fake.ApplyOnNextLaunchCalls.Should().BeEmpty();
+        sut.IsBannerVisible.Should().BeTrue();
+        sut.ShowInstallButton.Should().BeTrue();
+        sut.StatusText.Should().Contain("2.0.0").And.NotContain("next launch");
+    }
+
+    [Fact]
+    public async Task Install_WhenServiceCannotAutoApply_StillCallsBothDownloadAndApply()
+    {
+        // The user explicitly clicked Install — both Download (no-op
+        // for browser-notify) and ApplyOnNextLaunch (which opens the
+        // browser) should still fire. The CanAutoApply flag only
+        // gates the silent Automatic-mode path, not user-initiated
+        // actions.
+        var available = NewAvailable("2.0.0");
+        var fake = new FakeUpdateService { CheckResult = available, CanAutoApply = false };
+        var sut = NewVm(fake, () => AutoUpdateMode.NotifyOnly);
+        await sut.StartAsync(CancellationToken.None);
+
+        await sut.InstallCommand.ExecuteAsync(null);
+
+        fake.DownloadCalls.Should().ContainSingle();
+        fake.ApplyOnNextLaunchCalls.Should().ContainSingle();
+    }
+
     private static UpdateNotificationViewModel NewVm(
         IUpdateService updates,
         Func<AutoUpdateMode> getMode,
@@ -224,6 +266,7 @@ public sealed class UpdateNotificationViewModelTests
     private sealed class FakeUpdateService : IUpdateService
     {
         public UpdateCheckResult CheckResult { get; set; } = UpdateCheckResult.NoUpdateAvailable;
+        public bool CanAutoApply { get; set; } = true;
         public int CheckCalls { get; private set; }
         public List<UpdateCheckResult> DownloadCalls { get; } = new();
         public List<UpdateCheckResult> ApplyOnNextLaunchCalls { get; } = new();
