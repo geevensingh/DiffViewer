@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-31
+
 ### Added
 
 - **Portable users now get update notifications too.** Previously the
