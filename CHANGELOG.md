@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-30
+
 ### Added
 
 - **`DiffViewer-Setup.exe` installer alongside the existing portable
