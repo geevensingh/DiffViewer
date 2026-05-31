@@ -1,8 +1,10 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using DiffViewer.Models;
 using DiffViewer.Rendering;
 using DiffViewer.Services;
 using DiffViewer.Utility;
@@ -168,19 +170,25 @@ public partial class App : Application
 
         window.Show();
 
-        // Auto-update lifecycle (Phase 2.1). Fires a single background
-        // check at startup; if an update is available it downloads
-        // and queues to apply silently on the next clean exit.
-        // Velopack-installed copies get the real service; portable /
-        // dev launches get a no-op. Phase 2.2 will add periodic
-        // re-checks driven by a configurable interval; Phase 2.3 will
-        // add the in-app notification banner that turns this silent
-        // path into a user-visible one.
-        IUpdateService updateService =
-            VelopackUpdateService.TryCreateForInstalled()
-                ?? (IUpdateService)new NullUpdateService();
-        var updateCt = _shutdownCts.Token;
-        _ = Task.Run(() => updateService.CheckAndQueueUpdateAsync(updateCt));
+        // Auto-update lifecycle (Phase 2.1 + 2.2). Fires a single
+        // background check at startup IF the user has opted in via
+        // AppSettings.AutoUpdate; Phase 2.2 defaults to NotifyOnly so
+        // no check fires for new installs until either the user flips
+        // the setting or Phase 2.3 redefines NotifyOnly to mean
+        // "check + show banner, don't apply silently." For now,
+        // anything other than AutoUpdateMode.Automatic short-circuits
+        // here. Velopack-installed copies get the real service;
+        // portable / dev launches get a no-op. Phase 2.3 will add the
+        // banner UI; Phase 3 will start producing Velopack-installed
+        // copies in the wild.
+        if (settingsService.Current.AutoUpdate == AutoUpdateMode.Automatic)
+        {
+            IUpdateService updateService =
+                VelopackUpdateService.TryCreateForInstalled()
+                    ?? (IUpdateService)new NullUpdateService();
+            var updateCt = _shutdownCts.Token;
+            _ = Task.Run(() => updateService.CheckAndQueueUpdateAsync(updateCt));
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)

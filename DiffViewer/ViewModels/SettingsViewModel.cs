@@ -120,6 +120,17 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     partial void OnDefaultCloneDestinationChanged(string value) =>
         OnPropertyChanged(nameof(HasDefaultCloneDestination));
 
+    // Auto-update settings (v7)
+    [ObservableProperty] private AutoUpdateMode _autoUpdate = AutoUpdateMode.NotifyOnly;
+    [ObservableProperty] private UpdateCheckCadence _updateCheckCadence = UpdateCheckCadence.Daily;
+    [ObservableProperty] private bool _includePreReleases;
+
+    /// <summary>Option list for the AutoUpdate dropdown in the dialog.</summary>
+    public IReadOnlyList<AutoUpdateMode> AutoUpdateOptions { get; } = Enum.GetValues<AutoUpdateMode>();
+
+    /// <summary>Option list for the UpdateCheckCadence dropdown in the dialog.</summary>
+    public IReadOnlyList<UpdateCheckCadence> UpdateCheckCadenceOptions { get; } = Enum.GetValues<UpdateCheckCadence>();
+
     // Status line
     [ObservableProperty] private string _statusMessage = string.Empty;
 
@@ -224,6 +235,15 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     partial void OnConfirmDeleteFileChanged(bool value) =>
         SaveIfNotSuppressed(s => s with { SuppressDeleteFileConfirmation = !value });
+
+    partial void OnAutoUpdateChanged(AutoUpdateMode value) =>
+        SaveIfNotSuppressed(s => s with { AutoUpdate = value });
+
+    partial void OnUpdateCheckCadenceChanged(UpdateCheckCadence value) =>
+        SaveIfNotSuppressed(s => s with { UpdateCheckCadence = value });
+
+    partial void OnIncludePreReleasesChanged(bool value) =>
+        SaveIfNotSuppressed(s => s with { IncludePreReleases = value });
 
     partial void OnSelectedColorPresetChanged(ColorSchemePresetName value)
     {
@@ -410,6 +430,10 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             LargeFileThresholdMb = (int)Math.Clamp(s.LargeFileThresholdBytes / (1024 * 1024), 1, 2048);
             ConfirmRevertHunk = !s.SuppressRevertHunkConfirmation;
             ConfirmDeleteFile = !s.SuppressDeleteFileConfirmation;
+
+            AutoUpdate = s.AutoUpdate;
+            UpdateCheckCadence = s.UpdateCheckCadence;
+            IncludePreReleases = s.IncludePreReleases;
 
             RepoRoots.Clear();
             foreach (var root in s.RepoRoots) RepoRoots.Add(root);

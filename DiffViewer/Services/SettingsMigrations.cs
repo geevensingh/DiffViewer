@@ -37,6 +37,15 @@ namespace DiffViewer.Services;
 /// because the field has a sensible default (<c>true</c>) — pre-v6
 /// files deserialize with the rasterised view enabled, matching the
 /// headline behaviour the feature was designed to deliver.</para>
+///
+/// <para>v7 introduced the three auto-update settings:
+/// <c>autoUpdate</c> (<see cref="AutoUpdateMode"/>),
+/// <c>updateCheckCadence</c> (<see cref="UpdateCheckCadence"/>), and
+/// <c>includePreReleases</c>. The migration is a no-op because every
+/// field has a safe default — pre-v7 files deserialize to
+/// <see cref="AutoUpdateMode.NotifyOnly"/> / <see cref="UpdateCheckCadence.Daily"/> /
+/// <c>false</c>, which exactly reflects the "no auto-update opted into yet"
+/// posture Phase 2.2 ships with.</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -58,6 +67,7 @@ internal static class SettingsMigrations
                 3 => MigrateV3ToV4, // adds fileListPaneWidthPixels (double, default 320)
                 4 => MigrateV4ToV5, // adds repoRoots, defaultCloneDestination, repoUrlMappings (all defaultable)
                 5 => MigrateV5ToV6, // adds renderSvgImage (bool, default true)
+                6 => MigrateV6ToV7, // adds autoUpdate / updateCheckCadence / includePreReleases (all defaultable)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -116,4 +126,14 @@ internal static class SettingsMigrations
     /// <see cref="AppSettings.RenderSvgImage"/> as <c>true</c>.
     /// </summary>
     private static JsonObject MigrateV5ToV6(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v7 adds the three auto-update settings (<c>autoUpdate</c>,
+    /// <c>updateCheckCadence</c>, <c>includePreReleases</c>). All have
+    /// safe defaults that map to "no auto-update opted into yet" so
+    /// the migration is a no-op; the deserializer fills in
+    /// <see cref="AutoUpdateMode.NotifyOnly"/> /
+    /// <see cref="UpdateCheckCadence.Daily"/> / <c>false</c>.
+    /// </summary>
+    private static JsonObject MigrateV6ToV7(JsonObject obj) => obj;
 }

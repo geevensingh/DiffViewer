@@ -16,7 +16,7 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -111,6 +111,34 @@ public sealed record AppSettings
     /// </summary>
     public IReadOnlyDictionary<RepoUrlKey, string> RepoUrlMappings { get; init; }
         = new Dictionary<RepoUrlKey, string>();
+
+    // ---- Auto-update (added in v7) ----
+    /// <summary>
+    /// How DiffViewer handles available updates from the configured
+    /// update source. Default <see cref="AutoUpdateMode.NotifyOnly"/>
+    /// — silent auto-updates are opt-in. See
+    /// <see cref="AutoUpdateMode"/> for the per-value semantics and
+    /// the cross-phase rollout story.
+    /// </summary>
+    public AutoUpdateMode AutoUpdate { get; init; } = AutoUpdateMode.NotifyOnly;
+
+    /// <summary>
+    /// How often the update check fires. Default
+    /// <see cref="UpdateCheckCadence.Daily"/>. Inert in Phase 2.2
+    /// (only the startup check exists); Phase 2.3 wires a periodic
+    /// timer that honors this value.
+    /// </summary>
+    public UpdateCheckCadence UpdateCheckCadence { get; init; } = UpdateCheckCadence.Daily;
+
+    /// <summary>
+    /// When <c>true</c>, the update source includes pre-release tags
+    /// (e.g. <c>v1.5.0-rc1</c>). Default <c>false</c> — stable
+    /// releases only. Inert in Phase 2.2 (the Velopack adapter
+    /// hardcodes <c>prerelease: false</c>); Phase 2.3 will read this
+    /// and pass it through to
+    /// <see cref="Velopack.Sources.GithubSource"/>.
+    /// </summary>
+    public bool IncludePreReleases { get; init; }
 }
 
 /// <summary>

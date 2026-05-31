@@ -55,6 +55,9 @@ internal static class SettingsJsonSerializer
             ["repoRoots"] = SerializeStringList(s.RepoRoots),
             ["defaultCloneDestination"] = s.DefaultCloneDestination,
             ["repoUrlMappings"] = SerializeRepoUrlMappings(s.RepoUrlMappings),
+            ["autoUpdate"] = s.AutoUpdate.ToString(),
+            ["updateCheckCadence"] = s.UpdateCheckCadence.ToString(),
+            ["includePreReleases"] = s.IncludePreReleases,
         };
         return obj.ToJsonString(WriteOptions);
     }
@@ -89,6 +92,9 @@ internal static class SettingsJsonSerializer
             RepoRoots = DeserializeStringList(obj["repoRoots"]) ?? defaults.RepoRoots,
             DefaultCloneDestination = TryString(obj, "defaultCloneDestination"),
             RepoUrlMappings = DeserializeRepoUrlMappings(obj["repoUrlMappings"]) ?? defaults.RepoUrlMappings,
+            AutoUpdate = TryEnum<AutoUpdateMode>(obj, "autoUpdate") ?? defaults.AutoUpdate,
+            UpdateCheckCadence = TryEnum<UpdateCheckCadence>(obj, "updateCheckCadence") ?? defaults.UpdateCheckCadence,
+            IncludePreReleases = TryBool(obj, "includePreReleases") ?? defaults.IncludePreReleases,
         };
     }
 

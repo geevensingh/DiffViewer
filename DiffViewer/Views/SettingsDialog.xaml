@@ -272,6 +272,40 @@
                            Visibility="{Binding RepoUrlMappings.Count,
                                                 Converter={x:Static vm:ZeroToVisibleConverter.Instance}}"
                            Text="No remembered clones yet."/>
+
+                <!-- Updates (added in v7) -->
+                <TextBlock Text="Updates" Style="{StaticResource SectionHeader}"/>
+                <TextBlock Margin="0,0,0,6" Foreground="#666" TextWrapping="Wrap" FontStyle="Italic">
+                    DiffViewer can check GitHub Releases for a newer version. The check
+                    only runs when launched from a Velopack-installed copy; portable
+                    builds ignore these settings.
+                </TextBlock>
+
+                <Grid Margin="0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                               Text="Auto-update behavior"/>
+                    <ComboBox  Grid.Row="0" Grid.Column="1" Margin="0,4"
+                               ItemsSource="{Binding AutoUpdateOptions}"
+                               SelectedItem="{Binding AutoUpdate}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                               Text="Check frequency"/>
+                    <ComboBox  Grid.Row="1" Grid.Column="1" Margin="0,4"
+                               ItemsSource="{Binding UpdateCheckCadenceOptions}"
+                               SelectedItem="{Binding UpdateCheckCadence}"/>
+
+                    <CheckBox  Grid.Row="2" Grid.Column="1" Margin="0,6,0,0"
+                               Content="Include pre-release versions"
+                               IsChecked="{Binding IncludePreReleases}"/>
+                </Grid>
             </StackPanel>
         </ScrollViewer>
     </DockPanel>

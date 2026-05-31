@@ -499,6 +499,56 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_V6File_MigratesToV7_AutoUpdateFieldsHydrateToDefaults()
+    {
+        // v6 schema (current minus 1) had no auto-update fields.
+        // After v6->v7 migration the three fields should hydrate to
+        // their safe defaults (NotifyOnly / Daily / false) and other
+        // fields should be preserved. Phase 2.2 deliberately defaults
+        // AutoUpdate to NotifyOnly so existing installs do not opt
+        // into silent updates without explicit user consent.
+        var v6 = new JsonObject
+        {
+            ["schemaVersion"] = 6,
+            ["fontSize"] = 19,
+            ["tabWidth"] = 7,
+            ["isSideBySide"] = false,
+            ["renderSvgImage"] = false,
+        };
+        File.WriteAllText(_settingsPath, v6.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
+        svc.Current.FontSize.Should().Be(19);
+        svc.Current.TabWidth.Should().Be(7);
+        svc.Current.IsSideBySide.Should().BeFalse();
+        svc.Current.RenderSvgImage.Should().BeFalse();
+        svc.Current.AutoUpdate.Should().Be(AutoUpdateMode.NotifyOnly);
+        svc.Current.UpdateCheckCadence.Should().Be(UpdateCheckCadence.Daily);
+        svc.Current.IncludePreReleases.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Save_Then_Load_RoundTripsAutoUpdateFields()
+    {
+        var svc1 = new SettingsService(_settingsPath);
+        svc1.Save(svc1.Current with
+        {
+            AutoUpdate = AutoUpdateMode.Disabled,
+            UpdateCheckCadence = UpdateCheckCadence.Weekly,
+            IncludePreReleases = true,
+        });
+
+        var svc2 = new SettingsService(_settingsPath);
+
+        svc2.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Loaded);
+        svc2.Current.AutoUpdate.Should().Be(AutoUpdateMode.Disabled);
+        svc2.Current.UpdateCheckCadence.Should().Be(UpdateCheckCadence.Weekly);
+        svc2.Current.IncludePreReleases.Should().BeTrue();
+    }
+
+    [Fact]
     public void RepoUrlMappings_StableOrderingOnDisk_AcrossSaves()
     {
         // Maps with the same content should serialize to the same JSON

@@ -12,6 +12,29 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → Updates section.** Three new settings control how
+  DiffViewer handles available updates from GitHub Releases. The
+  settings are inert on portable / from-source builds (those have
+  never checked for updates) and become live when the upcoming
+  Velopack-installed channel ships:
+  - **Auto-update behavior** — `NotifyOnly` (default for new and
+    migrated installs), `Automatic`, or `Disabled`. `NotifyOnly`
+    is the safe default: silent auto-updates are opt-in. The
+    banner UX that distinguishes `NotifyOnly` from `Disabled` lands
+    in a follow-up.
+  - **Check frequency** — `StartupOnly` / `Hourly` / `EverySixHours`
+    / `Daily` (default) / `Weekly`. Currently only the startup
+    check fires; the periodic timer that honors this setting lands
+    in a follow-up.
+  - **Include pre-release versions** — off by default. Currently
+    ignored (the update check is hardcoded stable-only); will be
+    wired through to the Velopack source in a follow-up.
+- `settings.json` schema bump v6 → v7. The migration is a no-op:
+  all three new fields default to safe values, so pre-v7 files load
+  with the same effective behaviour they had before.
+
 ## [1.4.0] - 2026-05-29
 
 ### Changed
