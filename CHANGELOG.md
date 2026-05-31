@@ -14,6 +14,16 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **`DiffViewer-Setup.exe` installer alongside the existing portable
+  download.** The new installer puts DiffViewer under
+  `%LocalAppData%\DiffViewer\` with a Start Menu shortcut and
+  subscribes to the in-app auto-update channel. No admin / UAC
+  prompt. Per-release artifacts on GitHub now include the Setup
+  installer plus Velopack delta packages, so subsequent updates are
+  typically small downloads (single-digit MB) instead of full ~70 MB
+  redownloads. Existing portable users are unaffected — the portable
+  exe still ships, still self-extracts on first run, and still
+  requires manual re-download for updates.
 - **Auto-update banner gets a "Skip this version" button.** Persists
   the skipped version into `settings.json` so future checks for the
   same version stay quiet across launches. Detection of a newer

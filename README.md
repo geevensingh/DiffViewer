@@ -196,11 +196,25 @@ may take a few extra seconds. Subsequent launches are fast.
 
 ## Install
 
-1. Go to the [Releases page] and download `DiffViewer.exe` from the latest
-   release.
-2. Double-click to launch. Windows SmartScreen may show a warning for the
-   unsigned binary; click **More info** → **Run anyway**. The release exe
-   is not currently code-signed.
+Two download options on the [Releases page]:
+
+1. **`DiffViewer-Setup.exe` (recommended).** Installs to
+   `%LocalAppData%\DiffViewer\`, adds a Start Menu shortcut, and
+   subscribes to **in-app auto-updates** (notification banner when a
+   new release ships; user opts in or out via Settings → Updates).
+   No admin / UAC prompt — Velopack installs per-user.
+2. **`DiffViewer-portable.exe`.** Single-file ~150 MB exe; double-click
+   to run, no install. Updates are **manual** — re-download from the
+   Releases page when a new version ships. Good for thumb-drive use,
+   restricted environments, or "just try it for five minutes."
+
+Both options are functionally identical app-side; the only difference
+is the install / update lifecycle.
+
+Windows SmartScreen may show a warning the first time you launch
+either binary — click **More info** → **Run anyway**. Neither
+artifact is currently code-signed (see
+[CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)).
 
 ## Build from source
 

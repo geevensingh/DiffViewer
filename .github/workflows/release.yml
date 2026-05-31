@@ -28,20 +28,115 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Stamp version + publish
+      - name: Stamp version + publish (Portable + Setup)
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
           Write-Host "Publishing version: $version"
+          $fileVersion = $version -replace '-.*$', ''
+
+          # Portable: today's single-file 150 MB exe. Built first because
+          # the existing Definition-of-Done check (publish\DiffViewer.exe
+          # must exist) targets this layout.
           dotnet publish DiffViewer\DiffViewer.csproj `
             -c Release `
+            -p:DiffViewerBuildMode=Portable `
             -o publish `
             -p:Version=$version `
-            -p:FileVersion=$($version -replace '-.*$', '') `
+            -p:FileVersion=$fileVersion `
             -p:InformationalVersion=$version
           if (-not (Test-Path 'publish\DiffViewer.exe')) {
-            Write-Error 'publish\DiffViewer.exe not found after publish'
+            Write-Error 'publish\DiffViewer.exe not found after Portable publish'
             exit 1
+          }
+          # Rename to a friendlier asset name; the upload step references
+          # DiffViewer-portable.exe so users see "what is this" cues from
+          # the filename alone.
+          New-Item -ItemType Directory -Path 'artifacts' -Force | Out-Null
+          Copy-Item -Path 'publish\DiffViewer.exe' -Destination 'artifacts\DiffViewer-portable.exe' -Force
+
+          # Setup: non-single-file folder layout consumed by vpk pack
+          # below. Built into a separate output dir so the two publishes
+          # don't fight over the same files.
+          dotnet publish DiffViewer\DiffViewer.csproj `
+            -c Release `
+            -p:DiffViewerBuildMode=Setup `
+            -o publish-setup `
+            -p:Version=$version `
+            -p:FileVersion=$fileVersion `
+            -p:InformationalVersion=$version
+          if (-not (Test-Path 'publish-setup\DiffViewer.exe')) {
+            Write-Error 'publish-setup\DiffViewer.exe not found after Setup publish'
+            exit 1
+          }
+
+      - name: Restore dotnet tools (vpk)
+        run: dotnet tool restore
+
+      - name: Download prior release packages (for delta)
+        # First release with Velopack support has no prior nupkgs to
+        # download; vpk download exits non-zero in that case (and any
+        # other transient failure). Tolerate that — vpk pack will then
+        # produce a full-only release, which is exactly the right
+        # outcome for the first Setup release.
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path 'releases-dir' -Force | Out-Null
+          dotnet vpk download github `
+            --repoUrl https://github.com/${{ github.repository }} `
+            --token $env:GITHUB_TOKEN `
+            --outputDir releases-dir
+
+      - name: Pack Velopack release (vpk pack)
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          # --shortcuts StartMenuRoot (not the default Desktop+StartMenu)
+          # avoids the Phase 1 spike finding that Velopack 1.1.1's
+          # uninstall does not clean up the Desktop shortcut.
+          dotnet vpk pack `
+            --packId DiffViewer `
+            --packVersion $version `
+            --packDir publish-setup `
+            --mainExe DiffViewer.exe `
+            --outputDir releases-dir `
+            --shortcuts StartMenuRoot `
+            --packTitle DiffViewer `
+            --packAuthors "Geeven Singh"
+          # Sanity-check the expected artifacts are present. The delta
+          # nupkg only exists from the second release onward (no prior
+          # full to diff against on the first one), so its absence is
+          # not an error.
+          if (-not (Test-Path "releases-dir\DiffViewer-win-Setup.exe")) {
+            Write-Error 'DiffViewer-win-Setup.exe missing after vpk pack'
+            exit 1
+          }
+          if (-not (Test-Path "releases-dir\DiffViewer-$version-full.nupkg")) {
+            Write-Error "DiffViewer-$version-full.nupkg missing after vpk pack"
+            exit 1
+          }
+          # Copy / rename for the upload step. We want
+          # DiffViewer-Setup.exe (no win-* infix) as the user-facing
+          # download name.
+          Copy-Item -Path "releases-dir\DiffViewer-win-Setup.exe" -Destination 'artifacts\DiffViewer-Setup.exe' -Force
+          Copy-Item -Path "releases-dir\DiffViewer-$version-full.nupkg" -Destination "artifacts\DiffViewer-$version-full.nupkg" -Force
+          # The delta nupkg is optional (absent on first release).
+          $delta = Get-ChildItem -Path "releases-dir\DiffViewer-$version-delta.nupkg" -ErrorAction SilentlyContinue
+          if ($delta) {
+            Copy-Item -Path $delta.FullName -Destination "artifacts\DiffViewer-$version-delta.nupkg" -Force
+          }
+          # RELEASES + Velopack metadata files are required for the
+          # auto-updater to discover available packages on the
+          # GitHub release page.
+          Copy-Item -Path 'releases-dir\RELEASES' -Destination 'artifacts\RELEASES' -Force
+          if (Test-Path 'releases-dir\releases.win.json') {
+            Copy-Item -Path 'releases-dir\releases.win.json' -Destination 'artifacts\releases.win.json' -Force
+          }
+          if (Test-Path 'releases-dir\assets.win.json') {
+            Copy-Item -Path 'releases-dir\assets.win.json' -Destination 'artifacts\assets.win.json' -Force
           }
 
       - name: Extract CHANGELOG section
@@ -83,6 +178,9 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: publish/DiffViewer.exe
+          # Upload every asset from artifacts/ — Setup.exe + portable.exe
+          # are the user-facing downloads; the *.nupkg files + RELEASES +
+          # *.json files are what the in-app updater consumes silently.
+          files: artifacts/*
           body: ${{ env.RELEASE_BODY }}
           fail_on_unmatched_files: true
