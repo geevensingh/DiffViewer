@@ -12,6 +12,14 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Settings → Updates section now shows the running version.** A
+  read-only "Current version" row at the top of the section
+  displays the build's version string (e.g. `1.6.0` or `1.6.0-rc1`
+  for prereleases), so users can answer "what version am I on?"
+  alongside the auto-update settings without leaving the dialog.
+
 ## [1.6.0] - 2026-05-31
 
 ### Added

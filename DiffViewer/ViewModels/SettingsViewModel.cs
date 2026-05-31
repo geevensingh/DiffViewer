@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DiffViewer.Models;
 using DiffViewer.Services;
+using DiffViewer.Utility;
 
 namespace DiffViewer.ViewModels;
 
@@ -130,6 +131,15 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     /// <summary>Option list for the UpdateCheckCadence dropdown in the dialog.</summary>
     public IReadOnlyList<UpdateCheckCadence> UpdateCheckCadenceOptions { get; } = Enum.GetValues<UpdateCheckCadence>();
+
+    /// <summary>
+    /// Display version of the running DiffViewer build (e.g.
+    /// <c>"1.6.0"</c>). Read once at construction; does not change
+    /// at runtime. Shown in the dialog's Updates section as
+    /// "what version am I on right now" context for the auto-update
+    /// settings.
+    /// </summary>
+    public string CurrentVersion { get; } = AppVersionInfo.GetDisplayVersion();
 
     // Status line
     [ObservableProperty] private string _statusMessage = string.Empty;

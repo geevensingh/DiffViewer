@@ -288,12 +288,20 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Grid.RowDefinitions>
-                        <RowDefinition/><RowDefinition/><RowDefinition/>
+                        <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                               Text="Current version"/>
+                    <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,4"
+                               VerticalAlignment="Center"
+                               FontFamily="Consolas"
+                               Foreground="#333"
+                               Text="{Binding CurrentVersion, Mode=OneTime}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
                                Text="Auto-update behavior"/>
-                    <ComboBox  Grid.Row="0" Grid.Column="1" Margin="0,4"
+                    <ComboBox  Grid.Row="1" Grid.Column="1" Margin="0,4"
                                ItemsSource="{Binding AutoUpdateOptions}"
                                SelectedItem="{Binding AutoUpdate}">
                         <ComboBox.ItemTemplate>
@@ -303,9 +311,9 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                    <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FieldLabel}"
                                Text="Check frequency"/>
-                    <ComboBox  Grid.Row="1" Grid.Column="1" Margin="0,4"
+                    <ComboBox  Grid.Row="2" Grid.Column="1" Margin="0,4"
                                ItemsSource="{Binding UpdateCheckCadenceOptions}"
                                SelectedItem="{Binding UpdateCheckCadence}">
                         <ComboBox.ItemTemplate>
@@ -315,7 +323,7 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
-                    <CheckBox  Grid.Row="2" Grid.Column="1" Margin="0,6,0,0"
+                    <CheckBox  Grid.Row="3" Grid.Column="1" Margin="0,6,0,0"
                                Content="Include pre-release versions"
                                IsChecked="{Binding IncludePreReleases}"/>
                 </Grid>
