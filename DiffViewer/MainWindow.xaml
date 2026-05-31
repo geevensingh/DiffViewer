@@ -69,6 +69,12 @@
         <KeyBinding Key="NumPad0"  Modifiers="Control" Command="{Binding DiffPane.ZoomResetCommand}"/>
     </Window.InputBindings>
     <Grid>
+        <Grid.RowDefinitions>
+            <!-- Auto-update banner (Phase 2.3). Stays Collapsed until
+                 UpdateNotificationViewModel.IsBannerVisible flips. -->
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
         <Grid.Resources>
             <DataTemplate DataType="{x:Type vm:MainViewModel}">
                 <Grid Loaded="OnMainLayoutGridLoaded">
@@ -156,7 +162,40 @@
             </DataTemplate>
         </Grid.Resources>
 
-        <ContentControl Content="{Binding}"/>
+        <!-- Auto-update banner. Data context wired in App.OnStartup via
+             MainWindow.AttachUpdateNotification; collapsed until the
+             view-model fires IsBannerVisible. The Install button is
+             shown only in NotifyOnly mode before the user accepts the
+             update. -->
+        <Border x:Name="UpdateBanner"
+                Grid.Row="0"
+                Background="#FFF8E1"
+                BorderBrush="#E0C97A"
+                BorderThickness="0,0,0,1"
+                Padding="12,6"
+                Visibility="{Binding IsBannerVisible,
+                                     Converter={x:Static vm:BoolToVisibilityConverter.Instance},
+                                     FallbackValue=Collapsed}">
+            <DockPanel>
+                <Button DockPanel.Dock="Right"
+                        Content="Dismiss"
+                        Padding="10,2"
+                        Margin="6,0,0,0"
+                        Command="{Binding DismissCommand}"/>
+                <Button DockPanel.Dock="Right"
+                        Content="Install"
+                        Padding="10,2"
+                        Command="{Binding InstallCommand}"
+                        Visibility="{Binding ShowInstallButton,
+                                             Converter={x:Static vm:BoolToVisibilityConverter.Instance},
+                                             FallbackValue=Collapsed}"/>
+                <TextBlock Text="{Binding StatusText}"
+                           VerticalAlignment="Center"
+                           Foreground="#4A3B0A"/>
+            </DockPanel>
+        </Border>
+
+        <ContentControl Grid.Row="1" Content="{Binding}"/>
 
         <!-- Window-level loading overlay. Visible whenever the coordinator
              is in the middle of a context switch (PR fetch, git fetch,
@@ -165,8 +204,10 @@
              prepared. The coordinator lives on Window.Tag (set in
              App.xaml.cs); RelativeSource binding reaches it without
              touching the existing DataContext = Coordinator.Current
-             plumbing. -->
-        <Grid Background="#80FFFFFF"
+             plumbing. Spans both banner and content rows so it veils
+             the banner too while a switch is in flight. -->
+        <Grid Grid.Row="0" Grid.RowSpan="2"
+              Background="#80FFFFFF"
               Visibility="{Binding Tag.IsSwitching, RelativeSource={RelativeSource AncestorType=Window}, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
             <Border Background="White"
                     BorderBrush="#CCCCCC"

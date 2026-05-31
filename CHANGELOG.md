@@ -14,6 +14,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **Auto-update banner at the top of the main window.** Replaces
+  the silent placeholder from the previous Phase 2.1 / 2.2
+  iterations:
+  - In `Automatic` mode, the banner appears once a downloaded
+    update is queued ("Update vX.Y.Z ready — will install on next
+    launch") so users know what is happening.
+  - In `NotifyOnly` mode (the default), the banner appears as soon
+    as an update is detected, with an **Install** button that
+    triggers the download + apply-on-next-launch sequence.
+  - Either mode's banner has a **Dismiss** button that hides it
+    for the rest of the session. (A persistent "skip this
+    version" gesture is planned as a follow-up.)
 - **Settings → Updates section.** Three new settings control how
   DiffViewer handles available updates from GitHub Releases. The
   settings are inert on portable / from-source builds (those have
@@ -21,16 +33,13 @@ body. Keep section headings exact and write notes in Markdown.
   Velopack-installed channel ships:
   - **Auto-update behavior** — `NotifyOnly` (default for new and
     migrated installs), `Automatic`, or `Disabled`. `NotifyOnly`
-    is the safe default: silent auto-updates are opt-in. The
-    banner UX that distinguishes `NotifyOnly` from `Disabled` lands
-    in a follow-up.
+    is the safe default: silent auto-updates are opt-in.
   - **Check frequency** — `StartupOnly` / `Hourly` / `EverySixHours`
     / `Daily` (default) / `Weekly`. Currently only the startup
-    check fires; the periodic timer that honors this setting lands
-    in a follow-up.
-  - **Include pre-release versions** — off by default. Currently
-    ignored (the update check is hardcoded stable-only); will be
-    wired through to the Velopack source in a follow-up.
+    check fires; the periodic timer that honors this setting is
+    a planned follow-up.
+  - **Include pre-release versions** — off by default. Now wired
+    through to the underlying GitHub release source.
 - `settings.json` schema bump v6 → v7. The migration is a no-op:
   all three new fields default to safe values, so pre-v7 files load
   with the same effective behaviour they had before.

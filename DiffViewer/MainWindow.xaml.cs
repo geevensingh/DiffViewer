@@ -58,6 +58,19 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Wire the auto-update banner's data context. Called from
+    /// <see cref="App.OnStartup"/> after the window is constructed but
+    /// before <see cref="Window.Show"/>; the banner stays
+    /// <see cref="Visibility.Collapsed"/> until the view-model's
+    /// state machine sets <see cref="UpdateNotificationViewModel.IsBannerVisible"/>.
+    /// Idempotent / overrides any prior wiring.
+    /// </summary>
+    public void AttachUpdateNotification(UpdateNotificationViewModel vm)
+    {
+        UpdateBanner.DataContext = vm;
+    }
+
+    /// <summary>
     /// Apply saved size/position/maximized state from settings, or fall
     /// back to <see cref="DefaultWindowWidth"/>×<see cref="DefaultWindowHeight"/>
     /// centered on the primary screen. Multi-monitor validation lives in

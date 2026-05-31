@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using DiffViewer.Models;
 using Velopack;
 using Velopack.Sources;
 
@@ -8,9 +9,10 @@ namespace DiffViewer.Services;
 
 /// <summary>
 /// Production <see cref="IUpdateService"/> wired to Velopack 1.x.
-/// Checks the configured GitHub Releases feed, downloads any newer
-/// release, and queues it to apply silently on the next clean exit
-/// via <see cref="UpdateManager.WaitExitThenApplyUpdates"/>.
+/// Constructed once at startup with the user's
+/// <c>IncludePreReleases</c> preference; the same instance services
+/// every Check / Download / Apply call for the app's lifetime so the
+/// underlying <see cref="UpdateManager"/> can amortise its setup work.
 ///
 /// <para>This is a thin pass-through adapter — by design there is no
 /// branching logic to test. The interesting behavior (check API,
@@ -18,19 +20,20 @@ namespace DiffViewer.Services;
 /// and was verified end-to-end by the Phase 1 spike on branch
 /// <c>spike/velopack</c>. Per AGENTS.md §10 thin-wrapper carve-out,
 /// this class is intentionally untested; <see cref="NullUpdateService"/>
-/// has a smoke test that covers the dispatch decision in
-/// <see cref="App"/> startup.</para>
-///
-/// <para>Constructor takes nothing today; the feed URL is hardcoded
-/// because Phase 2.1 deliberately predates the
-/// <c>AppSettings.IncludePreReleases</c> toggle that Phase 2.2 adds.
-/// Once that setting lands, this service will read it from
-/// <see cref="ISettingsService"/> and pass through to the
-/// <see cref="GithubSource"/> ctor.</para>
+/// and the higher-level
+/// <see cref="DiffViewer.ViewModels.UpdateNotificationViewModel"/>
+/// state machine are tested independently.</para>
 /// </summary>
 public sealed class VelopackUpdateService : IUpdateService
 {
     private const string ReleasesUrl = "https://github.com/geevensingh/DiffViewer";
+
+    private readonly UpdateManager _mgr;
+
+    private VelopackUpdateService(UpdateManager mgr)
+    {
+        _mgr = mgr;
+    }
 
     /// <summary>
     /// Returns a configured <see cref="VelopackUpdateService"/> when
@@ -43,13 +46,20 @@ public sealed class VelopackUpdateService : IUpdateService
     /// etc.) — those degrade to "treat as portable" rather than
     /// crashing app startup.
     /// </summary>
-    public static VelopackUpdateService? TryCreateForInstalled()
+    /// <param name="includePreReleases">
+    /// When <c>true</c>, the configured
+    /// <see cref="GithubSource"/> will include pre-release tags
+    /// (e.g. <c>v1.5.0-rc1</c>) in its lookup. Sourced from
+    /// <see cref="DiffViewer.Models.AppSettings.IncludePreReleases"/>
+    /// at startup.
+    /// </param>
+    public static VelopackUpdateService? TryCreateForInstalled(bool includePreReleases)
     {
         try
         {
-            var source = new GithubSource(ReleasesUrl, accessToken: null, prerelease: false);
-            var probe = new UpdateManager(source);
-            return probe.IsInstalled ? new VelopackUpdateService() : null;
+            var source = new GithubSource(ReleasesUrl, accessToken: null, prerelease: includePreReleases);
+            var mgr = new UpdateManager(source);
+            return mgr.IsInstalled ? new VelopackUpdateService(mgr) : null;
         }
         catch (Exception)
         {
@@ -57,34 +67,60 @@ public sealed class VelopackUpdateService : IUpdateService
         }
     }
 
-    public async Task CheckAndQueueUpdateAsync(CancellationToken ct)
+    public async Task<UpdateCheckResult> CheckAsync(CancellationToken ct)
     {
         try
         {
-            var source = new GithubSource(ReleasesUrl, accessToken: null, prerelease: false);
-            var mgr = new UpdateManager(source);
-            if (!mgr.IsInstalled)
-            {
-                return;
-            }
-
-            var info = await mgr.CheckForUpdatesAsync().ConfigureAwait(false);
+            var info = await _mgr.CheckForUpdatesAsync().ConfigureAwait(false);
             if (info is null)
             {
-                return;
+                return UpdateCheckResult.NoUpdateAvailable;
             }
-
-            await mgr.DownloadUpdatesAsync(info).ConfigureAwait(false);
-            mgr.WaitExitThenApplyUpdates(info);
+            return new UpdateCheckResult
+            {
+                IsAvailable = true,
+                Version = info.TargetFullRelease.Version.ToString(),
+                OpaqueHandle = info,
+            };
         }
         catch (Exception)
         {
-            // Best-effort: network failures, missing release feed,
-            // GitHub rate-limiting, etc. Worst case the user stays on
-            // the current version and the next launch retries. Phase
-            // 2.3 will wire a Velopack ILogger to a rolling file log
-            // under %LocalAppData%\DiffViewer\logs\ so diagnostics are
-            // recoverable.
+            // Best-effort: network failures, GitHub rate-limiting, etc.
+            // The next launch retries. Phase 2.4 will wire a Velopack
+            // ILogger to a rolling file log under
+            // %LocalAppData%\DiffViewer\logs\ so diagnostics are
+            // recoverable; for now we swallow silently to match the
+            // Phase 2.1 posture.
+            return UpdateCheckResult.NoUpdateAvailable;
         }
     }
+
+    public async Task DownloadAsync(UpdateCheckResult update, CancellationToken ct)
+    {
+        if (update.OpaqueHandle is not UpdateInfo info) return;
+        try
+        {
+            await _mgr.DownloadUpdatesAsync(info).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Same posture as CheckAsync: swallow, retry next launch.
+        }
+    }
+
+    public Task ApplyOnNextLaunchAsync(UpdateCheckResult update, CancellationToken ct)
+    {
+        if (update.OpaqueHandle is not UpdateInfo info) return Task.CompletedTask;
+        try
+        {
+            _mgr.WaitExitThenApplyUpdates(info);
+        }
+        catch (Exception)
+        {
+            // Worst case: user keeps the current version until next
+            // clean exit retries the whole flow.
+        }
+        return Task.CompletedTask;
+    }
 }
+

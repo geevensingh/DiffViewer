@@ -8,6 +8,7 @@ using DiffViewer.Models;
 using DiffViewer.Rendering;
 using DiffViewer.Services;
 using DiffViewer.Utility;
+using DiffViewer.ViewModels;
 using ICSharpCode.AvalonEdit.Highlighting;
 using Velopack;
 
@@ -18,6 +19,7 @@ public partial class App : Application
     private CancellationTokenSource? _shutdownCts;
     private MainWindowCoordinator? _coordinator;
     private HttpClient? _httpClient;
+    private UpdateNotificationViewModel? _updateNotification;
 
     // WPF's auto-generated Program.Main doesn't give Velopack a seam
     // to intercept its install/uninstall/restart args before WPF spins
@@ -155,6 +157,24 @@ public partial class App : Application
         // contract that the inner content templates depend on.
         window.Tag = _coordinator;
         _coordinator.CurrentChanged += (_, _) => window.DataContext = _coordinator.Current;
+
+        // Auto-update notification view-model (Phase 2.3). Constructed
+        // once per app lifetime — updates are app-wide, not per-context.
+        // Wired to the right IUpdateService at construction time based on
+        // whether we're running from a Velopack-installed location, with
+        // the user's IncludePreReleases preference flowing through to
+        // the underlying GithubSource. The banner's visibility is driven
+        // entirely by the view-model's state machine, started below
+        // after window.Show().
+        var prereleases = settingsService.Current.IncludePreReleases;
+        IUpdateService updateService =
+            VelopackUpdateService.TryCreateForInstalled(prereleases)
+                ?? (IUpdateService)new NullUpdateService();
+        _updateNotification = new UpdateNotificationViewModel(
+            updateService,
+            getMode: () => settingsService.Current.AutoUpdate);
+        window.AttachUpdateNotification(_updateNotification);
+
         window.Closed += async (_, _) =>
         {
             if (_coordinator is not null) await _coordinator.DisposeCurrentAsync();
@@ -170,25 +190,15 @@ public partial class App : Application
 
         window.Show();
 
-        // Auto-update lifecycle (Phase 2.1 + 2.2). Fires a single
-        // background check at startup IF the user has opted in via
-        // AppSettings.AutoUpdate; Phase 2.2 defaults to NotifyOnly so
-        // no check fires for new installs until either the user flips
-        // the setting or Phase 2.3 redefines NotifyOnly to mean
-        // "check + show banner, don't apply silently." For now,
-        // anything other than AutoUpdateMode.Automatic short-circuits
-        // here. Velopack-installed copies get the real service;
-        // portable / dev launches get a no-op. Phase 2.3 will add the
-        // banner UI; Phase 3 will start producing Velopack-installed
-        // copies in the wild.
-        if (settingsService.Current.AutoUpdate == AutoUpdateMode.Automatic)
-        {
-            IUpdateService updateService =
-                VelopackUpdateService.TryCreateForInstalled()
-                    ?? (IUpdateService)new NullUpdateService();
-            var updateCt = _shutdownCts.Token;
-            _ = Task.Run(() => updateService.CheckAndQueueUpdateAsync(updateCt));
-        }
+        // Auto-update lifecycle (Phase 2.1 -> 2.3). The
+        // UpdateNotificationViewModel state machine decides what to do
+        // based on the user's AutoUpdate setting (Disabled -> no-op;
+        // NotifyOnly -> check + show banner with Install button;
+        // Automatic -> check + download + queue + show banner). Fire-
+        // and-forget on a background task; the VM hops back to the UI
+        // thread between awaits via ConfigureAwait(true).
+        var updateCt = _shutdownCts.Token;
+        _ = Task.Run(() => _updateNotification!.StartAsync(updateCt));
     }
 
     protected override void OnExit(ExitEventArgs e)
