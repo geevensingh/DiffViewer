@@ -1,11 +1,13 @@
 using System;
 using System.Net.Http;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using DiffViewer.Rendering;
 using DiffViewer.Services;
 using DiffViewer.Utility;
 using ICSharpCode.AvalonEdit.Highlighting;
+using Velopack;
 
 namespace DiffViewer;
 
@@ -14,6 +16,37 @@ public partial class App : Application
     private CancellationTokenSource? _shutdownCts;
     private MainWindowCoordinator? _coordinator;
     private HttpClient? _httpClient;
+
+    // WPF's auto-generated Program.Main doesn't give Velopack a seam
+    // to intercept its install/uninstall/restart args before WPF spins
+    // up. The companion change in DiffViewer.csproj swaps App.xaml
+    // from <ApplicationDefinition> to <Page> and sets
+    // <StartupObject>DiffViewer.App</StartupObject> so this method
+    // becomes the process entry point. Per the Velopack WPF sample
+    // (velopack/velopack/samples/CSharpWpf/App.xaml.cs).
+    [STAThread]
+    private static void Main(string[] args)
+    {
+        try
+        {
+            // Must run before any WPF code. When the parent process is
+            // an in-progress Velopack install/update, Velopack handles
+            // the hook arg and Environment.Exit's before we ever reach
+            // the WPF code below. Outside of installer hooks this is a
+            // fast no-op.
+            VelopackApp.Build().Run();
+        }
+        catch (Exception)
+        {
+            // Velopack init failures must not block launching the app.
+            // Worst case: this launch runs without an update channel
+            // and the next launch retries.
+        }
+
+        var app = new App();
+        app.InitializeComponent();
+        app.Run();
+    }
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -134,6 +167,20 @@ public partial class App : Application
         }
 
         window.Show();
+
+        // Auto-update lifecycle (Phase 2.1). Fires a single background
+        // check at startup; if an update is available it downloads
+        // and queues to apply silently on the next clean exit.
+        // Velopack-installed copies get the real service; portable /
+        // dev launches get a no-op. Phase 2.2 will add periodic
+        // re-checks driven by a configurable interval; Phase 2.3 will
+        // add the in-app notification banner that turns this silent
+        // path into a user-visible one.
+        IUpdateService updateService =
+            VelopackUpdateService.TryCreateForInstalled()
+                ?? (IUpdateService)new NullUpdateService();
+        var updateCt = _shutdownCts.Token;
+        _ = Task.Run(() => updateService.CheckAndQueueUpdateAsync(updateCt));
     }
 
     protected override void OnExit(ExitEventArgs e)

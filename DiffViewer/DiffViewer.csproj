@@ -10,6 +10,33 @@
     <RootNamespace>DiffViewer</RootNamespace>
     <AssemblyName>DiffViewer</AssemblyName>
     <ApplicationIcon>Assets\diffviewer.ico</ApplicationIcon>
+
+    <!-- Velopack requires a hook (VelopackApp.Build().Run()) that
+         runs before WPF spins up. WPF's auto-generated Program.Main
+         doesn't give us that seam, so we provide our own static Main
+         in App.xaml.cs and point StartupObject at it. The Page swap
+         below (App.xaml from ApplicationDefinition to Page) is the
+         companion change that stops WPF from generating its own
+         Main and creating a duplicate-entry-point error. Both knobs
+         apply to every build configuration — the Velopack hook is
+         a no-op when running outside an installed location, so
+         portable / dev builds aren't affected. -->
+    <StartupObject>DiffViewer.App</StartupObject>
+
+    <!-- Selects the publish layout produced by `dotnet publish`.
+         Portable (default) — single-file self-extracting exe (today's
+                              shape); matches the README's documented
+                              "Build from source" workflow and the
+                              shape the v1.x releases ship.
+         Setup              — non-single-file folder layout that
+                              `vpk pack` wraps into a Velopack installer.
+                              Built with
+                              `dotnet publish -p:DiffViewerBuildMode=Setup`.
+                              Used by the Phase 3 release workflow's
+                              auto-update lane.
+         Both modes are self-contained win-x64. -->
+    <DiffViewerBuildMode Condition="'$(DiffViewerBuildMode)' == ''">Portable</DiffViewerBuildMode>
+
     <!-- DiffViewer's own strings are hard-coded English; no .resx, no
          x:Uid. The 11 framework locale folders shipped by the .NET
          desktop runtime (cs/de/es/fr/it/ja/ko/pl/pt-BR/ru/tr) only
@@ -27,6 +54,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Re-declare App.xaml from ApplicationDefinition to Page so WPF
+         stops auto-generating Program.Main. Our own static Main lives
+         in App.xaml.cs and runs VelopackApp.Build().Run() before WPF
+         spins up. Required pairing with <StartupObject> above. Per the
+         Velopack WPF sample csproj. -->
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Hand-authored AvalonEdit syntax-highlighting definitions (TypeScript,
          YAML, Go, Rust, Ruby, Bash, TOML). Registered at app startup via
          CustomHighlightingRegistrar; the wildcard keeps the csproj in sync
@@ -35,14 +72,26 @@
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- LOAD-BEARING for LibGit2Sharp: ships native git2-*.dll that
-         must be extracted from the single-file bundle at runtime.
-         Do NOT remove without testing on a clean machine. -->
+  </PropertyGroup>
+
+  <!-- Portable build: single-file self-extracting exe (today's shape).
+       Built with `dotnet publish -p:DiffViewerBuildMode=Portable -c Release`.
+       IncludeNativeLibrariesForSelfExtract is LOAD-BEARING here: it ships
+       LibGit2Sharp's native git2-*.dll inside the bundle so it can be
+       extracted to %TEMP% on first launch. Do NOT remove without testing
+       on a clean machine. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release' AND '$(DiffViewerBuildMode)' == 'Portable'">
+    <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+
+  <!-- Setup build (default): non-single-file folder layout that
+       `vpk pack` wraps into a Velopack installer. Native git2-*.dll
+       ships loose alongside DiffViewer.exe and is picked up by the OS
+       loader directly — no self-extract needed. Verified end-to-end
+       by the Phase 1 spike on branch spike/velopack. -->
 
   <ItemGroup>
     <InternalsVisibleTo Include="DiffViewer.Tests" />
@@ -55,6 +104,7 @@
     <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
     <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+    <PackageReference Include="Velopack" Version="1.1.1" />
   </ItemGroup>
 
 </Project>
