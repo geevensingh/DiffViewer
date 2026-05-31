@@ -234,6 +234,48 @@ public sealed class BrowserNotifyUpdateServiceTests
     }
 
     [Theory]
+    [InlineData(0, 0, 0, true)]
+    [InlineData(0, 0, 1, false)]
+    [InlineData(0, 1, 0, false)]
+    [InlineData(1, 0, 0, false)]
+    [InlineData(1, 6, 0, false)]
+    public void IsDevBuild_Identifies_ZeroVersion(int major, int minor, int build, bool expected)
+    {
+        BrowserNotifyUpdateService.IsDevBuild(new Version(major, minor, build))
+            .Should().Be(expected);
+    }
+
+    [Fact]
+    public void IsDevBuild_Handles_TwoComponentVersion()
+    {
+        // System.Version with only Major.Minor gives Build = -1.
+        // The dev-marker check must accept that as "also dev" so
+        // a hypothetical Version(0, 0) sentinel still short-circuits.
+        BrowserNotifyUpdateService.IsDevBuild(new Version(0, 0))
+            .Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CheckAsync_WhenCurrentVersionIs0_0_0_ReturnsNoUpdateWithoutHittingNetwork()
+    {
+        // Dev builds (csproj defaults Version to 0.0.0-dev). The
+        // service must short-circuit before any HTTP call so
+        // developers running `dotnet run` don't get a false
+        // "update available" banner every launch.
+        var handler = new FakeHttpHandler(new[]
+        {
+            ReleasesJson(new GhRelease("v1.6.0", "https://example/v160", Draft: false, Prerelease: false)),
+        });
+        using var http = new HttpClient(handler);
+        var sut = new BrowserNotifyUpdateService(http, new Version(0, 0, 0), includePreReleases: false);
+
+        var result = await sut.CheckAsync(CancellationToken.None);
+
+        result.Should().BeSameAs(UpdateCheckResult.NoUpdateAvailable);
+        handler.SendCount.Should().Be(0);
+    }
+
+    [Theory]
     [InlineData("notaversion")]
     [InlineData("")]
     [InlineData(null)]
@@ -288,6 +330,8 @@ public sealed class BrowserNotifyUpdateServiceTests
     {
         private readonly Queue<FakeResponse> _responses;
 
+        public int SendCount { get; private set; }
+
         public FakeHttpHandler(IEnumerable<FakeResponse> responses)
         {
             _responses = new Queue<FakeResponse>(responses);
@@ -295,6 +339,7 @@ public sealed class BrowserNotifyUpdateServiceTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
+            SendCount++;
             if (_responses.Count == 0)
             {
                 // Simulate a network outage for tests that want it.

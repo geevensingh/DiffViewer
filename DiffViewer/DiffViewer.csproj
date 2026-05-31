@@ -9,6 +9,18 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>DiffViewer</RootNamespace>
     <AssemblyName>DiffViewer</AssemblyName>
+
+    <!-- Dev / from-source builds stamp 0.0.0-dev so the running
+         version is unambiguously "not a real release". CI's release
+         workflow passes -p:Version=$tag which overrides this at
+         release time. The update services treat 0.0.0 as a dev
+         marker and skip the GitHub / Velopack check entirely, so
+         developers don't see a false "update available" banner on
+         every dotnet run. -->
+    <Version>0.0.0-dev</Version>
+    <FileVersion>0.0.0.0</FileVersion>
+    <InformationalVersion>0.0.0-dev</InformationalVersion>
+
     <ApplicationIcon>Assets\diffviewer.ico</ApplicationIcon>
 
     <!-- Velopack requires a hook (VelopackApp.Build().Run()) that

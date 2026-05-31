@@ -20,6 +20,19 @@ body. Keep section headings exact and write notes in Markdown.
   for prereleases), so users can answer "what version am I on?"
   alongside the auto-update settings without leaving the dialog.
 
+### Changed
+
+- **Dev / from-source builds now stamp `0.0.0-dev` as the version**
+  instead of MSBuild's misleading default of `1.0.0`. CI release
+  builds are unaffected — the workflow's `-p:Version=$tag` still
+  wins. Local `dotnet publish` builds now identify themselves
+  honestly in the new Settings → Updates → Current version row.
+- **Dev builds no longer trigger update notifications.** When the
+  current version is `0.0.0`, the update check short-circuits
+  without hitting the GitHub Releases API, so a developer running
+  `dotnet run` against tip-of-master doesn't get a false
+  "update available" banner every launch.
+
 ## [1.6.0] - 2026-05-31
 
 ### Added

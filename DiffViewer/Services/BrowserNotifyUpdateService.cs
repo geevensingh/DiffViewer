@@ -63,6 +63,18 @@ public sealed class BrowserNotifyUpdateService : IUpdateService
 
     public async Task<UpdateCheckResult> CheckAsync(CancellationToken ct)
     {
+        // Dev builds (csproj defaults to 0.0.0-dev when no Version is
+        // stamped) short-circuit the check. A developer on tip-of-master
+        // is by definition either at or ahead of the most recent
+        // published release, so a banner saying "update available" would
+        // be misleading. CI's release workflow stamps a real version
+        // via -p:Version=$tag, so this only affects developer machines
+        // and bespoke from-source builds.
+        if (IsDevBuild(_currentVersion))
+        {
+            return UpdateCheckResult.NoUpdateAvailable;
+        }
+
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, GitHubApiUrl + "?per_page=10");
@@ -161,6 +173,19 @@ public sealed class BrowserNotifyUpdateService : IUpdateService
         if (plus > 0) trimmed = trimmed[..plus];
         return Version.TryParse(trimmed, out var v) ? v : null;
     }
+
+    /// <summary>
+    /// True when <paramref name="version"/> is the 0.0.0[.0] sentinel
+    /// stamped on dev / from-source builds by
+    /// <c>DiffViewer.csproj</c>'s default <c>&lt;Version&gt;</c>.
+    /// Major == Minor == Build == 0 is sufficient; Revision varies
+    /// by stamping path (AssemblyVersion gives 0.0.0.0; the
+    /// informational-version Version.Parse path gives 0.0.0). A
+    /// genuinely-released v0.0.0 would also match, but DiffViewer
+    /// will never tag one, so the trade-off is acceptable.
+    /// </summary>
+    internal static bool IsDevBuild(Version version) =>
+        version.Major == 0 && version.Minor == 0 && version.Build <= 0;
 
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
