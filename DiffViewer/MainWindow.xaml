@@ -8,7 +8,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel}"
         mc:Ignorable="d"
-        Title="{Binding WindowTitle, FallbackValue=DiffViewer}"
+        Title="{Binding WindowTitle, FallbackValue='DiffViewer [SPIKE v0.0.2]', StringFormat='{}{0} [SPIKE v0.0.2]'}"
         Icon="/Assets/diffviewer.ico"
         PreviewKeyDown="OnPreviewKeyDown">
     <Window.InputBindings>

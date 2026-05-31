@@ -10,6 +10,11 @@
     <RootNamespace>DiffViewer</RootNamespace>
     <AssemblyName>DiffViewer</AssemblyName>
     <ApplicationIcon>Assets\diffviewer.ico</ApplicationIcon>
+    <!-- PHASE 1 SPIKE: WPF's auto-generated Main doesn't let Velopack
+         intercept its install/update/restart args before WPF spins up.
+         We replace it with our own static Main in App.xaml.cs per the
+         Velopack WPF sample. -->
+    <StartupObject>DiffViewer.App</StartupObject>
     <!-- DiffViewer's own strings are hard-coded English; no .resx, no
          x:Uid. The 11 framework locale folders shipped by the .NET
          desktop runtime (cs/de/es/fr/it/ja/ko/pl/pt-BR/ru/tr) only
@@ -35,14 +40,24 @@
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
-    <PublishSingleFile>true</PublishSingleFile>
+    <!-- PHASE 1 SPIKE: Velopack does its own extraction at install
+         time, which is mutually exclusive with PublishSingleFile. Keep
+         self-contained win-x64 but let the publish output be a regular
+         folder layout that vpk pack will wrap into its installer. -->
+    <!--<PublishSingleFile>true</PublishSingleFile>-->
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- LOAD-BEARING for LibGit2Sharp: ships native git2-*.dll that
-         must be extracted from the single-file bundle at runtime.
-         Do NOT remove without testing on a clean machine. -->
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!--<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>-->
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PHASE 1 SPIKE: re-declare App.xaml from ApplicationDefinition
+         to Page so WPF stops auto-generating a Main entry point. Our
+         own Main lives in App.xaml.cs and runs VelopackApp.Build().Run()
+         before WPF spins up. Per the Velopack WPF sample csproj. -->
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="DiffViewer.Tests" />
@@ -55,6 +70,7 @@
     <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
     <PackageReference Include="SharpVectors.Wpf" Version="1.8.5" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+    <PackageReference Include="Velopack" Version="1.1.1" />
   </ItemGroup>
 
 </Project>

@@ -1,19 +1,54 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using DiffViewer.Rendering;
 using DiffViewer.Services;
 using DiffViewer.Utility;
 using ICSharpCode.AvalonEdit.Highlighting;
+using Velopack;
 
 namespace DiffViewer;
 
 public partial class App : Application
 {
+    // PHASE 1 SPIKE: hardcoded local-folder feed for the Velopack
+    // proof-of-concept. Phase 2 will replace with a configurable
+    // GitHub-releases URL + settings-driven check cadence.
+    private const string SpikeFeedPath = @"C:\Repos\DiffViewer-VelopackFeed";
+
     private CancellationTokenSource? _shutdownCts;
     private MainWindowCoordinator? _coordinator;
     private HttpClient? _httpClient;
+
+    // PHASE 1 SPIKE: WPF's auto-generated Main doesn't give Velopack
+    // a hook to intercept install/uninstall/restart args before WPF
+    // spins up. Per the Velopack WPF sample
+    // (velopack/velopack/samples/CSharpWpf/App.xaml.cs) we replace
+    // it with our own Main and set <StartupObject> in DiffViewer.csproj.
+    [STAThread]
+    private static void Main(string[] args)
+    {
+        try
+        {
+            // Must run before any WPF code so --veloapp-install /
+            // --veloapp-update / etc. are handled and the process
+            // exits without ever spinning up the UI.
+            VelopackApp.Build()
+                .OnFirstRun(_ => { /* spike: nothing */ })
+                .Run();
+        }
+        catch (Exception ex)
+        {
+            LogSpike($"VelopackApp.Run() failed: {ex}");
+        }
+
+        var app = new App();
+        app.InitializeComponent();
+        app.Run();
+    }
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -134,6 +169,53 @@ public partial class App : Application
         }
 
         window.Show();
+
+        // PHASE 1 SPIKE: fire-and-forget headless update check against
+        // the local-folder feed. No UI; verifies the
+        // CheckForUpdates → Download → ApplyAndRestart loop end-to-end.
+        _ = Task.Run(CheckForUpdatesSpikeAsync);
+    }
+
+    private static async Task CheckForUpdatesSpikeAsync()
+    {
+        try
+        {
+            var mgr = new UpdateManager(SpikeFeedPath);
+            if (!mgr.IsInstalled)
+            {
+                LogSpike("UpdateManager.IsInstalled=false (running from dev / portable). Skipping.");
+                return;
+            }
+            LogSpike($"Current version: {mgr.CurrentVersion}; checking feed {SpikeFeedPath}");
+            var info = await mgr.CheckForUpdatesAsync();
+            if (info is null)
+            {
+                LogSpike("No update available.");
+                return;
+            }
+            LogSpike($"Update found: {info.TargetFullRelease.Version}. Downloading...");
+            await mgr.DownloadUpdatesAsync(info);
+            LogSpike("Download complete. Applying and restarting.");
+            mgr.ApplyUpdatesAndRestart(info);
+        }
+        catch (Exception ex)
+        {
+            LogSpike($"Update check failed: {ex}");
+        }
+    }
+
+    private static void LogSpike(string message)
+    {
+        try
+        {
+            var logPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "DiffViewer",
+                "velopack-spike.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+            File.AppendAllText(logPath, $"[{DateTime.Now:O}] {message}{Environment.NewLine}");
+        }
+        catch { /* best-effort spike logging */ }
     }
 
     protected override void OnExit(ExitEventArgs e)
