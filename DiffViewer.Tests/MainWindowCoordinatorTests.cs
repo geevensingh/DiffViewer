@@ -22,7 +22,7 @@ namespace DiffViewer.Tests;
 public class MainWindowCoordinatorTests
 {
     [Fact]
-    public async Task InitialLaunchAsync_ParseFailure_ShowsErrorAndShutsDown()
+    public async Task InitialLaunchAsync_ParseFailure_ShowsEmptyContextWithNewDiff()
     {
         var dialog = new FakeDialog();
         int? exitCode = null;
@@ -31,13 +31,15 @@ public class MainWindowCoordinatorTests
         var coordinator = new MainWindowCoordinator(
             services, dialog, default, shutdownAction: c => exitCode = c);
 
-        // Two positional args > grammar limit → parse fails.
+        // Three positional args > grammar limit → parse fails. With no
+        // recents the coordinator now shows an empty-state shell with
+        // "New diff" guidance instead of shutting down.
         var ok = await coordinator.InitialLaunchAsync(new[] { "C:\\nope1", "C:\\nope2", "C:\\nope3" });
 
-        ok.Should().BeFalse();
-        dialog.LastError.Should().NotBeNull();
-        exitCode.Should().Be(1);
-        coordinator.Current.Should().BeNull();
+        ok.Should().BeTrue();
+        dialog.LastError.Should().BeNull();
+        exitCode.Should().BeNull();
+        coordinator.Current.Should().BeOfType<EmptyContextViewModel>();
     }
 
     [Fact]
@@ -66,10 +68,10 @@ public class MainWindowCoordinatorTests
     }
 
     [Fact]
-    public async Task InitialLaunchAsync_ParseFailure_NoStderrWired_StillShowsDialog()
+    public async Task InitialLaunchAsync_ParseFailure_NoStderrWired_ShowsEmptyContext()
     {
-        // Backward-compat: when no stderrWriter is supplied (GUI launch),
-        // the existing dialog-and-shutdown path must still fire identically.
+        // When no stderrWriter is supplied (GUI double-click launch),
+        // the coordinator still shows the empty-state shell (not a dialog).
         var dialog = new FakeDialog();
         int? exitCode = null;
         var services = BuildServices(out _);
@@ -81,17 +83,18 @@ public class MainWindowCoordinatorTests
 
         var ok = await coordinator.InitialLaunchAsync(new[] { "--bogus" });
 
-        ok.Should().BeFalse();
-        dialog.LastError.Should().NotBeNull();
-        exitCode.Should().Be(1);
+        ok.Should().BeTrue();
+        dialog.LastError.Should().BeNull();
+        exitCode.Should().BeNull();
+        coordinator.Current.Should().BeOfType<EmptyContextViewModel>();
     }
 
     [Fact]
-    public async Task InitialLaunchAsync_StderrWriterThrows_DoesNotDerailFailureHandling()
+    public async Task InitialLaunchAsync_StderrWriterThrows_DoesNotDerailEmptyContextFallback()
     {
         // Best-effort contract: a misbehaving stderr writer (e.g. parent
         // console closed between attach and write) must not prevent the
-        // dialog / shutdown from firing.
+        // empty-state shell from showing.
         var dialog = new FakeDialog();
         int? exitCode = null;
         var services = BuildServices(out _);
@@ -103,9 +106,10 @@ public class MainWindowCoordinatorTests
 
         var ok = await coordinator.InitialLaunchAsync(new[] { "--bogus" });
 
-        ok.Should().BeFalse();
-        dialog.LastError.Should().NotBeNull();
-        exitCode.Should().Be(1);
+        ok.Should().BeTrue();
+        dialog.LastError.Should().BeNull();
+        exitCode.Should().BeNull();
+        coordinator.Current.Should().BeOfType<EmptyContextViewModel>();
     }
 
     [Fact]
@@ -320,10 +324,11 @@ public class MainWindowCoordinatorTests
 
         var ok = await coordinator.InitialLaunchFromPullRequestAsync(pr);
 
-        // No recents → cold-launch failure shuts the app down.
-        ok.Should().BeFalse();
-        dialog.LastError.Should().NotBeNull();
-        exitCode.Should().Be(1);
+        // No recents → still shows empty-state shell (not shutdown).
+        ok.Should().BeTrue();
+        dialog.LastError.Should().BeNull();
+        exitCode.Should().BeNull();
+        coordinator.Current.Should().BeOfType<EmptyContextViewModel>();
         prResolver.CallCount.Should().Be(1, "we never retry after a cancelled dialog");
     }
 
@@ -340,9 +345,10 @@ public class MainWindowCoordinatorTests
 
         var ok = await coordinator.InitialLaunchFromPullRequestAsync(pr);
 
-        ok.Should().BeFalse();
-        dialog.LastError.Should().Contain("GitHub said no.");
-        exitCode.Should().Be(1);
+        ok.Should().BeTrue();
+        exitCode.Should().BeNull();
+        var empty = coordinator.Current.Should().BeOfType<EmptyContextViewModel>().Subject;
+        empty.Message.Should().Contain("GitHub said no.");
     }
 
     [Fact]

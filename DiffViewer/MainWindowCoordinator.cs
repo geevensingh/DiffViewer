@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using DiffViewer.Models;
 using DiffViewer.Services;
@@ -44,7 +43,6 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     private readonly IDialogService _dialog;
     private readonly CancellationToken _appShutdownToken;
     private readonly ContextFactory _contextFactory;
-    private readonly Action<int>? _shutdownAction;
     private readonly Action<string>? _stderrWriter;
     private readonly SemaphoreSlim _switchGate = new(1, 1);
 
@@ -65,7 +63,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         _dialog = dialog ?? throw new ArgumentNullException(nameof(dialog));
         _appShutdownToken = appShutdownToken;
         _contextFactory = contextFactory ?? ((p, s, sc, ct) => CompositionRoot.BuildContextAsync(p, s, sc, ct));
-        _shutdownAction = shutdownAction;
+        _ = shutdownAction; // Kept for backward compat; no longer used.
         _stderrWriter = stderrWriter;
     }
 
@@ -611,31 +609,27 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
             try { _stderrWriter(errorMessage); } catch { /* best-effort */ }
         }
 
-        // Cold-launch fallback (DR-007): if at least one recent is
-        // persisted, swap in an empty-state shell so the user can pick
-        // a recent from the dropdown rather than seeing the app
-        // immediately exit.
-        if (_services.RecentContextsService.Current.Count > 0)
-        {
-            var recents = new RecentContextsViewModel(
-                _services.RecentContextsService,
-                this,
-                currentIdentity: null,
-                _services.NewDiffDialogHost);
-            var emptyVm = new EmptyContextViewModel(
-                recents,
-                $"{errorMessage}{Environment.NewLine}{Environment.NewLine}Pick a recent context above to load it.");
+        // Cold-launch fallback: swap in an empty-state shell so the
+        // user can pick a recent from the dropdown or use "New diff" to
+        // open a repository, rather than seeing the app immediately exit.
+        var recents = new RecentContextsViewModel(
+            _services.RecentContextsService,
+            this,
+            currentIdentity: null,
+            _services.NewDiffDialogHost);
 
-            _current = emptyVm;
-            _currentScope = null;
-            OnCurrentChanged();
-            return true; // window shows with the empty-state dropdown
-        }
+        string guidance = _services.RecentContextsService.Current.Count > 0
+            ? "Pick a recent context above, or use \u201cNew diff\u201d to open a repository."
+            : "Use \u201cNew diff\u201d to open a repository.";
 
-        _dialog.ShowError("DiffViewer", errorMessage);
-        if (_shutdownAction is not null) _shutdownAction(1);
-        else Application.Current?.Shutdown(1);
-        return false;
+        var emptyVm = new EmptyContextViewModel(
+            recents,
+            $"{errorMessage}{Environment.NewLine}{Environment.NewLine}{guidance}");
+
+        _current = emptyVm;
+        _currentScope = null;
+        OnCurrentChanged();
+        return true;
     }
 
     private static async Task DisposeShellAsync(IShellViewModel shell)

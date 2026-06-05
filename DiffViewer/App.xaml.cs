@@ -195,8 +195,9 @@ public partial class App : Application
         var ok = await _coordinator.InitialLaunchAsync(e.Args, _shutdownCts.Token);
         if (!ok)
         {
-            // Coordinator already showed the error dialog and called
-            // Shutdown(1); just bail out before Show().
+            // Defensive: HandleColdLaunchFailure now always shows the
+            // empty-state shell (ok=true), but if a future code path
+            // returns false we still bail out before Show().
             return;
         }
 

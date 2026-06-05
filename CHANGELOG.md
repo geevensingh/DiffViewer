@@ -33,6 +33,15 @@ body. Keep section headings exact and write notes in Markdown.
   `dotnet run` against tip-of-master doesn't get a false
   "update available" banner every launch.
 
+### Fixed
+
+- **Fresh installs no longer crash on first launch.** When DiffViewer
+  was launched with no arguments and the working directory wasn't a
+  git repository (e.g. the Velopack install folder), the app showed a
+  "Not a git repository" error dialog and exited. It now shows the
+  empty-state shell with the "New diff" button so users can pick a
+  repository without needing to launch from a terminal.
+
 ## [1.6.0] - 2026-05-31
 
 ### Added
