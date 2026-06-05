@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-05
+
 ### Added
 
 - **`diffviewer` works from the command line after Setup install.**
@@ -799,7 +801,8 @@ The binary is unsigned, so Windows SmartScreen may warn on first
 launch — click **"More info"** → **"Run anyway"**. Code signing is
 planned for a later release.
 
-[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/geevensingh/DiffViewer/compare/v1.6.0...v1.7.0
 [0.6.0]: https://github.com/geevensingh/DiffViewer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/geevensingh/DiffViewer/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/geevensingh/DiffViewer/compare/v0.3.0...v0.4.0
