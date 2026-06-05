@@ -199,10 +199,11 @@ may take a few extra seconds. Subsequent launches are fast.
 Two download options on the [Releases page]:
 
 1. **`DiffViewer-Setup.exe` (recommended).** Installs to
-   `%LocalAppData%\DiffViewer\`, adds a Start Menu shortcut, and
-   subscribes to **in-app auto-updates** (notification banner when a
-   new release ships; user opts in or out via Settings → Updates).
-   No admin / UAC prompt — Velopack installs per-user.
+   `%LocalAppData%\DiffViewer\`, adds a Start Menu shortcut, registers
+   `diffviewer` on your per-user `PATH` (see [Command line](#command-line)
+   below), and subscribes to **in-app auto-updates** (notification
+   banner when a new release ships; user opts in or out via Settings →
+   Updates). No admin / UAC prompt — Velopack installs per-user.
 2. **`DiffViewer-portable.exe`.** Single-file ~150 MB exe; double-click
    to run, no install. Updates are **manual** — re-download from the
    Releases page when a new version ships. Good for thumb-drive use,
@@ -215,6 +216,29 @@ Windows SmartScreen may show a warning the first time you launch
 either binary — click **More info** → **Run anyway**. Neither
 artifact is currently code-signed (see
 [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md)).
+
+### Command line
+
+After installing via `DiffViewer-Setup.exe`, you can launch the app by
+name from a terminal:
+
+```pwsh
+diffviewer                       # diff the repo in the current directory
+diffviewer C:\path\to\repo       # diff a specific repo (working tree vs HEAD)
+diffviewer C:\path\to\repo HEAD~1  # working tree vs a commit
+```
+
+The installer adds `%LocalAppData%\DiffViewer\current` to your per-user
+`PATH`. Two notes:
+
+- **Open a new terminal** after installing — already-running terminals
+  (cmd, PowerShell, Windows Terminal tabs, IDE consoles) keep their old
+  environment until restarted.
+- This applies to the **Setup** install only. The portable exe isn't on
+  `PATH`; invoke it by full path, or add its folder yourself.
+
+Uninstalling DiffViewer removes the `PATH` entry. Your existing
+`%VAR%`-style entries are preserved untouched.
 
 ## Build from source
 

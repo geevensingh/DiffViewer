@@ -14,6 +14,15 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **`diffviewer` works from the command line after Setup install.**
+  Installing via `DiffViewer-Setup.exe` now adds the app to your
+  per-user `PATH`, so you can launch it by typing `diffviewer`
+  (optionally with a repo path or commit-ish, e.g.
+  `diffviewer C:\path\to\repo`) in any **new** terminal — no need to
+  dig into `%LocalAppData%\DiffViewer\current`. Uninstalling removes
+  the entry. The PATH edit preserves existing `%VAR%`-style entries
+  (`REG_EXPAND_SZ`) and only touches your user PATH, never the
+  machine PATH. Portable builds are unaffected.
 - **Settings → Updates section now shows the running version.** A
   read-only "Current version" row at the top of the section
   displays the build's version string (e.g. `1.6.0` or `1.6.0-rc1`
