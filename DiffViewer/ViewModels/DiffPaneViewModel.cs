@@ -168,7 +168,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool ShowImageDiffModeControls => ShowImageDiff && ImageDiff is not null && ImageDiff.HasBothImages;
     public bool ShowPlaceholder => PlaceholderMessage is not null && !ShowImageDiff;
-    public bool ShowEditors => !ShowImageDiff && !ShowPlaceholder;
+    public bool ShowEditors => !ShowImageDiff && !ShowPlaceholder && !ShowMarkdownRendered;
     public bool ShowSideBySide => ShowEditors && IsSideBySide;
     public bool ShowInline => ShowEditors && !IsSideBySide;
 
@@ -207,6 +207,51 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool ShowSvgTextView => IsSvgFile && (!RenderSvgImage || !IsSvgRenderable);
 
+    // ---- Markdown rendered-diff (issue: markdown-rendered-diff) ----
+
+    /// <summary>
+    /// <c>true</c> when the currently-loaded entry is a markdown file
+    /// (<c>.md</c> / <c>.markdown</c>) by extension. Set during
+    /// <see cref="LoadAsync"/>. Drives the markdown "Rendered" toolbar
+    /// toggle and its dependent visibility gates. Independent of
+    /// <see cref="RenderMarkdownRendered"/>: a <c>true</c> value means
+    /// "this is a markdown file"; the user's choice of source vs
+    /// rendered view is a separate flag.
+    /// </summary>
+    [ObservableProperty] private bool _isMarkdownFile;
+
+    /// <summary>
+    /// Markdown rendered-diff sibling view-model. Non-null when the
+    /// currently loaded entry has been dispatched to the markdown
+    /// rendered pane; <c>null</c> for non-markdown, placeholder, and
+    /// pre-load states. Set on the UI thread after the blob reads
+    /// complete because the contained <see cref="FlowDocument"/> is
+    /// dispatcher-affine.
+    /// </summary>
+    [ObservableProperty] private MarkdownDiffViewModel? _markdownDiff;
+
+    /// <summary>
+    /// Whether the markdown "Rendered" toolbar toggle should be shown.
+    /// True only when the current file is markdown <em>and</em> a
+    /// rendered VM is built. Matches the SVG-rendered toggle pattern.
+    /// </summary>
+    public bool ShowMarkdownRenderedToggle => IsMarkdownFile && MarkdownDiff is not null;
+
+    /// <summary>
+    /// Whether the diff pane should show the markdown rendered view in
+    /// lieu of the AvalonEdit source-diff editors. True when the file
+    /// is markdown, the rendered VM is built, the user prefers
+    /// rendered, AND no higher-priority surface (image diff, SVG text
+    /// view) is competing for the same canvas. The
+    /// <see cref="ShowEditors"/> gate excludes us symmetrically, so
+    /// the three surfaces (editors, markdown rendered, image diff)
+    /// stay mutually exclusive.
+    /// </summary>
+    public bool ShowMarkdownRendered => MarkdownDiff is not null
+        && RenderMarkdownRendered
+        && !ShowImageDiff
+        && !ShowSvgTextView;
+
     // ---- Toolbar toggle state ----
 
     [ObservableProperty] private bool _ignoreWhitespace;
@@ -224,6 +269,20 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// non-SVG files; the toolbar hides the toggle in that case.
     /// </summary>
     [ObservableProperty] private bool _renderSvgImage = true;
+
+    /// <summary>
+    /// Markdown-only "Rendered" toolbar toggle. When <c>true</c>,
+    /// markdown entries show the rendered <see cref="FlowDocument"/>
+    /// diff; when <c>false</c>, the source-text diff in the AvalonEdit
+    /// editors. Defaults to <c>true</c> — same reasoning as
+    /// <see cref="RenderSvgImage"/>: the rendered view is the headline
+    /// feature, and the user opted in by opening a markdown file.
+    /// Persisted across launches via the corresponding
+    /// <c>AppSettings</c> field (wired in Phase 3 of the integration).
+    /// Has no effect for non-markdown files; the toolbar hides the
+    /// toggle in that case.
+    /// </summary>
+    [ObservableProperty] private bool _renderMarkdownRendered = true;
 
     /// <summary>
     /// Which sides of the side-by-side view are visible. Driven by the
@@ -482,6 +541,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             ImageDiff = null;
             IsSvgFile = false;
             IsSvgRenderable = false;
+            IsMarkdownFile = false;
+            MarkdownDiff = null;
             ApplyResult(string.Empty, string.Empty, "Select a file to see its diff.",
                 Array.Empty<DiffHunk>(), DiffHighlightMap.Empty, InlineDiffBuilder.Empty, false);
             LastLoadTask = Task.CompletedTask;
@@ -504,6 +565,10 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             && ImageFormatDetector.DetectByExtension(change.Path) == ImageFormat.Svg;
         if (isSvg)
         {
+            // SVG and markdown are mutually exclusive surfaces; the SVG
+            // path takes the file and we clear any stale markdown state.
+            IsMarkdownFile = false;
+            MarkdownDiff = null;
             return BeginSvgDispatch(entry, change, _imageDecoder!, ct);
         }
         IsSvgFile = false;
@@ -519,6 +584,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             && _imageDecoder is not null
             && ImageFormatDetector.DetectByExtension(change.Path) != ImageFormat.NotAnImage)
         {
+            IsMarkdownFile = false;
+            MarkdownDiff = null;
             return BeginImageDispatch(entry, change, _imageDecoder, ct);
         }
 
@@ -531,6 +598,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             // HighlightMapChanged).
             _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
             ImageDiff = null;
+            IsMarkdownFile = false;
+            MarkdownDiff = null;
             ApplyResult(string.Empty, string.Empty, earlyPlaceholder,
                 Array.Empty<DiffHunk>(), DiffHighlightMap.Empty, InlineDiffBuilder.Empty, false);
             LastLoadTask = Task.CompletedTask;
@@ -539,7 +608,13 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
 
         // Non-placeholder, non-image: text diff. Clear any stale image
         // state from a previous selection before the async load starts.
+        // Markdown is still text — it rides this dispatch and the source
+        // editors stay populated; the rendered VM is layered on top
+        // after the blob read so the "Rendered" toggle has both surfaces
+        // available.
         ImageDiff = null;
+        IsMarkdownFile = IsMarkdownPath(change.Path);
+        MarkdownDiff = null;
 
         IsLoading = true;
         var options = BuildDiffOptions();
@@ -584,6 +659,29 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 // missed change.
                 _lastLoadSignature = LoadSignature.TryBuild(entry, _repository);
                 ApplyResult(left, right, null, hunks, map, inline, ws);
+
+                // Build the markdown rendered VM AFTER the source-text
+                // path has been populated. Runs on this thread —
+                // FromCurrentSynchronizationContext() puts us on the UI
+                // dispatcher, which is required for FlowDocument
+                // construction. ApplyResult above already cleared
+                // PlaceholderMessage on success, so the rendered view
+                // can take the surface uncontested. Failure to render
+                // (Markdig throw, etc.) falls back to the source view
+                // by leaving MarkdownDiff null and IsMarkdownFile true
+                // — the toggle hides itself because ShowMarkdownRenderedToggle
+                // requires MarkdownDiff is not null.
+                if (IsMarkdownFile)
+                {
+                    try
+                    {
+                        MarkdownDiff = new MarkdownDiffViewModel(left, right);
+                    }
+                    catch
+                    {
+                        MarkdownDiff = null;
+                    }
+                }
             }
 
             IsLoading = false;
@@ -899,6 +997,20 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     private static string ShortSha(string? sha) =>
         string.IsNullOrEmpty(sha) ? "(none)" : sha.Length >= 7 ? sha[..7] : sha;
 
+    /// <summary>
+    /// Extension-based markdown detection. Mirrors the SVG path's
+    /// <see cref="ImageFormatDetector.DetectByExtension"/> pattern:
+    /// pure-extension classification with no content sniff. <c>.md</c>
+    /// and <c>.markdown</c> are the two common spellings; case-insensitive.
+    /// </summary>
+    private static bool IsMarkdownPath(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return false;
+        var ext = System.IO.Path.GetExtension(path);
+        return string.Equals(ext, ".md", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(ext, ".markdown", StringComparison.OrdinalIgnoreCase);
+    }
+
     private string SafeReadSide(FileChange change, ChangeSide side)
     {
         try
@@ -1006,53 +1118,64 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ShowInline));
     }
 
-    partial void OnImageDiffChanged(ImageDiffViewModel? value)
+    /// <summary>
+    /// Fires <see cref="OnPropertyChanged"/> for every display-surface
+    /// visibility property in one call. Use this from any partial
+    /// <c>On…Changed</c> hook for a property that participates in the
+    /// mutually-exclusive surface cascade (image diff, SVG text view,
+    /// markdown rendered, placeholder, editors / side-by-side / inline).
+    /// Beats the previous per-handler explicit-fan-out pattern because
+    /// the cascade members are listed once instead of duplicated in
+    /// every handler.
+    /// </summary>
+    private void RaiseDisplaySurfaceChanged()
     {
         OnPropertyChanged(nameof(ShowImageDiff));
         OnPropertyChanged(nameof(ShowImageDiffModeControls));
+        OnPropertyChanged(nameof(ShowSvgRenderedToggle));
+        OnPropertyChanged(nameof(ShowSvgTextView));
+        OnPropertyChanged(nameof(ShowMarkdownRenderedToggle));
+        OnPropertyChanged(nameof(ShowMarkdownRendered));
         OnPropertyChanged(nameof(ShowPlaceholder));
         OnPropertyChanged(nameof(ShowEditors));
         OnPropertyChanged(nameof(ShowSideBySide));
         OnPropertyChanged(nameof(ShowInline));
+    }
+
+    partial void OnImageDiffChanged(ImageDiffViewModel? value)
+    {
+        RaiseDisplaySurfaceChanged();
     }
 
     partial void OnIsSvgFileChanged(bool value)
     {
-        OnPropertyChanged(nameof(ShowSvgRenderedToggle));
-        OnPropertyChanged(nameof(ShowSvgTextView));
-        // ShowSvgTextView feeds ShowImageDiff / ShowEditors / etc.
-        OnPropertyChanged(nameof(ShowImageDiff));
-        OnPropertyChanged(nameof(ShowImageDiffModeControls));
-        OnPropertyChanged(nameof(ShowPlaceholder));
-        OnPropertyChanged(nameof(ShowEditors));
-        OnPropertyChanged(nameof(ShowSideBySide));
-        OnPropertyChanged(nameof(ShowInline));
+        RaiseDisplaySurfaceChanged();
     }
 
     partial void OnIsSvgRenderableChanged(bool value)
     {
-        OnPropertyChanged(nameof(ShowSvgRenderedToggle));
-        OnPropertyChanged(nameof(ShowSvgTextView));
-        OnPropertyChanged(nameof(ShowImageDiff));
-        OnPropertyChanged(nameof(ShowImageDiffModeControls));
-        OnPropertyChanged(nameof(ShowPlaceholder));
-        OnPropertyChanged(nameof(ShowEditors));
-        OnPropertyChanged(nameof(ShowSideBySide));
-        OnPropertyChanged(nameof(ShowInline));
+        RaiseDisplaySurfaceChanged();
     }
 
     partial void OnRenderSvgImageChanged(bool value)
     {
-        // ShowSvgTextView depends on RenderSvgImage and cascades into
-        // every other visibility gate. Notify the lot so the bindings
-        // flip atomically without an intermediate visual state.
-        OnPropertyChanged(nameof(ShowSvgTextView));
-        OnPropertyChanged(nameof(ShowImageDiff));
-        OnPropertyChanged(nameof(ShowImageDiffModeControls));
-        OnPropertyChanged(nameof(ShowPlaceholder));
-        OnPropertyChanged(nameof(ShowEditors));
-        OnPropertyChanged(nameof(ShowSideBySide));
-        OnPropertyChanged(nameof(ShowInline));
+        RaiseDisplaySurfaceChanged();
+        PersistToolbarToSettings();
+    }
+
+    partial void OnIsMarkdownFileChanged(bool value)
+    {
+        RaiseDisplaySurfaceChanged();
+    }
+
+    partial void OnMarkdownDiffChanged(MarkdownDiffViewModel? value)
+    {
+        RaiseDisplaySurfaceChanged();
+    }
+
+    partial void OnRenderMarkdownRenderedChanged(bool value)
+    {
+        RaiseDisplaySurfaceChanged();
         PersistToolbarToSettings();
     }
 
@@ -1185,6 +1308,12 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool TryNavigateNextHunkInFile()
     {
+        // In markdown rendered mode the source-diff editors and hunk
+        // overview bar are hidden, so any caret move would scroll a
+        // surface the user can't see. Returning false here lets the
+        // cross-file orchestrator advance to the next file, matching
+        // the "no more hunks in this file" branch's behavior.
+        if (ShowMarkdownRendered) return false;
         if (_currentHunks.Count == 0) return false;
         int target = FindNextHunkFromCaret(forward: true);
         if (target < 0) return false;
@@ -1196,6 +1325,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// <summary>Caret-relative mirror of <see cref="TryNavigateNextHunkInFile"/>.</summary>
     public bool TryNavigatePreviousHunkInFile()
     {
+        if (ShowMarkdownRendered) return false;
         if (_currentHunks.Count == 0) return false;
         int target = FindNextHunkFromCaret(forward: false);
         if (target < 0) return false;
@@ -1313,6 +1443,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// </summary>
     public void JumpToFirstHunk()
     {
+        if (ShowMarkdownRendered) return;
         if (_currentHunks.Count == 0) return;
         CurrentHunkIndex = 0;
         RaiseHunkNav();
@@ -1321,6 +1452,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// <summary>Move the caret to the last hunk in the current file.</summary>
     public void JumpToLastHunk()
     {
+        if (ShowMarkdownRendered) return;
         if (_currentHunks.Count == 0) return;
         CurrentHunkIndex = _currentHunks.Count - 1;
         RaiseHunkNav();

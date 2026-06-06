@@ -1,0 +1,20 @@
+<UserControl x:Class="DiffViewer.Views.MarkdownDiffView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:MarkdownDiffViewModel}"
+             mc:Ignorable="d"
+             Background="White">
+
+    <!-- Single FlowDocumentScrollViewer host. The diff colors live on
+         the FlowDocument blocks/runs themselves (see
+         DiffViewer.Rendering.MarkdownDiffRenderer); this view stays
+         deliberately minimal. -->
+    <FlowDocumentScrollViewer Document="{Binding Document}"
+                              IsToolBarVisible="False"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto"
+                              Background="White"/>
+</UserControl>
