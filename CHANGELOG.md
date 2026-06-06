@@ -14,6 +14,24 @@ body. Keep section headings exact and write notes in Markdown.
 
 ### Added
 
+- **Markdown rendered-diff view.** When viewing `.md` or `.markdown`
+  files, a "Rendered" toggle in the toolbar switches between the
+  source-text diff (default Side-by-side / Inline editors) and a
+  rendered `FlowDocument` view that shows the diff *inside* the
+  rendered markdown. Removed text appears with red strikethrough,
+  added text with green background, word-level diff anchors on
+  unchanged tokens inside edited paragraphs (bold / italic / inline
+  code / hyperlink formatting preserved on those anchors), and links
+  whose URL changed but text didn't render in orange with a
+  both-URLs tooltip. Nested list items diff at item granularity.
+  Heavily-rewritten paragraphs (token similarity below 30%) fall
+  back to clean two-block tints instead of noisy interleaved word
+  fragments. Tables render as plain-text fallback. Rendered mode is
+  the default on first encounter; the user's toggle preference
+  persists across launches via the new `preferMarkdownRendered`
+  setting. F7 / F8 hunk navigation skips files viewed in rendered
+  mode (advancing to the next file) because the source-diff editors
+  and hunk overview bar are hidden in that mode.
 - **Settings → Updates section now shows the running version.** A
   read-only "Current version" row at the top of the section
   displays the build's version string (e.g. `1.6.0` or `1.6.0-rc1`

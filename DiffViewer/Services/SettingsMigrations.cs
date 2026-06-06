@@ -53,6 +53,14 @@ namespace DiffViewer.Services;
 /// default — pre-v8 files deserialize to "nothing skipped", which
 /// means the banner shows for every available update (the safe
 /// default).</para>
+///
+/// <para>v9 introduced <c>preferMarkdownRendered</c> for the
+/// markdown-only "Rendered" toolbar toggle (the markdown rendered-diff
+/// feature). The migration is a no-op because the field has a
+/// sensible default (<c>true</c>) — pre-v9 files deserialize with the
+/// rendered view enabled by default, matching the headline behaviour
+/// of the feature (same shape as the v6 <c>renderSvgImage</c>
+/// migration).</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -76,6 +84,7 @@ internal static class SettingsMigrations
                 5 => MigrateV5ToV6, // adds renderSvgImage (bool, default true)
                 6 => MigrateV6ToV7, // adds autoUpdate / updateCheckCadence / includePreReleases (all defaultable)
                 7 => MigrateV7ToV8, // adds skippedUpdateVersion (nullable string, default null)
+                8 => MigrateV8ToV9, // adds preferMarkdownRendered (bool, default true)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -153,4 +162,14 @@ internal static class SettingsMigrations
     /// the banner shows for every available update.
     /// </summary>
     private static JsonObject MigrateV7ToV8(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v9 adds <c>preferMarkdownRendered</c> for the markdown-only
+    /// "Rendered" toolbar toggle. A missing field means "rendered
+    /// view" (the headline behaviour of the markdown rendered-diff
+    /// feature) so the migration is a no-op; the deserializer fills
+    /// in <see cref="AppSettings.PreferMarkdownRendered"/> as
+    /// <c>true</c>.
+    /// </summary>
+    private static JsonObject MigrateV8ToV9(JsonObject obj) => obj;
 }

@@ -782,6 +782,38 @@ public class DiffPaneViewModelTests
     }
 
     [Fact]
+    public void RenderMarkdownRendered_TogglePersistsToSettings()
+    {
+        // Same persistence shape as RenderSvgImage above. Flipping the
+        // VM's RenderMarkdownRendered must write through to settings.
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { PreferMarkdownRendered = true });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        vm.RenderMarkdownRendered.Should().BeTrue("seeded from settings.PreferMarkdownRendered");
+
+        vm.RenderMarkdownRendered = false;
+        settings.Current.PreferMarkdownRendered.Should().BeFalse();
+
+        vm.RenderMarkdownRendered = true;
+        settings.Current.PreferMarkdownRendered.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RenderMarkdownRendered_ExternalSettingsChange_PushesIntoViewModel()
+    {
+        // External settings change (e.g. from another window or a
+        // settings file edit) must propagate into the VM.
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { PreferMarkdownRendered = true });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        settings.Save(settings.Current with { PreferMarkdownRendered = false });
+
+        vm.RenderMarkdownRendered.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task LoadAsync_LfsPointer_ShowsLfsPlaceholder()
     {
         var repo = new FakeRepository();

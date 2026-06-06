@@ -16,7 +16,7 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 8;
+    public const int CurrentSchemaVersion = 9;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -60,6 +60,19 @@ public sealed record AppSettings
     /// case. Persisted across launches like the other toolbar toggles.
     /// </summary>
     public bool RenderSvgImage { get; init; } = true;
+
+    /// <summary>
+    /// Markdown-only "Rendered" toolbar toggle (added in v9). When
+    /// <c>true</c>, the diff pane shows the rendered
+    /// <see cref="System.Windows.Documents.FlowDocument"/> diff of the
+    /// markdown file; when <c>false</c>, the source-text diff in the
+    /// AvalonEdit editors. Defaults to <c>true</c> for the same reason
+    /// as <see cref="RenderSvgImage"/>: rendered diffing is the
+    /// headline feature, and the user opted in by opening a markdown
+    /// file. Has no effect for non-markdown files; the toolbar hides
+    /// the toggle in that case.
+    /// </summary>
+    public bool PreferMarkdownRendered { get; init; } = true;
 
     // ---- File-list display mode ----
     public FileListDisplayMode DisplayMode { get; init; } = FileListDisplayMode.RepoRelative;

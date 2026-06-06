@@ -366,6 +366,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 LiveUpdates = s.LiveUpdates;
                 SideVisibility = s.SideVisibility;
                 RenderSvgImage = s.RenderSvgImage;
+                RenderMarkdownRendered = s.PreferMarkdownRendered;
                 FontSize = s.FontSize;
                 FontFamily = s.FontFamily;
                 TabWidth = s.TabWidth;
@@ -423,6 +424,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 SideVisibility = e.Current.SideVisibility;
             if (e.Previous.RenderSvgImage != e.Current.RenderSvgImage)
                 RenderSvgImage = e.Current.RenderSvgImage;
+            if (e.Previous.PreferMarkdownRendered != e.Current.PreferMarkdownRendered)
+                RenderMarkdownRendered = e.Current.PreferMarkdownRendered;
         }
         finally { _suppressSettingsWrite = false; }
     }
@@ -1237,6 +1240,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             ShowLineNumbers = ShowLineNumbers,
             WordWrap = WordWrap,
             RenderSvgImage = RenderSvgImage,
+            PreferMarkdownRendered = RenderMarkdownRendered,
         });
     }
 

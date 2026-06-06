@@ -589,6 +589,44 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
+    public void Load_V8File_MigratesToV9_PreferMarkdownRenderedDefaultsToTrue()
+    {
+        // v8 schema (current minus 1) had no PreferMarkdownRendered
+        // field. After v8->v9 migration the field should hydrate to
+        // its default (true) and other fields should be preserved.
+        // Same migration shape as v5->v6 added RenderSvgImage.
+        var v8 = new JsonObject
+        {
+            ["schemaVersion"] = 8,
+            ["fontSize"] = 22,
+            ["renderSvgImage"] = false,
+            ["isSideBySide"] = false,
+        };
+        File.WriteAllText(_settingsPath, v8.ToJsonString());
+
+        var svc = new SettingsService(_settingsPath);
+
+        svc.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Migrated);
+        svc.Current.FontSize.Should().Be(22);
+        svc.Current.RenderSvgImage.Should().BeFalse();
+        svc.Current.IsSideBySide.Should().BeFalse();
+        svc.Current.PreferMarkdownRendered.Should().BeTrue(
+            "default for the new field, hydrated when missing from a pre-v9 file");
+    }
+
+    [Fact]
+    public void Save_Then_Load_RoundTripsPreferMarkdownRendered()
+    {
+        var svc1 = new SettingsService(_settingsPath);
+        svc1.Save(svc1.Current with { PreferMarkdownRendered = false });
+
+        var svc2 = new SettingsService(_settingsPath);
+
+        svc2.LastLoadOutcome.Should().Be(SettingsLoadOutcome.Loaded);
+        svc2.Current.PreferMarkdownRendered.Should().BeFalse();
+    }
+
+    [Fact]
     public void RepoUrlMappings_StableOrderingOnDisk_AcrossSaves()
     {
         // Maps with the same content should serialize to the same JSON
