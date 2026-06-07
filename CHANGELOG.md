@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-06-06
+
 ### Added
 
 - **Pull-request auto-refresh.** When DiffViewer is showing a GitHub
