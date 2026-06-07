@@ -12,6 +12,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-06-06
+
 ### Added
 
 - **Markdown rendered-diff view.** When viewing `.md` or `.markdown`
