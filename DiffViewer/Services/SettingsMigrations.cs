@@ -61,6 +61,15 @@ namespace DiffViewer.Services;
 /// rendered view enabled by default, matching the headline behaviour
 /// of the feature (same shape as the v6 <c>renderSvgImage</c>
 /// migration).</para>
+///
+/// <para>v10 introduced the two PR auto-refresh settings:
+/// <c>pullRequestAutoRefresh</c> (bool, default <c>true</c>) and
+/// <c>pullRequestPollIntervalSeconds</c> (int, default 300; clamped
+/// 30..3600 on load). The migration is a no-op because both fields
+/// have safe defaults that match the headline behaviour of the
+/// feature — pre-v10 files deserialize with auto-refresh enabled at
+/// the 5-minute default cadence, which exactly matches what a fresh
+/// install gets.</para>
 /// </summary>
 internal static class SettingsMigrations
 {
@@ -85,6 +94,7 @@ internal static class SettingsMigrations
                 6 => MigrateV6ToV7, // adds autoUpdate / updateCheckCadence / includePreReleases (all defaultable)
                 7 => MigrateV7ToV8, // adds skippedUpdateVersion (nullable string, default null)
                 8 => MigrateV8ToV9, // adds preferMarkdownRendered (bool, default true)
+                9 => MigrateV9ToV10, // adds pullRequestAutoRefresh + pullRequestPollIntervalSeconds (both defaultable)
                 _ => throw new InvalidOperationException($"No migration registered from version {v} to {v + 1}."),
             };
             current = step(current);
@@ -172,4 +182,17 @@ internal static class SettingsMigrations
     /// <c>true</c>.
     /// </summary>
     private static JsonObject MigrateV8ToV9(JsonObject obj) => obj;
+
+    /// <summary>
+    /// v10 adds the two PR auto-refresh settings
+    /// (<c>pullRequestAutoRefresh</c>,
+    /// <c>pullRequestPollIntervalSeconds</c>). Both have safe defaults
+    /// that map to "auto-refresh enabled at 5-minute cadence" so the
+    /// migration is a no-op; the deserializer fills in
+    /// <see cref="AppSettings.PullRequestAutoRefresh"/> as <c>true</c>
+    /// and
+    /// <see cref="AppSettings.PullRequestPollIntervalSeconds"/> as
+    /// <see cref="AppSettings.PullRequestPollIntervalSecondsDefault"/>.
+    /// </summary>
+    private static JsonObject MigrateV9ToV10(JsonObject obj) => obj;
 }

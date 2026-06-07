@@ -72,7 +72,8 @@ internal static class CompositionRoot
         ParsedCommandLine parsed,
         AppServices services,
         ContextScope scope,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IReviewRef? review = null)
     {
         ArgumentNullException.ThrowIfNull(parsed);
         ArgumentNullException.ThrowIfNull(services);
@@ -123,6 +124,39 @@ internal static class CompositionRoot
             }
         }
 
+        // PR watcher only when the launch came from a PullRequestRef.
+        // The just-resolved Left/Right SHAs seed the watcher's initial
+        // snapshot so the first poll fires no event unless GitHub really
+        // has moved since the resolver returned.
+        IPullRequestWatcher? pullRequestWatcher = null;
+        if (review is PullRequestRef pr
+            && parsed.Left is DiffSide.CommitIsh leftCommit
+            && parsed.Right is DiffSide.CommitIsh rightCommit)
+        {
+            try
+            {
+                var snapshot = new RemoteRefSnapshot(rightCommit.Reference, leftCommit.Reference);
+                pullRequestWatcher = new PullRequestWatcher(
+                    pr: pr,
+                    localClonePath: parsed.RepoPath,
+                    initialSnapshot: snapshot,
+                    gitHubClient: services.GitHubClient,
+                    localFetcher: services.PullRequestLocalFetcher,
+                    intervalProvider: () => TimeSpan.FromSeconds(
+                        services.SettingsService.Current.PullRequestPollIntervalSeconds),
+                    visibility: services.WindowVisibilityProbe,
+                    timeProvider: TimeProvider.System);
+                scope.Register(pullRequestWatcher);
+            }
+            catch
+            {
+                // Watcher construction is best-effort; falling back to no
+                // auto-refresh keeps the diff viewable. F5 still works
+                // when the watcher is null (Refresh() guards on null).
+                pullRequestWatcher = null;
+            }
+        }
+
         var preDiffPass = new PreDiffPass(
             repo, services.DiffService,
             maxConcurrency: PreDiffPass.DefaultMaxConcurrency,
@@ -156,7 +190,8 @@ internal static class CompositionRoot
             newDiffDialogHost: services.NewDiffDialogHost,
             clipboardService: clipboardService,
             imageDecoder: imageDecoder,
-            initialFile: parsed.InitialFile);
+            initialFile: parsed.InitialFile,
+            pullRequestWatcher: pullRequestWatcher);
 
         await vm.LoadInitialChangesAsync(ct).ConfigureAwait(true);
         return vm;

@@ -60,6 +60,8 @@ internal static class SettingsJsonSerializer
             ["updateCheckCadence"] = s.UpdateCheckCadence.ToString(),
             ["includePreReleases"] = s.IncludePreReleases,
             ["skippedUpdateVersion"] = s.SkippedUpdateVersion,
+            ["pullRequestAutoRefresh"] = s.PullRequestAutoRefresh,
+            ["pullRequestPollIntervalSeconds"] = s.PullRequestPollIntervalSeconds,
         };
         return obj.ToJsonString(WriteOptions);
     }
@@ -99,7 +101,26 @@ internal static class SettingsJsonSerializer
             UpdateCheckCadence = TryEnum<UpdateCheckCadence>(obj, "updateCheckCadence") ?? defaults.UpdateCheckCadence,
             IncludePreReleases = TryBool(obj, "includePreReleases") ?? defaults.IncludePreReleases,
             SkippedUpdateVersion = TryString(obj, "skippedUpdateVersion"),
+            PullRequestAutoRefresh = TryBool(obj, "pullRequestAutoRefresh") ?? defaults.PullRequestAutoRefresh,
+            PullRequestPollIntervalSeconds = ClampPollInterval(
+                TryInt(obj, "pullRequestPollIntervalSeconds") ?? defaults.PullRequestPollIntervalSeconds),
         };
+    }
+
+    /// <summary>
+    /// Clamp <c>pullRequestPollIntervalSeconds</c> to
+    /// <see cref="AppSettings.PullRequestPollIntervalSecondsMin"/> ..
+    /// <see cref="AppSettings.PullRequestPollIntervalSecondsMax"/> so a
+    /// hand-edited <c>settings.json</c> can never push us past GitHub's
+    /// rate-limit floor at sustained operation.
+    /// </summary>
+    private static int ClampPollInterval(int value)
+    {
+        if (value < AppSettings.PullRequestPollIntervalSecondsMin)
+            return AppSettings.PullRequestPollIntervalSecondsMin;
+        if (value > AppSettings.PullRequestPollIntervalSecondsMax)
+            return AppSettings.PullRequestPollIntervalSecondsMax;
+        return value;
     }
 
     private static JsonNode? SerializeWindowState(WindowStateSnapshot? snapshot)

@@ -37,7 +37,8 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         ParsedCommandLine parsed,
         AppServices services,
         ContextScope scope,
-        CancellationToken ct);
+        CancellationToken ct,
+        IReviewRef? review);
 
     private readonly AppServices _services;
     private readonly IDialogService _dialog;
@@ -51,6 +52,15 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     private bool _isSwitching;
     private string _switchingStatus = string.Empty;
 
+    // Tracks the live PR-watcher subscription so it can be detached
+    // when the current VM is swapped or disposed. Cleared whenever
+    // _current changes; re-created post-swap when the new VM has a
+    // PullRequestWatcher.
+    private MainViewModel? _currentPrSubscriber;
+    private EventHandler<PullRequestChangedEventArgs>? _currentPrHandler;
+    private PullRequestRef? _currentPrRef;
+    private string? _currentPrRepoPath;
+
     public MainWindowCoordinator(
         AppServices services,
         IDialogService dialog,
@@ -62,7 +72,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         _services = services ?? throw new ArgumentNullException(nameof(services));
         _dialog = dialog ?? throw new ArgumentNullException(nameof(dialog));
         _appShutdownToken = appShutdownToken;
-        _contextFactory = contextFactory ?? ((p, s, sc, ct) => CompositionRoot.BuildContextAsync(p, s, sc, ct));
+        _contextFactory = contextFactory ?? ((p, s, sc, ct, review) => CompositionRoot.BuildContextAsync(p, s, sc, ct, review));
         _ = shutdownAction; // Kept for backward compat; no longer used.
         _stderrWriter = stderrWriter;
     }
@@ -234,7 +244,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         MainViewModel newVm;
         try
         {
-            newVm = await _contextFactory(parsed, _services, newScope, ct).ConfigureAwait(true);
+            newVm = await _contextFactory(parsed, _services, newScope, ct, pr).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -246,6 +256,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         _current = newVm;
         _currentScope = newScope;
         OnCurrentChanged();
+        AttachPullRequestSubscription(newVm, pr, parsed.RepoPath);
         await TryRecordAsync(parsed, review: pr, ct: ct).ConfigureAwait(true);
         return true;
     }
@@ -264,7 +275,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         MainViewModel newVm;
         try
         {
-            newVm = await _contextFactory(parsed, _services, newScope, ct).ConfigureAwait(true);
+            newVm = await _contextFactory(parsed, _services, newScope, ct, null).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -302,7 +313,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         SwitchingStatus = $"Loading {DescribeRepo(parsed.RepoPath)}\u2026";
         try
         {
-            return await SwitchContextCoreAsync(parsed, ct).ConfigureAwait(true);
+            return await SwitchContextCoreAsync(parsed, review: null, recordRecent: true, ct).ConfigureAwait(true);
         }
         finally
         {
@@ -312,14 +323,18 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         }
     }
 
-    private async Task<bool> SwitchContextCoreAsync(ParsedCommandLine parsed, CancellationToken ct)
+    private async Task<bool> SwitchContextCoreAsync(
+        ParsedCommandLine parsed,
+        IReviewRef? review,
+        bool recordRecent,
+        CancellationToken ct)
     {
         SwitchingStatus = "Loading repository\u2026";
         var newScope = new ContextScope(_appShutdownToken);
         MainViewModel newVm;
         try
         {
-            newVm = await _contextFactory(parsed, _services, newScope, ct).ConfigureAwait(true);
+            newVm = await _contextFactory(parsed, _services, newScope, ct, review).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -351,9 +366,19 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
 
         // Atomic swap on the calling (UI) thread.
         var outgoingVm = _current;
+        DetachPullRequestSubscription();
         _current = newVm;
         _currentScope = newScope;
         OnCurrentChanged();
+
+        // Subscribe to the new VM's PR watcher (if any) so head/base
+        // SHA shifts trigger an auto-rebuild. Wiring lives on the
+        // coordinator (not the VM) because rebuilding requires the
+        // switch gate the coordinator owns.
+        if (review is PullRequestRef pr && newVm.PullRequestWatcher is not null)
+        {
+            AttachPullRequestSubscription(newVm, pr, parsed.RepoPath);
+        }
 
         // Outgoing VM / scope are dropped from this object's state above;
         // dispose them only after the new context is live so listeners see
@@ -363,7 +388,10 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
             await DisposeShellAsync(outgoingVm).ConfigureAwait(true);
         }
 
-        await TryRecordAsync(parsed, ct: ct).ConfigureAwait(true);
+        if (recordRecent)
+        {
+            await TryRecordAsync(parsed, review: review, ct: ct).ConfigureAwait(true);
+        }
         return true;
     }
 
@@ -374,6 +402,7 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
     public async ValueTask DisposeCurrentAsync()
     {
         var outgoing = _current;
+        DetachPullRequestSubscription();
         _current = null;
         _currentScope = null;
         OnCurrentChanged();
@@ -507,14 +536,12 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
         switch (resolution)
         {
             case PullRequestResolution.Ready ready:
-                var swapped = await SwitchContextCoreAsync(ready.Parsed, ct).ConfigureAwait(true);
-                if (swapped)
-                {
-                    // Re-stamp the recents row with the (possibly
-                    // refreshed) SHAs and the PR ref so the dedup key
-                    // stays stable across re-resolves.
-                    await TryRecordAsync(ready.Parsed, review: pr, ct: ct).ConfigureAwait(true);
-                }
+                // SwitchContextCoreAsync handles recents recording when
+                // recordRecent: true; we want the same behavior here
+                // (re-stamp on a successful interactive PR switch) so
+                // recordRecent is left default-true.
+                var swapped = await SwitchContextCoreAsync(
+                    ready.Parsed, review: pr, recordRecent: true, ct).ConfigureAwait(true);
                 return swapped;
 
             case PullRequestResolution.MissingClone:
@@ -660,6 +687,159 @@ public sealed class MainWindowCoordinator : ObservableObject, IContextSwitcher
 
     private static string DescribePullRequestLoading(PullRequestRef pr) =>
         $"Loading PR #{pr.Number} from {pr.Owner}/{pr.Repo}\u2026";
+
+    // ---------------- PR watcher subscription + auto-refresh ----------------
+
+    private void AttachPullRequestSubscription(MainViewModel vm, PullRequestRef pr, string repoPath)
+    {
+        if (vm.PullRequestWatcher is not { } watcher) return;
+
+        DetachPullRequestSubscription();
+
+        EventHandler<PullRequestChangedEventArgs> handler =
+            (_, e) => _ = HandlePullRequestChangedAsync(vm, pr, repoPath, e);
+
+        watcher.Changed += handler;
+        _currentPrSubscriber = vm;
+        _currentPrHandler = handler;
+        _currentPrRef = pr;
+        _currentPrRepoPath = repoPath;
+    }
+
+    private void DetachPullRequestSubscription()
+    {
+        if (_currentPrSubscriber?.PullRequestWatcher is { } watcher && _currentPrHandler is not null)
+        {
+            watcher.Changed -= _currentPrHandler;
+        }
+        _currentPrSubscriber = null;
+        _currentPrHandler = null;
+        _currentPrRef = null;
+        _currentPrRepoPath = null;
+    }
+
+    /// <summary>
+    /// Handle a single <see cref="IPullRequestWatcher.Changed"/> event
+    /// from the current PR-backed VM. Marshals to the UI thread,
+    /// drops events from a watcher whose VM is no longer current
+    /// (mid-swap race), and dispatches by change kind:
+    /// <list type="bullet">
+    ///   <item><see cref="PullRequestChangeKind.PollFailed"/> → toast only.</item>
+    ///   <item><see cref="PullRequestChangeKind.StateChanged"/> with no
+    ///     SHA movement → toast only ("This PR is now merged.").</item>
+    ///   <item><see cref="PullRequestChangeKind.HeadMoved"/> or
+    ///     <see cref="PullRequestChangeKind.BaseMoved"/> → try the
+    ///     switch gate; if contended, drop the tick. Otherwise
+    ///     rebuild the context using the watcher's pre-resolved
+    ///     snapshot (no second resolver call) and toast on success.</item>
+    /// </list>
+    /// </summary>
+    private async Task HandlePullRequestChangedAsync(
+        MainViewModel vm,
+        PullRequestRef pr,
+        string repoPath,
+        PullRequestChangedEventArgs e)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            await dispatcher.InvokeAsync(() => _ = HandlePullRequestChangedAsync(vm, pr, repoPath, e));
+            return;
+        }
+
+        // Defensive: if a swap already moved us off this VM (or onto a
+        // different PR), drop the event. The old watcher will be
+        // disposed shortly.
+        if (!ReferenceEquals(_current, vm)) return;
+
+        if ((e.Kind & PullRequestChangeKind.PollFailed) != 0)
+        {
+            vm.ToastHandler?.Invoke(e.FailureMessage ?? "PR polling failed.");
+            return;
+        }
+
+        bool shaMoved = (e.Kind & (PullRequestChangeKind.HeadMoved | PullRequestChangeKind.BaseMoved)) != 0;
+
+        if (!shaMoved)
+        {
+            // Lifecycle-only change. Toast, do not rebuild.
+            if ((e.Kind & PullRequestChangeKind.StateChanged) != 0)
+            {
+                var msg = DescribeLifecycle(e.NewInfo);
+                if (msg is not null) vm.ToastHandler?.Invoke(msg);
+            }
+            return;
+        }
+
+        if (e.NewSnapshot is null) return;
+
+        // Try the switch gate non-blockingly: if a manual switch is in
+        // flight (recents click, new-diff dialog), drop the tick. The
+        // next periodic poll will discover the same change and retry.
+        if (!await _switchGate.WaitAsync(0, _appShutdownToken).ConfigureAwait(true))
+        {
+            return;
+        }
+        IsSwitching = true;
+        SwitchingStatus = $"Refreshing PR #{pr.Number}\u2026";
+        try
+        {
+            var rebuilt = new ParsedCommandLine(
+                repoPath,
+                new DiffSide.CommitIsh(e.NewSnapshot.MergeBaseSha),
+                new DiffSide.CommitIsh(e.NewSnapshot.HeadSha));
+
+            // recordRecent: false — auto-refresh shouldn't move the
+            // recents-row timestamp (decision 5: only user clicks do).
+            var swapped = await SwitchContextCoreAsync(
+                rebuilt, review: pr, recordRecent: false, _appShutdownToken).ConfigureAwait(true);
+
+            if (swapped && _current is MainViewModel newVm)
+            {
+                newVm.ToastHandler?.Invoke(DescribeAutoRefresh(e));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // App shutting down; nothing to surface.
+        }
+        catch
+        {
+            // Auto-refresh must never throw out — the user is still in
+            // the old VM and the next poll will retry.
+        }
+        finally
+        {
+            IsSwitching = false;
+            SwitchingStatus = string.Empty;
+            _switchGate.Release();
+        }
+    }
+
+    private static string? DescribeLifecycle(PullRequestInfo? info)
+    {
+        if (info is null) return null;
+        if (info.Merged) return "This PR is now merged.";
+        if (string.Equals(info.State, "closed", StringComparison.OrdinalIgnoreCase))
+            return "This PR is now closed.";
+        if (string.Equals(info.State, "open", StringComparison.OrdinalIgnoreCase))
+            return "This PR was reopened.";
+        return null;
+    }
+
+    private static string DescribeAutoRefresh(PullRequestChangedEventArgs e)
+    {
+        bool head = (e.Kind & PullRequestChangeKind.HeadMoved) != 0;
+        bool @base = (e.Kind & PullRequestChangeKind.BaseMoved) != 0;
+        var time = e.UtcTimestamp.ToLocalTime().ToString("HH:mm");
+        return (head, @base) switch
+        {
+            (true, true) => $"PR head + base moved at {time} \u2014 refreshed.",
+            (true, false) => $"PR head moved at {time} \u2014 refreshed.",
+            (false, true) => $"PR base moved at {time} \u2014 refreshed.",
+            _ => $"PR refreshed at {time}.",
+        };
+    }
 
     private static string DescribeRepo(string repoPath)
     {

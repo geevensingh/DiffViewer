@@ -63,37 +63,15 @@ internal sealed class GitHubClient : IGitHubClient
     {
         ArgumentNullException.ThrowIfNull(pr);
 
-        var response = await SendAsync(pr, ct).ConfigureAwait(false);
+        var response = await SendWithAuthRetryAsync(pr, ifNoneMatch: null, ct).ConfigureAwait(false);
         try
         {
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
-            {
-                // Token may have been rotated in another shell; drop the
-                // cache and try once more before giving up.
-                response.Dispose();
-                _auth.InvalidateCache(pr.Host);
-                response = await SendAsync(pr, ct).ConfigureAwait(false);
-
-                if (response.StatusCode == HttpStatusCode.Unauthorized)
-                {
-                    throw new GitHubException(
-                        "GitHub rejected the auth token. Run `gh auth login` (or " +
-                        "`gh auth refresh`) and try again.");
-                }
-            }
-
             if (response.IsSuccessStatusCode)
             {
-                var stream = await response.Content
-                    .ReadAsStreamAsync(ct).ConfigureAwait(false);
-                var dto = await JsonSerializer
-                    .DeserializeAsync<PullRequestDto>(stream, JsonOptions, ct)
-                    .ConfigureAwait(false)
-                    ?? throw new GitHubException(
-                        "GitHub returned an empty response for the PR. Try again, " +
-                        "or open the PR in a browser to confirm it exists.");
-
-                return Project(pr.Number, dto);
+                var info = await ReadPullRequestAsync(pr.Number, response, ct).ConfigureAwait(false);
+                return info ?? throw new GitHubException(
+                    "GitHub returned an empty response for the PR. Try again, " +
+                    "or open the PR in a browser to confirm it exists.");
             }
 
             throw await BuildErrorAsync(response, ct).ConfigureAwait(false);
@@ -104,7 +82,101 @@ internal sealed class GitHubClient : IGitHubClient
         }
     }
 
-    private async Task<HttpResponseMessage> SendAsync(PullRequestRef pr, CancellationToken ct)
+    public async Task<PullRequestPolledResult> GetPullRequestPolledAsync(
+        PullRequestRef pr, string? ifNoneMatch, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(pr);
+
+        var response = await SendWithAuthRetryAsync(pr, ifNoneMatch, ct).ConfigureAwait(false);
+        try
+        {
+            // 304 Not Modified: caller's snapshot is still current.
+            // Keep the original ETag (some servers omit it on 304)
+            // unless the server resent one. Rate-limit headers may
+            // still be present and useful for backoff decisions.
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                return new PullRequestPolledResult(
+                    Info: null,
+                    ETag: ExtractETag(response) ?? ifNoneMatch,
+                    RateLimitRemaining: ExtractRateLimitRemaining(response));
+            }
+
+            if (response.IsSuccessStatusCode)
+            {
+                var info = await ReadPullRequestAsync(pr.Number, response, ct).ConfigureAwait(false)
+                    ?? throw new GitHubException(
+                        "GitHub returned an empty response for the PR. Try again, " +
+                        "or open the PR in a browser to confirm it exists.");
+
+                return new PullRequestPolledResult(
+                    Info: info,
+                    ETag: ExtractETag(response),
+                    RateLimitRemaining: ExtractRateLimitRemaining(response));
+            }
+
+            throw await BuildErrorAsync(response, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            response.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Issue the GET, transparently retrying once on 401 after
+    /// invalidating the cached auth token. Surface a clean
+    /// <see cref="GitHubException"/> when both attempts come back 401
+    /// so the caller doesn't have to encode the retry policy.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendWithAuthRetryAsync(
+        PullRequestRef pr, string? ifNoneMatch, CancellationToken ct)
+    {
+        var response = await SendAsync(pr, ifNoneMatch, ct).ConfigureAwait(false);
+        if (response.StatusCode != HttpStatusCode.Unauthorized) return response;
+
+        // Token may have been rotated in another shell; drop the
+        // cache and try once more before giving up.
+        response.Dispose();
+        _auth.InvalidateCache(pr.Host);
+        response = await SendAsync(pr, ifNoneMatch, ct).ConfigureAwait(false);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            response.Dispose();
+            throw new GitHubException(
+                "GitHub rejected the auth token. Run `gh auth login` (or " +
+                "`gh auth refresh`) and try again.");
+        }
+
+        return response;
+    }
+
+    private static async Task<PullRequestInfo?> ReadPullRequestAsync(
+        int number, HttpResponseMessage response, CancellationToken ct)
+    {
+        var stream = await response.Content
+            .ReadAsStreamAsync(ct).ConfigureAwait(false);
+        var dto = await JsonSerializer
+            .DeserializeAsync<PullRequestDto>(stream, JsonOptions, ct)
+            .ConfigureAwait(false);
+        return dto is null ? null : Project(number, dto);
+    }
+
+    private static string? ExtractETag(HttpResponseMessage response)
+        => response.Headers.ETag?.Tag;
+
+    private static int? ExtractRateLimitRemaining(HttpResponseMessage response)
+    {
+        if (!response.Headers.TryGetValues("X-RateLimit-Remaining", out var values))
+            return null;
+        var first = values.FirstOrDefault();
+        return int.TryParse(first, System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : null;
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(
+        PullRequestRef pr, string? ifNoneMatch, CancellationToken ct)
     {
         var url = $"https://api.github.com/repos/{pr.Owner}/{pr.Repo}/pulls/{pr.Number}";
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -117,6 +189,13 @@ internal sealed class GitHubClient : IGitHubClient
         // and a "Request forbidden by administrative rules" body; missing
         // this header is *not* an auth problem despite the status code.
         request.Headers.UserAgent.Add(UserAgentHeader);
+
+        // Conditional-get for the polling path. Server returns 304 when
+        // the resource hasn't changed since the ETag was issued.
+        if (!string.IsNullOrEmpty(ifNoneMatch))
+        {
+            request.Headers.TryAddWithoutValidation("If-None-Match", ifNoneMatch);
+        }
 
         var token = await _auth.TryGetTokenAsync(pr.Host, ct).ConfigureAwait(false);
         if (!string.IsNullOrEmpty(token))

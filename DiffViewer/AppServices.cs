@@ -29,7 +29,10 @@ public sealed record AppServices(
     IRecentContextsService RecentContextsService,
     IPullRequestResolver PullRequestResolver,
     IMissingClonePromptHost MissingClonePromptHost,
-    INewDiffDialogHost NewDiffDialogHost)
+    INewDiffDialogHost NewDiffDialogHost,
+    IGitHubClient GitHubClient,
+    IPullRequestLocalFetcher PullRequestLocalFetcher,
+    IWindowVisibilityProbe WindowVisibilityProbe)
 {
     public IContextSwitcher? ContextSwitcher { get; set; }
 }

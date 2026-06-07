@@ -222,7 +222,8 @@ public class MainWindowCoordinatorTests
         recents.SeededItems.Add(MakeContext(@"C:\repos\foo", "main"));
         var services = new AppServices(
             new SettingsService(), new DiffService(), new ExternalAppLauncher(null), recents,
-            new FakePullRequestResolver(), new FakeMissingClonePromptHost(), new FakeNewDiffDialogHost());
+            new FakePullRequestResolver(), new FakeMissingClonePromptHost(), new FakeNewDiffDialogHost(),
+            new StubGitHubClient(), new StubPullRequestLocalFetcher(), new StubWindowVisibilityProbe());
 
         var coordinator = new MainWindowCoordinator(
             services, dialog, default, shutdownAction: c => exitCode = c);
@@ -456,11 +457,11 @@ public class MainWindowCoordinatorTests
         bool? isSwitchingInFlight = null;
         var coordinator = new MainWindowCoordinator(
             services, dialog, shutdownAction: _ => { },
-            contextFactory: async (p, s, sc, ct) =>
+            contextFactory: async (p, s, sc, ct, review) =>
             {
                 statusInFlight ??= coordinatorRef!.SwitchingStatus;
                 isSwitchingInFlight ??= coordinatorRef!.IsSwitching;
-                return await CompositionRoot.BuildContextAsync(p, s, sc, ct);
+                return await CompositionRoot.BuildContextAsync(p, s, sc, ct, review);
             });
         coordinatorRef = coordinator;
 
@@ -489,14 +490,14 @@ public class MainWindowCoordinatorTests
         bool factoryHasThrown = false;
         var coordinator = new MainWindowCoordinator(
             services, dialog, shutdownAction: _ => { },
-            contextFactory: (p, s, sc, ct) =>
+            contextFactory: (p, s, sc, ct, review) =>
             {
                 if (!factoryHasThrown)
                 {
                     // First call (StartFromParsedAsync below) succeeds so
                     // there's a real outgoing context. Second call (the
                     // SwitchContextAsync under test) throws.
-                    return CompositionRoot.BuildContextAsync(p, s, sc, ct);
+                    return CompositionRoot.BuildContextAsync(p, s, sc, ct, review);
                 }
                 throw new ContextBuildException("simulated build failure");
             });
@@ -572,7 +573,10 @@ public class MainWindowCoordinatorTests
             recents,
             prResolver,
             prompt,
-            new FakeNewDiffDialogHost());
+            new FakeNewDiffDialogHost(),
+            new StubGitHubClient(),
+            new StubPullRequestLocalFetcher(),
+            new StubWindowVisibilityProbe());
     }
 
     private static TempRepo MakeRepoWithCommit()
@@ -674,6 +678,34 @@ public class MainWindowCoordinatorTests
         }
     }
 
+    internal sealed class StubGitHubClient : IGitHubClient
+    {
+        public Task<DiffViewer.Services.PullRequestInfo> GetPullRequestAsync(
+            DiffViewer.Models.PullRequestRef pr, System.Threading.CancellationToken ct)
+            => throw new NotSupportedException("PR mode not exercised by these tests.");
+
+        public Task<DiffViewer.Models.PullRequestPolledResult> GetPullRequestPolledAsync(
+            DiffViewer.Models.PullRequestRef pr, string? ifNoneMatch, System.Threading.CancellationToken ct)
+            => throw new NotSupportedException("PR mode not exercised by these tests.");
+    }
+
+    internal sealed class StubPullRequestLocalFetcher : IPullRequestLocalFetcher
+    {
+        public Task<DiffViewer.Services.PullRequestFetchResult> FetchAsync(
+            string repoPath, DiffViewer.Services.PullRequestInfo info, System.Threading.CancellationToken ct)
+            => throw new NotSupportedException("PR mode not exercised by these tests.");
+    }
+
+    internal sealed class StubWindowVisibilityProbe : IWindowVisibilityProbe
+    {
+        public bool IsVisible => true;
+        public event EventHandler? VisibilityChanged
+        {
+            add { _ = value; }
+            remove { _ = value; }
+        }
+    }
+
     // ---- IsStashRef tests ----
 
     [Theory]
@@ -694,5 +726,215 @@ public class MainWindowCoordinatorTests
     public void IsStashRef_WorkingTree_ReturnsFalse()
     {
         MainWindowCoordinator.IsStashRef(new DiffSide.WorkingTree()).Should().BeFalse();
+    }
+
+    // ===================== PR auto-refresh subscription =====================
+
+    private static PullRequestRef SamplePr() => new("github.com", "owner", "repo", 42);
+
+    [Fact]
+    public async Task SwitchToGitHubPullRequest_SubscribesToWatcherChanged_AndStartsIt()
+    {
+        using var repo = MakeRepoWithCommit();
+        var services = BuildServices(out _, out var prResolver, out _);
+
+        // Resolver returns Ready with the repo path the test owns.
+        // Use HEAD (the only known ref in MakeRepoWithCommit) so the
+        // initial LoadInitialChangesAsync succeeds.
+        prResolver.Results.Enqueue(new PullRequestResolution.Ready(
+            new ParsedCommandLine(repo.Path, new DiffSide.CommitIsh("HEAD"), new DiffSide.CommitIsh("HEAD")),
+            SamplePr()));
+
+        var prWatchers = new List<RecordingPullRequestWatcher>();
+        var coordinator = new MainWindowCoordinator(
+            services, new FakeDialog(), default,
+            contextFactory: (parsed, svc, scope, ct, review) =>
+                BuildVmWithWatcher(parsed, svc, scope, ct, review, prWatchers));
+
+        var ok = await coordinator.SwitchToAsync(
+            new DiffLaunchSource.GitHubPullRequest(SamplePr()));
+
+        ok.Should().BeTrue();
+        prWatchers.Should().ContainSingle();
+        prWatchers[0].StartCount.Should().Be(1);
+        prWatchers[0].ChangedSubscriberCount.Should().Be(1,
+            "the coordinator must subscribe to Changed after a successful PR swap");
+
+        await coordinator.DisposeCurrentAsync();
+    }
+
+    [Fact]
+    public async Task PullRequestWatcher_FiresHeadMoved_TriggersContextRebuild_WithoutRecordsing()
+    {
+        using var repo = MakeRepoWithCommit();
+        var services = BuildServices(out var recents, out var prResolver, out _);
+
+        // Initial swap uses HEAD; auto-refresh rebuild uses HEAD too —
+        // both must resolve. Real PR rebuilds receive real SHAs from
+        // the watcher's snapshot; here we use HEAD so libgit2 is happy.
+        prResolver.Results.Enqueue(new PullRequestResolution.Ready(
+            new ParsedCommandLine(repo.Path, new DiffSide.CommitIsh("HEAD"), new DiffSide.CommitIsh("HEAD")),
+            SamplePr()));
+
+        var prWatchers = new List<RecordingPullRequestWatcher>();
+        var coordinator = new MainWindowCoordinator(
+            services, new FakeDialog(), default,
+            contextFactory: (parsed, svc, scope, ct, review) =>
+                BuildVmWithWatcher(parsed, svc, scope, ct, review, prWatchers));
+
+        (await coordinator.SwitchToAsync(new DiffLaunchSource.GitHubPullRequest(SamplePr())))
+            .Should().BeTrue();
+        recents.RecordedRepoPaths.Count.Should().Be(1, "initial swap records");
+
+        // Watcher detects a head move. The watcher's pre-resolved
+        // snapshot carries the SHAs the rebuild will use — point them
+        // at HEAD so libgit2 can resolve them in the rebuild path.
+        var snapshot = new RemoteRefSnapshot("HEAD", "HEAD");
+        prWatchers[0].RaiseChanged(new PullRequestChangedEventArgs(
+            PullRequestChangeKind.HeadMoved,
+            NewInfo: null,
+            NewSnapshot: snapshot,
+            FailureMessage: null,
+            UtcTimestamp: DateTime.UtcNow));
+
+        // Auto-refresh rebuilds via SwitchContextCoreAsync → a SECOND
+        // contextFactory call with the new SHAs.
+        prWatchers.Should().HaveCount(2,
+            "the auto-refresh path must produce a new VM with a new watcher");
+        recents.RecordedRepoPaths.Count.Should().Be(1,
+            "auto-refresh must NOT re-record the recents row (decision 5)");
+
+        await coordinator.DisposeCurrentAsync();
+    }
+
+    [Fact]
+    public async Task PullRequestWatcher_FiresStateChanged_TogglesToast_WithoutRebuild()
+    {
+        using var repo = MakeRepoWithCommit();
+        var services = BuildServices(out _, out var prResolver, out _);
+
+        prResolver.Results.Enqueue(new PullRequestResolution.Ready(
+            new ParsedCommandLine(repo.Path, new DiffSide.CommitIsh("HEAD"), new DiffSide.CommitIsh("HEAD")),
+            SamplePr()));
+
+        var prWatchers = new List<RecordingPullRequestWatcher>();
+        var coordinator = new MainWindowCoordinator(
+            services, new FakeDialog(), default,
+            contextFactory: (parsed, svc, scope, ct, review) =>
+                BuildVmWithWatcher(parsed, svc, scope, ct, review, prWatchers));
+
+        (await coordinator.SwitchToAsync(new DiffLaunchSource.GitHubPullRequest(SamplePr())))
+            .Should().BeTrue();
+        var toasts = new List<string>();
+        ((MainViewModel)coordinator.Current!).ToastHandler = toasts.Add;
+
+        var info = new DiffViewer.Services.PullRequestInfo(
+            Number: 42, Title: "t", State: "closed", Merged: true,
+            BaseRef: "main", BaseSha: "BASE", HeadRef: "feat", HeadSha: "HEAD",
+            HeadRepoCloneUrl: "u", BaseRepoCloneUrl: "u");
+
+        prWatchers[0].RaiseChanged(new PullRequestChangedEventArgs(
+            PullRequestChangeKind.StateChanged,
+            NewInfo: info,
+            NewSnapshot: null,
+            FailureMessage: null,
+            UtcTimestamp: DateTime.UtcNow));
+
+        prWatchers.Should().HaveCount(1,
+            "lifecycle changes must not rebuild the context");
+        toasts.Should().ContainSingle().Which.Should().Contain("merged");
+
+        await coordinator.DisposeCurrentAsync();
+    }
+
+    [Fact]
+    public async Task PullRequestWatcher_FiresPollFailed_Toasts_WithoutRebuild()
+    {
+        using var repo = MakeRepoWithCommit();
+        var services = BuildServices(out _, out var prResolver, out _);
+
+        prResolver.Results.Enqueue(new PullRequestResolution.Ready(
+            new ParsedCommandLine(repo.Path, new DiffSide.CommitIsh("HEAD"), new DiffSide.CommitIsh("HEAD")),
+            SamplePr()));
+
+        var prWatchers = new List<RecordingPullRequestWatcher>();
+        var coordinator = new MainWindowCoordinator(
+            services, new FakeDialog(), default,
+            contextFactory: (parsed, svc, scope, ct, review) =>
+                BuildVmWithWatcher(parsed, svc, scope, ct, review, prWatchers));
+
+        (await coordinator.SwitchToAsync(new DiffLaunchSource.GitHubPullRequest(SamplePr())))
+            .Should().BeTrue();
+        var toasts = new List<string>();
+        ((MainViewModel)coordinator.Current!).ToastHandler = toasts.Add;
+
+        prWatchers[0].RaiseChanged(new PullRequestChangedEventArgs(
+            PullRequestChangeKind.PollFailed,
+            NewInfo: null,
+            NewSnapshot: null,
+            FailureMessage: "GitHub rejected the auth token.",
+            UtcTimestamp: DateTime.UtcNow));
+
+        prWatchers.Should().HaveCount(1, "terminal failures don't rebuild");
+        toasts.Should().ContainSingle().Which.Should().Contain("rejected the auth token");
+
+        await coordinator.DisposeCurrentAsync();
+    }
+
+    private static async Task<MainViewModel> BuildVmWithWatcher(
+        ParsedCommandLine parsed,
+        AppServices services,
+        ContextScope scope,
+        System.Threading.CancellationToken ct,
+        IReviewRef? review,
+        List<RecordingPullRequestWatcher> sink)
+    {
+        var repo = new RepositoryService(parsed.RepoPath);
+        scope.Register(repo);
+
+        RecordingPullRequestWatcher? watcher = null;
+        if (review is PullRequestRef)
+        {
+            watcher = new RecordingPullRequestWatcher();
+            sink.Add(watcher);
+            scope.Register(watcher);
+        }
+
+        var vm = new MainViewModel(
+            repository: repo,
+            left: parsed.Left,
+            right: parsed.Right,
+            scope: scope,
+            pullRequestWatcher: watcher);
+
+        await vm.LoadInitialChangesAsync(ct).ConfigureAwait(true);
+        return vm;
+    }
+
+    internal sealed class RecordingPullRequestWatcher : IPullRequestWatcher
+    {
+        public int StartCount { get; private set; }
+        public int ImmediatePollCount { get; private set; }
+        public bool Disposed { get; private set; }
+        public int ChangedSubscriberCount { get; private set; }
+        private EventHandler<PullRequestChangedEventArgs>? _changed;
+
+        public event EventHandler<PullRequestChangedEventArgs>? Changed
+        {
+            add { _changed += value; ChangedSubscriberCount++; }
+            remove { _changed -= value; ChangedSubscriberCount--; }
+        }
+
+        public void Start() => StartCount++;
+        public IDisposable Suspend() => new NoopToken();
+        public void RequestImmediatePoll() => ImmediatePollCount++;
+        public void Dispose() => Disposed = true;
+
+        public void RaiseChanged(PullRequestChangedEventArgs args) => _changed?.Invoke(this, args);
+
+        private sealed class NoopToken : IDisposable
+        {
+            public void Dispose() { }
+        }
     }
 }

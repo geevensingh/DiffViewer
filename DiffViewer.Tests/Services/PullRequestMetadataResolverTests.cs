@@ -31,6 +31,11 @@ public sealed class PullRequestMetadataResolverTests
             LastPr = pr;
             return Behavior(pr, ct);
         }
+
+        public Task<PullRequestPolledResult> GetPullRequestPolledAsync(
+            PullRequestRef pr, string? ifNoneMatch, CancellationToken ct)
+            => throw new NotSupportedException(
+                "PullRequestMetadataResolver does not use the polled-get path.");
     }
 
     [Fact]

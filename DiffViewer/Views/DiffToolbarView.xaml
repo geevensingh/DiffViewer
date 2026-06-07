@@ -309,10 +309,10 @@
                 <Separator Margin="6,2" Width="1" Background="#CCC"/>
 
                 <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
-                              IsChecked="{Binding LiveUpdates}"
-                              IsEnabled="{Binding IsLiveUpdatesAvailable}"
+                              IsChecked="{Binding AutoRefreshUserIntent}"
+                              IsEnabled="{Binding IsAutoRefreshAvailable}"
                               Content="Live"
-                              ToolTip="Auto-refresh when the working tree changes (Ctrl+L; greyed for commit-vs-commit)"/>
+                              ToolTip="{Binding AutoRefreshToolTip}"/>
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal">

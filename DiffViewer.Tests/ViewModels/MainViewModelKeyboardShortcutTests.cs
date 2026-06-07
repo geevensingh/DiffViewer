@@ -824,6 +824,80 @@ public class MainViewModelKeyboardShortcutTests
         toasts.Should().ContainSingle().Which.Should().Contain("No changes");
     }
 
+    // ===================== F5 + PR watcher =====================
+
+    [Fact]
+    public void Refresh_InPrMode_CallsRequestImmediatePollOnce()
+    {
+        using var fixture = new KeyboardFixture(includePrWatcher: true);
+
+        fixture.Vm.RefreshCommand.Execute(null);
+
+        fixture.PrWatcher!.ImmediatePollCount.Should().Be(1,
+            "F5 must kick the watcher's poll so a stale snapshot can be refreshed");
+    }
+
+    [Fact]
+    public void Refresh_WithoutPrWatcher_DoesNotThrow_AndCompletesNormally()
+    {
+        using var fixture = new KeyboardFixture();
+        var toasts = new List<string>();
+        fixture.Vm.ToastHandler = toasts.Add;
+
+        var act = () => fixture.Vm.RefreshCommand.Execute(null);
+
+        act.Should().NotThrow("null watcher must not break F5 in non-PR mode");
+        toasts.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void DiffPane_InPrMode_ToggleAutoRefreshRoutesToPullRequestAutoRefresh()
+    {
+        using var fixture = new KeyboardFixture(includePrWatcher: true);
+
+        fixture.Vm.DiffPane.AutoRefreshUserIntent.Should().BeTrue();
+        fixture.Vm.DiffPane.AutoRefreshUserIntent = false;
+
+        fixture.Vm.DiffPane.PullRequestAutoRefresh.Should().BeFalse(
+            "in PR mode AutoRefreshUserIntent must mutate PullRequestAutoRefresh");
+        fixture.Vm.DiffPane.LiveUpdates.Should().BeTrue(
+            "LiveUpdates must not be touched while in PR mode");
+    }
+
+    [Fact]
+    public void ToggleLiveUpdates_InPrMode_FlipsPullRequestAutoRefresh()
+    {
+        using var fixture = new KeyboardFixture(includePrWatcher: true);
+        bool before = fixture.Vm.DiffPane.PullRequestAutoRefresh;
+
+        fixture.Vm.ToggleLiveUpdatesCommand.Execute(null);
+
+        fixture.Vm.DiffPane.PullRequestAutoRefresh.Should().Be(!before,
+            "Ctrl+L in PR mode flips PR auto-refresh, not the working-tree LiveUpdates flag");
+    }
+
+    [Fact]
+    public void ReEnablingPrAutoRefresh_TriggersImmediatePoll()
+    {
+        using var fixture = new KeyboardFixture(includePrWatcher: true);
+        fixture.Vm.DiffPane.PullRequestAutoRefresh = false;
+        int baselinePolls = fixture.PrWatcher!.ImmediatePollCount;
+
+        fixture.Vm.DiffPane.PullRequestAutoRefresh = true;
+
+        fixture.PrWatcher.ImmediatePollCount.Should().Be(baselinePolls + 1,
+            "re-enabling auto-refresh must surface a fresh poll, mirroring the working-tree Live re-enable path");
+    }
+
+    [Fact]
+    public void PullRequestWatcher_GetsStartedDuringMainViewModelConstruction()
+    {
+        using var fixture = new KeyboardFixture(includePrWatcher: true);
+
+        fixture.PrWatcher!.StartCount.Should().Be(1,
+            "MainViewModel must call Start() on the watcher exactly once");
+    }
+
     [Fact]
     public void CycleFocus_InvokesFocusCycleRequestedHook()
     {
@@ -912,27 +986,53 @@ public class MainViewModelKeyboardShortcutTests
         public FakeGitWriteServiceK Git { get; }
         public InMemorySettingsServiceK Settings { get; }
         public MainViewModel Vm { get; }
+        public FakePullRequestWatcher? PrWatcher { get; }
 
-        public KeyboardFixture(bool commitVsCommit = false)
+        public KeyboardFixture(bool commitVsCommit = false, bool includePrWatcher = false)
         {
             RepoRoot = Path.Combine(Path.GetTempPath(), "DiffViewerKbd_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(RepoRoot);
             Repo = new FakeRepoForKeyboard { Shape_ = MakeShape(RepoRoot) };
             Git = new FakeGitWriteServiceK();
             Settings = new InMemorySettingsServiceK();
+            PrWatcher = includePrWatcher ? new FakePullRequestWatcher() : null;
 
             Vm = new MainViewModel(
                 repository: Repo,
-                left: commitVsCommit ? new DiffSide.CommitIsh("HEAD~1") : new DiffSide.WorkingTree(),
+                left: commitVsCommit || includePrWatcher ? new DiffSide.CommitIsh("HEAD~1") : new DiffSide.WorkingTree(),
                 right: new DiffSide.CommitIsh("HEAD"),
                 settingsService: Settings,
-                gitWriteService: Git);
+                gitWriteService: Git,
+                pullRequestWatcher: PrWatcher);
         }
 
         public void Dispose()
         {
             Vm.Dispose();
             try { Directory.Delete(RepoRoot, recursive: true); } catch { /* best effort */ }
+        }
+    }
+
+    internal sealed class FakePullRequestWatcher : IPullRequestWatcher
+    {
+        public int StartCount { get; private set; }
+        public int ImmediatePollCount { get; private set; }
+        public bool Disposed { get; private set; }
+
+        public event EventHandler<PullRequestChangedEventArgs>? Changed
+        {
+            add { _ = value; }
+            remove { _ = value; }
+        }
+
+        public void Start() => StartCount++;
+        public IDisposable Suspend() => new NoopToken();
+        public void RequestImmediatePoll() => ImmediatePollCount++;
+        public void Dispose() => Disposed = true;
+
+        private sealed class NoopToken : IDisposable
+        {
+            public void Dispose() { }
         }
     }
 

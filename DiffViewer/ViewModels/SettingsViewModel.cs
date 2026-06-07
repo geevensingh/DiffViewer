@@ -126,6 +126,11 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private UpdateCheckCadence _updateCheckCadence = UpdateCheckCadence.Daily;
     [ObservableProperty] private bool _includePreReleases;
 
+    // Pull-request auto-refresh settings (v10)
+    [ObservableProperty] private bool _pullRequestAutoRefresh = true;
+    [ObservableProperty] private int _pullRequestPollIntervalSeconds
+        = AppSettings.PullRequestPollIntervalSecondsDefault;
+
     /// <summary>Option list for the AutoUpdate dropdown in the dialog.</summary>
     public IReadOnlyList<AutoUpdateMode> AutoUpdateOptions { get; } = Enum.GetValues<AutoUpdateMode>();
 
@@ -199,10 +204,16 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
         var clampedFontSize = Math.Clamp(FontSize, 6.0, 72.0);
         var clampedTabWidth = Math.Clamp(TabWidth, 1, 16);
         var clampedThresholdMb = Math.Clamp(LargeFileThresholdMb, 1, 2048);
+        var clampedPollInterval = Math.Clamp(
+            PullRequestPollIntervalSeconds,
+            AppSettings.PullRequestPollIntervalSecondsMin,
+            AppSettings.PullRequestPollIntervalSecondsMax);
 
         if (clampedFontSize != FontSize) FontSize = clampedFontSize;
         if (clampedTabWidth != TabWidth) TabWidth = clampedTabWidth;
         if (clampedThresholdMb != LargeFileThresholdMb) LargeFileThresholdMb = clampedThresholdMb;
+        if (clampedPollInterval != PullRequestPollIntervalSeconds)
+            PullRequestPollIntervalSeconds = clampedPollInterval;
 
         _settings.Update(s => s with
         {
@@ -214,6 +225,7 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             ExternalEditorLineArgFormat = string.IsNullOrWhiteSpace(ExternalEditorLineArgFormat)
                 ? null
                 : ExternalEditorLineArgFormat,
+            PullRequestPollIntervalSeconds = clampedPollInterval,
         });
         StatusMessage = "Saved.";
     }
@@ -254,6 +266,13 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
 
     partial void OnIncludePreReleasesChanged(bool value) =>
         SaveIfNotSuppressed(s => s with { IncludePreReleases = value });
+
+    partial void OnPullRequestAutoRefreshChanged(bool value) =>
+        SaveIfNotSuppressed(s => s with { PullRequestAutoRefresh = value });
+
+    // PullRequestPollIntervalSeconds is committed via CommitNumericFields
+    // (on focus loss / Enter), mirroring the LargeFileThresholdMb pattern,
+    // so per-keystroke writes don't churn settings.json.
 
     partial void OnSelectedColorPresetChanged(ColorSchemePresetName value)
     {
@@ -444,6 +463,9 @@ public sealed partial class SettingsViewModel : ObservableObject, IDisposable
             AutoUpdate = s.AutoUpdate;
             UpdateCheckCadence = s.UpdateCheckCadence;
             IncludePreReleases = s.IncludePreReleases;
+
+            PullRequestAutoRefresh = s.PullRequestAutoRefresh;
+            PullRequestPollIntervalSeconds = s.PullRequestPollIntervalSeconds;
 
             RepoRoots.Clear();
             foreach (var root in s.RepoRoots) RepoRoots.Add(root);

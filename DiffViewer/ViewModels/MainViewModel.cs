@@ -22,6 +22,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
 {
     private readonly IRepositoryService _repository;
     private readonly IRepositoryWatcher? _watcher;
+    private readonly IPullRequestWatcher? _pullRequestWatcher;
     private readonly IPreDiffPass? _preDiffPass;
     private readonly ISettingsService? _settingsService;
     private readonly IGitWriteService? _gitWriteService;
@@ -60,6 +61,16 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
 
     public FileListViewModel FileList { get; }
     public DiffPaneViewModel DiffPane { get; }
+
+    /// <summary>
+    /// The pull-request watcher for this context, or <c>null</c> when
+    /// the diff isn't backed by a PR. The coordinator subscribes to
+    /// <see cref="IPullRequestWatcher.Changed"/> after building a
+    /// PR-backed context so head/base SHA moves trigger an atomic
+    /// context rebuild. Exposed as a read-only seam — the VM doesn't
+    /// route the rebuild itself; that's a context-switcher concern.
+    /// </summary>
+    public IPullRequestWatcher? PullRequestWatcher => _pullRequestWatcher;
 
     /// <summary>
     /// View-model that drives the recents dropdown above the file list.
@@ -375,6 +386,14 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     [RelayCommand]
     private void Refresh()
     {
+        // In PR mode, kick an immediate poll BEFORE the local
+        // re-enumerate. The poll runs asynchronously; if it discovers
+        // a SHA move the coordinator's auto-refresh handler takes over
+        // (and its rebuild + toast supersede the local one below). If
+        // the poll discovers nothing new, the local re-enumerate + toast
+        // is what the user sees.
+        _pullRequestWatcher?.RequestImmediatePoll();
+
         if (_isCommitVsCommit && !_repository.ValidateRevisions(
                 (_left as DiffSide.CommitIsh)?.Reference ?? "",
                 (_right as DiffSide.CommitIsh)?.Reference ?? ""))
@@ -395,8 +414,12 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     [RelayCommand]
     private void ToggleLiveUpdates()
     {
-        if (!DiffPane.IsLiveUpdatesAvailable) return;  // greyed out for commit-vs-commit
-        DiffPane.LiveUpdates = !DiffPane.LiveUpdates;
+        // Context-aware: in PR mode toggles PullRequestAutoRefresh; in
+        // working-tree mode toggles LiveUpdates. The greying check
+        // covers both: IsAutoRefreshAvailable is false in
+        // commit-vs-commit (non-PR) mode.
+        if (!DiffPane.IsAutoRefreshAvailable) return;
+        DiffPane.AutoRefreshUserIntent = !DiffPane.AutoRefreshUserIntent;
     }
 
     [RelayCommand] private void SetDisplayModeFullPath()     => FileList.DisplayMode = FileListDisplayMode.FullPath;
@@ -614,13 +637,15 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         INewDiffDialogHost? newDiffDialogHost = null,
         IClipboardService? clipboardService = null,
         IImageDecoder? imageDecoder = null,
-        string? initialFile = null)
+        string? initialFile = null,
+        IPullRequestWatcher? pullRequestWatcher = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _left = left ?? throw new ArgumentNullException(nameof(left));
         _right = right ?? throw new ArgumentNullException(nameof(right));
         _isCommitVsCommit = left is DiffSide.CommitIsh && right is DiffSide.CommitIsh;
         _watcher = watcher;
+        _pullRequestWatcher = pullRequestWatcher;
         _preDiffPass = preDiffPass;
         _settingsService = settingsService;
         _gitWriteService = gitWriteService;
@@ -648,6 +673,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
 
         FileList = new FileListViewModel(settingsService);
         DiffPane = new DiffPaneViewModel(_repository, diffService, _isCommitVsCommit, settingsService, imageDecoder);
+        DiffPane.SetPullRequestContext(_pullRequestWatcher is not null);
 
         WindowTitle = $"DiffViewer — {repository.Shape.RepoRoot} ({FormatSideForTitle(left)} ⇢ {FormatSideForTitle(right)})";
 
@@ -668,6 +694,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
             // lives longest because watcher / preDiffPass depend on it.
             _scope.Register(_repository);
             if (_watcher is not null) _scope.Register(_watcher);
+            if (_pullRequestWatcher is not null) _scope.Register(_pullRequestWatcher);
             if (_preDiffPass is not null) _scope.Register(_preDiffPass);
         }
 
@@ -686,6 +713,11 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
             _watcher.Changed += OnRepositoryChanged;
             _scope.RegisterCleanup(() => _watcher.Changed -= OnRepositoryChanged);
             _watcher.Start();
+        }
+
+        if (_pullRequestWatcher is not null)
+        {
+            _pullRequestWatcher.Start();
         }
 
         if (_gitWriteService is not null)
@@ -833,6 +865,16 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         {
             _missedChangeKindWhilePaused = RepositoryChangeKind.None;
             MarshalToUi(RefreshChangeList);
+            return;
+        }
+
+        // Mirror the above for PR auto-refresh: re-enabling fires one
+        // immediate poll so the user sees the current state rather than
+        // having to wait up to one interval.
+        if (e.PropertyName == nameof(DiffPaneViewModel.PullRequestAutoRefresh) &&
+            DiffPane.PullRequestAutoRefreshEffective)
+        {
+            _pullRequestWatcher?.RequestImmediatePoll();
             return;
         }
 

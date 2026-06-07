@@ -24,6 +24,27 @@ namespace DiffViewer.Services;
 public interface IGitHubClient
 {
     Task<PullRequestInfo> GetPullRequestAsync(PullRequestRef pr, CancellationToken ct);
+
+    /// <summary>
+    /// ETag-aware poll of GitHub's PR endpoint. Caller supplies the
+    /// last <c>ETag</c> it observed (or <c>null</c> for the first call);
+    /// the server returns 304 Not Modified when the resource hasn't
+    /// changed, in which case the result's <see cref="PullRequestPolledResult.Info"/>
+    /// is <c>null</c>. The result always carries the newest known
+    /// <see cref="PullRequestPolledResult.ETag"/> and (when present)
+    /// the <see cref="PullRequestPolledResult.RateLimitRemaining"/> header
+    /// so a polling caller can react to quota pressure with backoff.
+    ///
+    /// <para>The auth-retry policy mirrors <see cref="GetPullRequestAsync"/>:
+    /// a rotated token (401 → cache invalidation → retry) is picked up
+    /// without restarting DiffViewer.</para>
+    /// </summary>
+    /// <param name="pr">PR to poll.</param>
+    /// <param name="ifNoneMatch">The last observed <c>ETag</c>, or
+    /// <c>null</c> to skip conditional-get semantics.</param>
+    /// <param name="ct">Cancellation token.</param>
+    Task<PullRequestPolledResult> GetPullRequestPolledAsync(
+        PullRequestRef pr, string? ifNoneMatch, CancellationToken ct);
 }
 
 /// <summary>

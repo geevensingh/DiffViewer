@@ -316,6 +316,87 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     /// <summary>Effective live-updates state (intent AND availability).</summary>
     public bool LiveUpdatesEffective => LiveUpdates && IsLiveUpdatesAvailable;
 
+    /// <summary>
+    /// User intent for PR auto-refresh. Distinct from
+    /// <see cref="LiveUpdates"/>: a user who turns Live off because
+    /// their typing keeps repositioning the working-tree diff would
+    /// silently lose PR auto-refresh too if the two flags were
+    /// unified. Greyed out via <see cref="IsPullRequestAutoRefreshAvailable"/>
+    /// outside PR mode.
+    /// </summary>
+    [ObservableProperty] private bool _pullRequestAutoRefresh = true;
+
+    /// <summary>True only when the diff is backed by a PR (the coordinator
+    /// sets this on construction via the PR watcher's presence; today
+    /// it is conservatively tied to commit-vs-commit mode plus a
+    /// constructor flag — see <see cref="IsPullRequestContext"/>).</summary>
+    public bool IsPullRequestAutoRefreshAvailable => _isPullRequestContext;
+
+    /// <summary>Effective PR auto-refresh state (intent AND availability).</summary>
+    public bool PullRequestAutoRefreshEffective
+        => PullRequestAutoRefresh && IsPullRequestAutoRefreshAvailable;
+
+    /// <summary>
+    /// Whether the bound <see cref="MainViewModel"/> has an active PR
+    /// watcher. Driven by <see cref="MainViewModel"/> at construction
+    /// time via <see cref="SetPullRequestContext"/>.
+    /// </summary>
+    private bool _isPullRequestContext;
+
+    /// <summary>
+    /// Single bound surface for the toolbar's Live toggle: in
+    /// working-tree mode this tracks <see cref="LiveUpdatesEffective"/>;
+    /// in PR mode it tracks <see cref="PullRequestAutoRefreshEffective"/>.
+    /// Lets one ToggleButton + one Ctrl+L shortcut serve both modes
+    /// without conflating the two persisted settings under the hood.
+    /// </summary>
+    public bool AutoRefreshEffective
+        => _isPullRequestContext ? PullRequestAutoRefreshEffective : LiveUpdatesEffective;
+
+    /// <summary>Whether the toolbar's Live toggle should be enabled.</summary>
+    public bool IsAutoRefreshAvailable
+        => _isPullRequestContext ? IsPullRequestAutoRefreshAvailable : IsLiveUpdatesAvailable;
+
+    /// <summary>
+    /// Settable user-intent surface for the toolbar's Live ToggleButton.
+    /// Reads from and writes to either <see cref="LiveUpdates"/> or
+    /// <see cref="PullRequestAutoRefresh"/> based on which context the
+    /// VM is in. Lets a single ToggleButton + a single Ctrl+L shortcut
+    /// serve both modes.
+    /// </summary>
+    public bool AutoRefreshUserIntent
+    {
+        get => _isPullRequestContext ? PullRequestAutoRefresh : LiveUpdates;
+        set
+        {
+            if (_isPullRequestContext) PullRequestAutoRefresh = value;
+            else LiveUpdates = value;
+            OnPropertyChanged(nameof(AutoRefreshUserIntent));
+        }
+    }
+
+    /// <summary>Context-aware tooltip for the toolbar's Live ToggleButton.</summary>
+    public string AutoRefreshToolTip => _isPullRequestContext
+        ? "Auto-refresh when the PR's head or base moves on GitHub (Ctrl+L)."
+        : "Auto-refresh when the working tree changes (Ctrl+L; greyed for commit-vs-commit).";
+
+    /// <summary>
+    /// Called by <see cref="MainViewModel"/> after constructing the
+    /// diff-pane to declare PR-mode (when an <see cref="IPullRequestWatcher"/>
+    /// is wired). Idempotent.
+    /// </summary>
+    internal void SetPullRequestContext(bool isPullRequestContext)
+    {
+        if (_isPullRequestContext == isPullRequestContext) return;
+        _isPullRequestContext = isPullRequestContext;
+        OnPropertyChanged(nameof(IsPullRequestAutoRefreshAvailable));
+        OnPropertyChanged(nameof(PullRequestAutoRefreshEffective));
+        OnPropertyChanged(nameof(AutoRefreshEffective));
+        OnPropertyChanged(nameof(IsAutoRefreshAvailable));
+        OnPropertyChanged(nameof(AutoRefreshUserIntent));
+        OnPropertyChanged(nameof(AutoRefreshToolTip));
+    }
+
     /// <summary>The hunks for the currently-loaded file (empty if none).</summary>
     public IReadOnlyList<DiffHunk> CurrentHunks => _currentHunks;
 
@@ -364,6 +445,7 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 IsSideBySide = s.IsSideBySide;
                 ShowVisibleWhitespace = s.ShowVisibleWhitespace;
                 LiveUpdates = s.LiveUpdates;
+                PullRequestAutoRefresh = s.PullRequestAutoRefresh;
                 SideVisibility = s.SideVisibility;
                 RenderSvgImage = s.RenderSvgImage;
                 RenderMarkdownRendered = s.PreferMarkdownRendered;
@@ -426,6 +508,8 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
                 RenderSvgImage = e.Current.RenderSvgImage;
             if (e.Previous.PreferMarkdownRendered != e.Current.PreferMarkdownRendered)
                 RenderMarkdownRendered = e.Current.PreferMarkdownRendered;
+            if (e.Previous.PullRequestAutoRefresh != e.Current.PullRequestAutoRefresh)
+                PullRequestAutoRefresh = e.Current.PullRequestAutoRefresh;
         }
         finally { _suppressSettingsWrite = false; }
     }
@@ -1206,7 +1290,17 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
     partial void OnLiveUpdatesChanged(bool value)
     {
         OnPropertyChanged(nameof(LiveUpdatesEffective));
+        OnPropertyChanged(nameof(AutoRefreshEffective));
+        OnPropertyChanged(nameof(AutoRefreshUserIntent));
         PersistToolbarToSettings();
+    }
+
+    partial void OnPullRequestAutoRefreshChanged(bool value)
+    {
+        OnPropertyChanged(nameof(PullRequestAutoRefreshEffective));
+        OnPropertyChanged(nameof(AutoRefreshEffective));
+        OnPropertyChanged(nameof(AutoRefreshUserIntent));
+        PersistPullRequestToSettings();
     }
 
     partial void OnShowLineNumbersChanged(bool value) => PersistToolbarToSettings();
@@ -1241,6 +1335,15 @@ public sealed partial class DiffPaneViewModel : ObservableObject, IDisposable
             WordWrap = WordWrap,
             RenderSvgImage = RenderSvgImage,
             PreferMarkdownRendered = RenderMarkdownRendered,
+        });
+    }
+
+    private void PersistPullRequestToSettings()
+    {
+        if (_settingsService is null || _suppressSettingsWrite) return;
+        _settingsService.Update(s => s with
+        {
+            PullRequestAutoRefresh = PullRequestAutoRefresh,
         });
     }
 

@@ -512,4 +512,74 @@ public sealed class SettingsViewModelTests : IDisposable
         promptCount.Should().Be(0);
         _service.Current.DefaultCloneDestination.Should().Be(@"D:\Existing");
     }
+
+    // ---------- PR auto-refresh settings (v10) ----------
+
+    [Fact]
+    public void Constructor_LoadsPullRequestSettings()
+    {
+        _service.Save(_service.Current with
+        {
+            PullRequestAutoRefresh = false,
+            PullRequestPollIntervalSeconds = 120,
+        });
+        var vm = NewVm();
+
+        vm.PullRequestAutoRefresh.Should().BeFalse();
+        vm.PullRequestPollIntervalSeconds.Should().Be(120);
+    }
+
+    [Fact]
+    public void PullRequestAutoRefresh_TogglePersistsImmediately()
+    {
+        var vm = NewVm();
+        vm.PullRequestAutoRefresh.Should().BeTrue("default is true");
+
+        vm.PullRequestAutoRefresh = false;
+
+        new SettingsService(_settingsPath).Current.PullRequestAutoRefresh.Should().BeFalse();
+    }
+
+    [Fact]
+    public void PullRequestPollIntervalSeconds_BufferedUntilCommitNumericFields()
+    {
+        var vm = NewVm();
+        vm.PullRequestPollIntervalSeconds = 45;
+
+        // Until CommitNumericFields runs the file holds the default.
+        new SettingsService(_settingsPath).Current.PullRequestPollIntervalSeconds
+            .Should().Be(AppSettings.PullRequestPollIntervalSecondsDefault);
+
+        vm.CommitNumericFields();
+
+        new SettingsService(_settingsPath).Current.PullRequestPollIntervalSeconds.Should().Be(45);
+    }
+
+    [Fact]
+    public void PullRequestPollIntervalSeconds_ClampsBelowMin()
+    {
+        var vm = NewVm();
+        vm.PullRequestPollIntervalSeconds = 5;
+
+        vm.CommitNumericFields();
+
+        vm.PullRequestPollIntervalSeconds.Should().Be(
+            AppSettings.PullRequestPollIntervalSecondsMin);
+        new SettingsService(_settingsPath).Current.PullRequestPollIntervalSeconds
+            .Should().Be(AppSettings.PullRequestPollIntervalSecondsMin);
+    }
+
+    [Fact]
+    public void PullRequestPollIntervalSeconds_ClampsAboveMax()
+    {
+        var vm = NewVm();
+        vm.PullRequestPollIntervalSeconds = 999999;
+
+        vm.CommitNumericFields();
+
+        vm.PullRequestPollIntervalSeconds.Should().Be(
+            AppSettings.PullRequestPollIntervalSecondsMax);
+        new SettingsService(_settingsPath).Current.PullRequestPollIntervalSeconds
+            .Should().Be(AppSettings.PullRequestPollIntervalSecondsMax);
+    }
 }

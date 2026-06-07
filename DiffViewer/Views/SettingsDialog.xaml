@@ -327,6 +327,36 @@
                                Content="Include pre-release versions"
                                IsChecked="{Binding IncludePreReleases}"/>
                 </Grid>
+
+                <!-- Pull requests (added in v10) -->
+                <TextBlock Text="Pull requests" Style="{StaticResource SectionHeader}"/>
+                <TextBlock Margin="0,0,0,6" Foreground="#666" TextWrapping="Wrap" FontStyle="Italic">
+                    When DiffViewer is showing a GitHub pull request, it can poll
+                    GitHub for head/base SHA changes and auto-rebuild the diff.
+                    F5 always forces an immediate poll.
+                </TextBlock>
+
+                <Grid Margin="0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition/><RowDefinition/>
+                    </Grid.RowDefinitions>
+
+                    <CheckBox  Grid.Row="0" Grid.Column="1" Margin="0,4"
+                               Content="Auto-refresh open pull requests"
+                               IsChecked="{Binding PullRequestAutoRefresh}"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FieldLabel}"
+                               Text="Poll interval (seconds)"/>
+                    <TextBox   Grid.Row="1" Grid.Column="1" Margin="0,4"
+                               Width="80" HorizontalAlignment="Left"
+                               Text="{Binding PullRequestPollIntervalSeconds, UpdateSourceTrigger=LostFocus}"
+                               LostFocus="OnTextOrNumericLostFocus"
+                               KeyDown="OnTextOrNumericKeyDown"/>
+                </Grid>
             </StackPanel>
         </ScrollViewer>
     </DockPanel>

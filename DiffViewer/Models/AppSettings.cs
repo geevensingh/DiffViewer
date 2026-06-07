@@ -16,7 +16,31 @@ namespace DiffViewer.Models;
 public sealed record AppSettings
 {
     /// <summary>Current schema version; bump every time the shape changes.</summary>
-    public const int CurrentSchemaVersion = 9;
+    public const int CurrentSchemaVersion = 10;
+
+    // ---- Polling defaults for IPullRequestWatcher (added in v10) ----
+    /// <summary>
+    /// Minimum allowed value of <see cref="PullRequestPollIntervalSeconds"/>.
+    /// Clamped at load time so a tampered or hand-edited settings file
+    /// can never produce a polling cadence that exceeds GitHub's
+    /// rate limit at sustained operation.
+    /// </summary>
+    public const int PullRequestPollIntervalSecondsMin = 30;
+
+    /// <summary>
+    /// Maximum allowed value of <see cref="PullRequestPollIntervalSeconds"/>.
+    /// One hour caps "effectively never polls" while still letting
+    /// users dial pressure on the GitHub API down to a trickle.
+    /// </summary>
+    public const int PullRequestPollIntervalSecondsMax = 3600;
+
+    /// <summary>
+    /// Default polling interval. 5 minutes balances responsiveness
+    /// against API quota: unauthenticated callers get 60 requests per
+    /// hour per IP, so this default leaves ~80% of the quota
+    /// untouched for a single open PR.
+    /// </summary>
+    public const int PullRequestPollIntervalSecondsDefault = 300;
 
     public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 
@@ -161,6 +185,25 @@ public sealed record AppSettings
     /// pre-v8 migrated installs.
     /// </summary>
     public string? SkippedUpdateVersion { get; init; }
+
+    // ---- Pull-request auto-refresh (added in v10) ----
+    /// <summary>
+    /// When <c>true</c>, <see cref="DiffViewer.Services.IPullRequestWatcher"/>
+    /// auto-rebuilds the diff whenever the polled GitHub PR's head or
+    /// base SHAs differ from the last resolved snapshot. Manual refresh
+    /// (F5) still works when this is <c>false</c>; only the periodic
+    /// timer is gated by this flag. Inert in non-PR contexts.
+    /// </summary>
+    public bool PullRequestAutoRefresh { get; init; } = true;
+
+    /// <summary>
+    /// How often the watcher polls GitHub's REST API. Clamped to
+    /// <see cref="PullRequestPollIntervalSecondsMin"/> ..
+    /// <see cref="PullRequestPollIntervalSecondsMax"/> at load time so
+    /// a hand-edited value can't push us past quota.
+    /// </summary>
+    public int PullRequestPollIntervalSeconds { get; init; }
+        = PullRequestPollIntervalSecondsDefault;
 }
 
 /// <summary>

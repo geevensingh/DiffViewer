@@ -159,7 +159,10 @@ public partial class App : Application
 
         var services = new AppServices(
             settingsService, diffService, externalAppLauncher, recents,
-            prResolver, missingClonePromptHost, newDiffDialogHost);
+            prResolver, missingClonePromptHost, newDiffDialogHost,
+            GitHubClient: githubClient,
+            PullRequestLocalFetcher: fetcher,
+            WindowVisibilityProbe: new WpfWindowVisibilityProbe());
 
         _coordinator = new MainWindowCoordinator(
             services,

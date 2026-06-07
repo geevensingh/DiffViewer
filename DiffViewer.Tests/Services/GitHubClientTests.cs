@@ -289,6 +289,95 @@ public sealed class GitHubClientTests
         };
     }
 
+    // ---- GetPullRequestPolledAsync ----
+
+    [Fact]
+    public async Task GetPullRequestPolledAsync_Success_ReturnsInfoAndETag()
+    {
+        var handler = new FakeHandler();
+        handler.Enqueue(req =>
+        {
+            req.Headers.Contains("If-None-Match").Should().BeFalse(
+                "no ETag passed → no conditional-get header");
+            var resp = JsonOk(SampleJson);
+            resp.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue("\"abc123\"");
+            resp.Headers.TryAddWithoutValidation("X-RateLimit-Remaining", "4823");
+            return resp;
+        });
+        var client = new GitHubClient(new HttpClient(handler), new FakeAuth("ghp_test"));
+
+        var result = await client.GetPullRequestPolledAsync(SamplePr, ifNoneMatch: null, default);
+
+        result.Info.Should().NotBeNull();
+        result.Info!.Title.Should().Be("Sample PR");
+        result.ETag.Should().Be("\"abc123\"");
+        result.RateLimitRemaining.Should().Be(4823);
+    }
+
+    [Fact]
+    public async Task GetPullRequestPolledAsync_NotModified_ReturnsNullInfoAndPreservesETag()
+    {
+        var handler = new FakeHandler();
+        handler.Enqueue(req =>
+        {
+            req.Headers.GetValues("If-None-Match").Should().ContainSingle()
+                .Which.Should().Be("\"prev-etag\"");
+            var resp = new HttpResponseMessage(HttpStatusCode.NotModified);
+            // Server omits ETag on 304 (common); caller keeps the prior one.
+            resp.Headers.TryAddWithoutValidation("X-RateLimit-Remaining", "100");
+            return resp;
+        });
+        var client = new GitHubClient(new HttpClient(handler), new FakeAuth("ghp_test"));
+
+        var result = await client.GetPullRequestPolledAsync(SamplePr, ifNoneMatch: "\"prev-etag\"", default);
+
+        result.Info.Should().BeNull();
+        result.ETag.Should().Be("\"prev-etag\"", "304 with no server ETag preserves the caller's value");
+        result.RateLimitRemaining.Should().Be(100);
+    }
+
+    [Fact]
+    public async Task GetPullRequestPolledAsync_MissingRateLimitHeader_ReturnsNullRemaining()
+    {
+        var handler = new FakeHandler();
+        handler.Enqueue(_ => JsonOk(SampleJson));
+        var client = new GitHubClient(new HttpClient(handler), new FakeAuth("ghp_test"));
+
+        var result = await client.GetPullRequestPolledAsync(SamplePr, null, default);
+
+        result.RateLimitRemaining.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetPullRequestPolledAsync_Unauthorized_RetriesOnceAfterInvalidatingToken()
+    {
+        var handler = new FakeHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        handler.Enqueue(_ => JsonOk(SampleJson));
+        var auth = new FakeAuth("ghp_test");
+        var client = new GitHubClient(new HttpClient(handler), auth);
+
+        var result = await client.GetPullRequestPolledAsync(SamplePr, null, default);
+
+        result.Info.Should().NotBeNull();
+        handler.RequestCount.Should().Be(2);
+        auth.InvalidatedHosts.Should().ContainSingle().Which.Should().Be("github.com");
+    }
+
+    [Fact]
+    public async Task GetPullRequestPolledAsync_RepeatedUnauthorized_ThrowsTokenRejectedError()
+    {
+        var handler = new FakeHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        var client = new GitHubClient(new HttpClient(handler), new FakeAuth("ghp_test"));
+
+        var act = () => client.GetPullRequestPolledAsync(SamplePr, null, default);
+
+        await act.Should().ThrowAsync<GitHubException>()
+            .Where(ex => ex.Message.Contains("rejected the auth token"));
+    }
+
     private sealed class FakeHandler : HttpMessageHandler
     {
         private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> _queue = new();

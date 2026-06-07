@@ -12,6 +12,26 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Pull-request auto-refresh.** When DiffViewer is showing a GitHub
+  pull request, it now polls GitHub's REST API for head/base SHA
+  shifts and PR lifecycle transitions (open/closed/merged) on a
+  configurable interval (default 5 minutes; clamped 30 s..1 h). When
+  the head or base SHA moves — typically a force-push or a new commit
+  to either side — the diff is automatically rebuilt with the new
+  SHAs and a title-bar toast announces what changed. Lifecycle
+  transitions ("This PR is now merged.") surface as toasts without
+  rebuilding the diff. F5 always forces an immediate poll, regardless
+  of the auto-refresh toggle state. The toolbar **Live** button is
+  context-aware: in PR mode it controls auto-polling; in working-tree
+  mode it controls the existing FSW-driven refresh. Both settings
+  persist independently so toggling one does not affect the other.
+  Polling is paused while the main window is hidden, backs off on
+  GitHub rate-limit pressure, and stops after a terminal 401/403 with
+  a one-time toast. Settings dialog exposes both the toggle and the
+  interval under a new "Pull requests" section.
+
 ## [1.8.0] - 2026-06-06
 
 ### Added

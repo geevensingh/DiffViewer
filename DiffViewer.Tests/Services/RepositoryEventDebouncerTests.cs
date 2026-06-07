@@ -246,7 +246,20 @@ internal sealed class ManualTimeProvider : TimeProvider
         {
             while (_nextFire is { } due && due <= now)
             {
+                // Snapshot the scheduled value so we can detect whether
+                // the callback re-armed the timer (e.g. a self-rearming
+                // watcher that calls Change inside its own tick). If the
+                // callback set a new _nextFire, the post-callback
+                // "one-shot done" branch must NOT overwrite it.
                 _callback(_state);
+
+                bool callbackRearmed = _nextFire is { } newNext && newNext != due;
+                if (callbackRearmed)
+                {
+                    // Continue the loop with the new schedule, fire-as-needed.
+                    continue;
+                }
+
                 if (_period <= TimeSpan.Zero || _period == Timeout.InfiniteTimeSpan)
                 {
                     _nextFire = null;
