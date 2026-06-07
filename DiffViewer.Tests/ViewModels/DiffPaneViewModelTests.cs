@@ -421,6 +421,332 @@ public class DiffPaneViewModelTests
         });
     }
 
+    // ---- Markdown rendered-diff dispatch ----
+
+    [Fact]
+    public async Task LoadAsync_MarkdownFile_SetsIsMarkdownFileAndBuildsRenderedVm()
+    {
+        // A .md file rides the text-diff path AND gets a MarkdownDiff
+        // VM layered on top, so the toggle has both surfaces available.
+        var repo = new FakeRepository
+        {
+            LeftText = "# Title\n\nA paragraph.\n",
+            RightText = "# Title v2\n\nA changed paragraph.\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+
+            vm.IsMarkdownFile.Should().BeTrue();
+            vm.MarkdownDiff.Should().NotBeNull("text-dispatch ContinueWith builds the rendered VM on the UI thread");
+            vm.RenderMarkdownRendered.Should().BeTrue("default is rendered (mirrors RenderSvgImage default)");
+            vm.ShowMarkdownRenderedToggle.Should().BeTrue();
+            vm.ShowMarkdownRendered.Should().BeTrue("rendered surface should take over by default");
+            vm.ShowEditors.Should().BeFalse("rendered surface hides the source editors");
+            vm.LeftDocument.Text.Should().NotBeEmpty(
+                "source text is still loaded so the toggle flip is instant");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_MarkdownExtensionVariant_AlsoDetected()
+    {
+        // .markdown is the long-form spelling; same dispatch.
+        var repo = new FakeRepository
+        {
+            LeftText = "Old.\n",
+            RightText = "New.\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("CHANGES.markdown")));
+            await vm.LastLoadTask;
+
+            vm.IsMarkdownFile.Should().BeTrue();
+            vm.MarkdownDiff.Should().NotBeNull();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_MarkdownExtensionCaseInsensitive()
+    {
+        var repo = new FakeRepository
+        {
+            LeftText = "a\n",
+            RightText = "b\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("Readme.MD")));
+            await vm.LastLoadTask;
+
+            vm.IsMarkdownFile.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_NonMarkdownFile_LeavesMarkdownStateClear()
+    {
+        var repo = new FakeRepository
+        {
+            LeftText = "alpha\n",
+            RightText = "beta\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("notes.txt")));
+            await vm.LastLoadTask;
+
+            vm.IsMarkdownFile.Should().BeFalse();
+            vm.MarkdownDiff.Should().BeNull();
+            vm.ShowMarkdownRenderedToggle.Should().BeFalse();
+            vm.ShowMarkdownRendered.Should().BeFalse();
+            vm.ShowEditors.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task RenderMarkdownRendered_TogglingOff_FlipsToSourceWithoutLosingVm()
+    {
+        var repo = new FakeRepository
+        {
+            LeftText = "# Title\n",
+            RightText = "# Title v2\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+
+            vm.ShowMarkdownRendered.Should().BeTrue();
+            int readCountAfterLoad = repo.ReadCount;
+
+            vm.RenderMarkdownRendered = false;
+
+            vm.ShowMarkdownRendered.Should().BeFalse("toggling off must hide the rendered view");
+            vm.ShowEditors.Should().BeTrue("source editors take over the surface");
+            vm.MarkdownDiff.Should().NotBeNull(
+                "the rendered VM is retained for instant flip-back, not torn down");
+            repo.ReadCount.Should().Be(readCountAfterLoad,
+                "toggling must not re-read blobs");
+
+            vm.RenderMarkdownRendered = true;
+
+            vm.ShowMarkdownRendered.Should().BeTrue();
+            vm.ShowEditors.Should().BeFalse();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_TextFileAfterMarkdown_ResetsMarkdownFlags()
+    {
+        var repo = new FakeRepository
+        {
+            LeftText = "# Title\n",
+            RightText = "# Title v2\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+            vm.IsMarkdownFile.Should().BeTrue();
+            vm.MarkdownDiff.Should().NotBeNull();
+
+            repo.LeftText = "alpha\n";
+            repo.RightText = "beta\n";
+            await vm.LoadAsync(Entry(ModifiedTextFile("notes.txt")));
+            await vm.LastLoadTask;
+
+            vm.IsMarkdownFile.Should().BeFalse();
+            vm.MarkdownDiff.Should().BeNull();
+            vm.ShowMarkdownRenderedToggle.Should().BeFalse();
+            vm.ShowMarkdownRendered.Should().BeFalse();
+            vm.ShowEditors.Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_NullEntryAfterMarkdown_ClearsMarkdownState()
+    {
+        var repo = new FakeRepository
+        {
+            LeftText = "# T\n",
+            RightText = "# T v2\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+            vm.IsMarkdownFile.Should().BeTrue();
+
+            await vm.LoadAsync(null);
+
+            vm.IsMarkdownFile.Should().BeFalse();
+            vm.MarkdownDiff.Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public async Task TryNavigateNextHunkInFile_ReturnsFalse_WhenInMarkdownRenderedMode()
+    {
+        // Hunk-nav targets the AvalonEdit editors which are hidden in
+        // rendered mode. Returning false lets the cross-file orchestrator
+        // advance to the next file.
+        var repo = new FakeRepository
+        {
+            LeftText = "# Title\n\nOriginal text here.\n",
+            RightText = "# Title\n\nChanged text here.\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+
+            vm.ShowMarkdownRendered.Should().BeTrue();
+            vm.TryNavigateNextHunkInFile().Should().BeFalse(
+                "rendered mode hides the editors so F7 should advance to next file");
+            vm.TryNavigatePreviousHunkInFile().Should().BeFalse();
+
+            // Toggle out of rendered mode -> hunk nav becomes available again.
+            vm.RenderMarkdownRendered = false;
+            vm.ShowMarkdownRendered.Should().BeFalse();
+            // We don't assert TryNavigate* returns TRUE here because that
+            // depends on the file having hunks and the caret state; the
+            // important contract under test is the rendered-mode GATE.
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_BinaryFile_ClearsMarkdownState()
+    {
+        // Binary dispatch is an early branch; markdown flags must not
+        // leak through.
+        var repo = new FakeRepository
+        {
+            LeftText = "# T\n",
+            RightText = "# T v2\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+            vm.IsMarkdownFile.Should().BeTrue();
+
+            await vm.LoadAsync(Entry(Binary("blob.bin")));
+            await vm.LastLoadTask;
+
+            vm.IsMarkdownFile.Should().BeFalse();
+            vm.MarkdownDiff.Should().BeNull();
+        });
+    }
+
+    [Fact]
+    public async Task RenderMarkdownRendered_Toggling_DoesNotChangeIsMarkdownFileFlag()
+    {
+        // IsMarkdownFile is identity (extension); RenderMarkdownRendered
+        // is user preference. They are independent.
+        var repo = new FakeRepository
+        {
+            LeftText = "# T\n",
+            RightText = "# T v2\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+
+            vm.IsMarkdownFile.Should().BeTrue();
+            vm.RenderMarkdownRendered = false;
+            vm.IsMarkdownFile.Should().BeTrue("the file is still markdown; only the view preference flipped");
+            vm.ShowMarkdownRenderedToggle.Should().BeTrue("toggle stays visible when MarkdownDiff is non-null");
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_MarkdownFile_RaisesShowEditorsPropertyChanged()
+    {
+        // Critical for the visibility cascade: loading a markdown file
+        // must fire OnPropertyChanged(ShowEditors) so the source-editors
+        // grid actually collapses when the rendered VM appears.
+        var repo = new FakeRepository
+        {
+            LeftText = "# T\n",
+            RightText = "# T v2\n",
+        };
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            var vm = new DiffPaneViewModel(repo, new DiffService());
+            var fired = new HashSet<string>();
+            vm.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName is not null) fired.Add(e.PropertyName);
+            };
+
+            await vm.LoadAsync(Entry(ModifiedTextFile("README.md")));
+            await vm.LastLoadTask;
+
+            fired.Should().Contain(nameof(DiffPaneViewModel.ShowEditors));
+            fired.Should().Contain(nameof(DiffPaneViewModel.ShowMarkdownRendered));
+            fired.Should().Contain(nameof(DiffPaneViewModel.ShowMarkdownRenderedToggle));
+            fired.Should().Contain(nameof(DiffPaneViewModel.IsMarkdownFile));
+            fired.Should().Contain(nameof(DiffPaneViewModel.MarkdownDiff));
+        });
+    }
+
+    [Fact]
+    public async Task LoadAsync_SvgFile_DoesNotSetMarkdownFlagsEvenIfPathLooksMarkdownLike()
+    {
+        // SVG dispatch is checked before markdown detection; an SVG file
+        // with a confusing path (e.g. shipped through the .svg path) must
+        // not accidentally also set IsMarkdownFile.
+        var repo = new FakeRepository
+        {
+            LeftText = "<svg width=\"4\"/>",
+            RightText = "<svg width=\"8\"/>",
+        };
+        var decoder = new FakeImageDecoder();
+
+        await RunOnUiSyncContextAsync(async () =>
+        {
+            decoder.DecodeFunc = (_, _) => new ImageDecodeResult(
+                MakeFrozenBitmap(2, 2),
+                new ImageMetadata(2, 2, 6, ImageFormat.Svg, 1),
+                null);
+
+            var vm = new DiffPaneViewModel(repo, new DiffService(), imageDecoder: decoder);
+            await vm.LoadAsync(Entry(ModifiedTextFile("icon.svg")));
+            await vm.LastLoadTask;
+
+            vm.IsSvgFile.Should().BeTrue();
+            vm.IsMarkdownFile.Should().BeFalse("SVG branch should not also flag as markdown");
+            vm.MarkdownDiff.Should().BeNull();
+        });
+    }
+
+    // ---- Markdown rendered-diff dispatch (end) ----
+
     [Fact]
     public async Task RenderSvgImage_TogglePersistsToSettings()
     {
@@ -453,6 +779,38 @@ public class DiffPaneViewModelTests
         settings.Save(settings.Current with { RenderSvgImage = false });
 
         vm.RenderSvgImage.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RenderMarkdownRendered_TogglePersistsToSettings()
+    {
+        // Same persistence shape as RenderSvgImage above. Flipping the
+        // VM's RenderMarkdownRendered must write through to settings.
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { PreferMarkdownRendered = true });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        vm.RenderMarkdownRendered.Should().BeTrue("seeded from settings.PreferMarkdownRendered");
+
+        vm.RenderMarkdownRendered = false;
+        settings.Current.PreferMarkdownRendered.Should().BeFalse();
+
+        vm.RenderMarkdownRendered = true;
+        settings.Current.PreferMarkdownRendered.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RenderMarkdownRendered_ExternalSettingsChange_PushesIntoViewModel()
+    {
+        // External settings change (e.g. from another window or a
+        // settings file edit) must propagate into the VM.
+        var repo = new FakeRepository();
+        var settings = new InMemorySettingsServiceForPane(new AppSettings { PreferMarkdownRendered = true });
+        var vm = new DiffPaneViewModel(repo, settingsService: settings);
+
+        settings.Save(settings.Current with { PreferMarkdownRendered = false });
+
+        vm.RenderMarkdownRendered.Should().BeFalse();
     }
 
     [Fact]

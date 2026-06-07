@@ -200,6 +200,20 @@
                     <Separator Margin="6,2" Width="1" Background="#CCC"/>
                 </StackPanel>
 
+                <!-- Markdown "Rendered" toggle. Visible only when the
+                     current file is .md / .markdown and the rendered VM
+                     was built. Flips between the rendered FlowDocument
+                     diff and the AvalonEdit source-text diff; one view
+                     at a time. Same pattern as the SVG toggle above. -->
+                <StackPanel Orientation="Horizontal"
+                            Visibility="{Binding ShowMarkdownRenderedToggle, Converter={x:Static vm:BoolToVisibilityConverter.Instance}}">
+                    <ToggleButton Style="{StaticResource ToolbarToggleStyle}"
+                                  IsChecked="{Binding RenderMarkdownRendered}"
+                                  Content="Rendered"
+                                  ToolTip="Show the rendered markdown diff (uncheck for the source-text diff)"/>
+                    <Separator Margin="6,2" Width="1" Background="#CCC"/>
+                </StackPanel>
+
                 <!-- Text-diff toggles and side-visibility group. Collapsed
                      for image files (no notion of whitespace, intra-line,
                      wrap, etc.). All bindings target DiffPaneViewModel. -->
