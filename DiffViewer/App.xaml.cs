@@ -38,7 +38,17 @@ public partial class App : Application
             // the hook arg and Environment.Exit's before we ever reach
             // the WPF code below. Outside of installer hooks this is a
             // fast no-op.
-            VelopackApp.Build().Run();
+            //
+            // The install/update/uninstall fast callbacks (re)register the
+            // installed app directory on the per-user PATH so `diffviewer`
+            // resolves from any new terminal. These only fire for the
+            // Velopack-installed copy; portable/dev launches never run them.
+            var pathRegistrar = new UserPathRegistrar(new WindowsUserPathStore());
+            VelopackApp.Build()
+                .OnAfterInstallFastCallback(_ => TryRegisterCliPath(pathRegistrar))
+                .OnAfterUpdateFastCallback(_ => TryRegisterCliPath(pathRegistrar))
+                .OnBeforeUninstallFastCallback(_ => TryUnregisterCliPath(pathRegistrar))
+                .Run();
         }
         catch (Exception)
         {
@@ -50,6 +60,25 @@ public partial class App : Application
         var app = new App();
         app.InitializeComponent();
         app.Run();
+    }
+
+    // The installed app runs from the stable Velopack `current` directory;
+    // AppContext.BaseDirectory is that folder during a hook. Trim the
+    // trailing separator so the PATH entry matches conventionally.
+    private static string CliPathDirectory()
+        => Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory);
+
+    private static void TryRegisterCliPath(UserPathRegistrar registrar)
+    {
+        // Best-effort: a PATH write failure must never derail the install.
+        try { registrar.Register(CliPathDirectory()); }
+        catch { /* ignored */ }
+    }
+
+    private static void TryUnregisterCliPath(UserPathRegistrar registrar)
+    {
+        try { registrar.Unregister(CliPathDirectory()); }
+        catch { /* ignored */ }
     }
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -195,8 +224,9 @@ public partial class App : Application
         var ok = await _coordinator.InitialLaunchAsync(e.Args, _shutdownCts.Token);
         if (!ok)
         {
-            // Coordinator already showed the error dialog and called
-            // Shutdown(1); just bail out before Show().
+            // Defensive: HandleColdLaunchFailure now always shows the
+            // empty-state shell (ok=true), but if a future code path
+            // returns false we still bail out before Show().
             return;
         }
 

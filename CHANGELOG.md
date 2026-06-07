@@ -32,6 +32,20 @@ body. Keep section headings exact and write notes in Markdown.
   setting. F7 / F8 hunk navigation skips files viewed in rendered
   mode (advancing to the next file) because the source-diff editors
   and hunk overview bar are hidden in that mode.
+
+## [1.7.0] - 2026-06-05
+
+### Added
+
+- **`diffviewer` works from the command line after Setup install.**
+  Installing via `DiffViewer-Setup.exe` now adds the app to your
+  per-user `PATH`, so you can launch it by typing `diffviewer`
+  (optionally with a repo path or commit-ish, e.g.
+  `diffviewer C:\path\to\repo`) in any **new** terminal — no need to
+  dig into `%LocalAppData%\DiffViewer\current`. Uninstalling removes
+  the entry. The PATH edit preserves existing `%VAR%`-style entries
+  (`REG_EXPAND_SZ`) and only touches your user PATH, never the
+  machine PATH. Portable builds are unaffected.
 - **Settings → Updates section now shows the running version.** A
   read-only "Current version" row at the top of the section
   displays the build's version string (e.g. `1.6.0` or `1.6.0-rc1`
@@ -50,6 +64,15 @@ body. Keep section headings exact and write notes in Markdown.
   without hitting the GitHub Releases API, so a developer running
   `dotnet run` against tip-of-master doesn't get a false
   "update available" banner every launch.
+
+### Fixed
+
+- **Fresh installs no longer crash on first launch.** When DiffViewer
+  was launched with no arguments and the working directory wasn't a
+  git repository (e.g. the Velopack install folder), the app showed a
+  "Not a git repository" error dialog and exited. It now shows the
+  empty-state shell with the "New diff" button so users can pick a
+  repository without needing to launch from a terminal.
 
 ## [1.6.0] - 2026-05-31
 
@@ -799,7 +822,8 @@ The binary is unsigned, so Windows SmartScreen may warn on first
 launch — click **"More info"** → **"Run anyway"**. Code signing is
 planned for a later release.
 
-[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/geevensingh/DiffViewer/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/geevensingh/DiffViewer/compare/v1.6.0...v1.7.0
 [0.6.0]: https://github.com/geevensingh/DiffViewer/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/geevensingh/DiffViewer/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/geevensingh/DiffViewer/compare/v0.3.0...v0.4.0
