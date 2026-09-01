@@ -58,12 +58,72 @@ public class RecentContextItemTests
         item.Tooltip.Should().Contain("Last resolved head:");
     }
 
-    private static RecentLaunchContext MakeLocal(string repoPath, string leftRef)
+    [Fact]
+    public void Title_WhenRowPointsAtALinkedWorktree_ShowsRepositoryAndWorktreeName()
+    {
+        // The worktree directory is named after the branch and lives
+        // nowhere near the repo, so the path leaf alone ("wt-feature-x")
+        // never mentions the repository the user is working in.
+        var ctx = MakeLocal(
+            @"C:\worktrees\wt-feature-x",
+            leftRef: "HEAD",
+            repositoryName: "DiffViewer",
+            worktreeName: "feature-x");
+        var item = new RecentContextItem(ctx);
+
+        item.Title.Should().Be("DiffViewer [feature-x] · HEAD → WT");
+    }
+
+    [Fact]
+    public void Title_WhenRowPointsAtTheMainWorktree_OmitsTheBracketedName()
+    {
+        var ctx = MakeLocal(
+            @"C:\repos\diffviewer",
+            leftRef: "main",
+            repositoryName: "DiffViewer");
+        var item = new RecentContextItem(ctx);
+
+        item.Title.Should().Be("DiffViewer · main → WT");
+    }
+
+    [Fact]
+    public void Title_WhenRowPredatesWorktreeLabels_FallsBackToThePathLeaf()
+    {
+        // Rows written by an older binary carry no labels; they must keep
+        // rendering rather than showing a blank repository name.
+        var ctx = MakeLocal(@"C:\repos\diffviewer", leftRef: "main");
+        var item = new RecentContextItem(ctx);
+
+        item.Title.Should().Be("diffviewer · main → WT");
+    }
+
+    [Fact]
+    public void Title_ForAPullRequestRowInAWorktree_StillShowsTheWorktreeName()
+    {
+        var left = new DiffSide.CommitIsh("abc1234");
+        var right = new DiffSide.CommitIsh("def5678");
+        var id = ContextIdentityFactory.Create(@"C:\worktrees\wt-feature-x", left, right);
+        var ctx = new RecentLaunchContext(
+            id, left, right, DateTimeOffset.UtcNow,
+            new PullRequestRef("github.com", "geevensingh", "diffviewer", 42),
+            RepositoryName: "DiffViewer",
+            WorktreeName: "feature-x");
+
+        new RecentContextItem(ctx).Title
+            .Should().Be("DiffViewer [feature-x] · PR geevensingh/diffviewer#42");
+    }
+
+    private static RecentLaunchContext MakeLocal(
+        string repoPath,
+        string leftRef,
+        string? repositoryName = null,
+        string? worktreeName = null)
     {
         var left = new DiffSide.CommitIsh(leftRef);
         var right = new DiffSide.WorkingTree();
         var id = ContextIdentityFactory.Create(repoPath, left, right);
-        return new RecentLaunchContext(id, left, right, DateTimeOffset.UtcNow);
+        return new RecentLaunchContext(
+            id, left, right, DateTimeOffset.UtcNow, null, repositoryName, worktreeName);
     }
 
     private static RecentLaunchContext MakePr(string repoPath, PullRequestRef pr)

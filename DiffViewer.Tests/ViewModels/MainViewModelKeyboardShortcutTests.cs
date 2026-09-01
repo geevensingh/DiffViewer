@@ -1042,7 +1042,8 @@ public class MainViewModelKeyboardShortcutTests
             GitDir: Path.Combine(root, ".git"),
             IsBare: false, IsHeadUnborn: false,
             IsSparseCheckout: false, IsPartialClone: false,
-            HasInProgressOperation: false);
+            HasInProgressOperation: false,
+            CommonGitDirectory: Path.Combine(root, ".git"));
 
     private static FileChange ModifiedChange(string path) =>
         new(Path: path, OldPath: null,
@@ -1124,7 +1125,7 @@ public class MainViewModelKeyboardShortcutTests
 
     private sealed class FakeRepoForKeyboard : IRepositoryService
     {
-        public RepositoryShape Shape_ { get; set; } = new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false);
+        public RepositoryShape Shape_ { get; set; } = new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false, @"C:\repo\.git");
         public RepositoryShape Shape => Shape_;
 
 #pragma warning disable CS0067

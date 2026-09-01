@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DiffViewer.Models;
+using DiffViewer.Utility;
 
 namespace DiffViewer.Services;
 
@@ -84,8 +85,15 @@ public sealed class RecentContextsService : IRecentContextsService
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Worktree labels are captured here rather than persisted by
+            // the caller because this is the moment the row is minted,
+            // and MergeAndCap replaces any existing row wholesale — so
+            // rows written by older binaries heal on next launch.
+            var labels = GitWorktreeLayout.Describe(identity.CanonicalRepoPath);
+
             var fresh = new RecentLaunchContext(
-                identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow, review);
+                identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow, review,
+                labels.RepositoryName, labels.WorktreeName);
 
             var doc = await RecentsStore.ReadAndMutateAsync(
                 _filePath,

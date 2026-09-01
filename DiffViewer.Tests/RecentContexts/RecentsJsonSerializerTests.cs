@@ -12,6 +12,71 @@ namespace DiffViewer.Tests.RecentContexts;
 public class RecentsJsonSerializerTests
 {
     [Fact]
+    public void RoundTrip_PreservesWorktreeLabels()
+    {
+        var left = new DiffSide.CommitIsh("HEAD");
+        var right = new DiffSide.WorkingTree();
+        var doc = new RecentsDoc(RecentsDoc.CurrentVersion, new[]
+        {
+            new RecentLaunchContext(
+                ContextIdentityFactory.Create(@"C:\worktrees\wt-feature-x", left, right),
+                left, right, DateTimeOffset.UtcNow, null,
+                RepositoryName: "DiffViewer",
+                WorktreeName: "feature-x"),
+        });
+
+        var roundTripped = RecentsJsonSerializer.Deserialize(RecentsJsonSerializer.Serialize(doc));
+
+        roundTripped.Items[0].RepositoryName.Should().Be("DiffViewer");
+        roundTripped.Items[0].WorktreeName.Should().Be("feature-x");
+    }
+
+    [Fact]
+    public void Serialize_ForAMainWorktreeRow_OmitsTheWorktreeName()
+    {
+        var left = new DiffSide.CommitIsh("main");
+        var right = new DiffSide.WorkingTree();
+        var doc = new RecentsDoc(RecentsDoc.CurrentVersion, new[]
+        {
+            new RecentLaunchContext(
+                ContextIdentityFactory.Create(@"C:\repos\diffviewer", left, right),
+                left, right, DateTimeOffset.UtcNow, null,
+                RepositoryName: "DiffViewer"),
+        });
+
+        var json = RecentsJsonSerializer.Serialize(doc);
+
+        json.Should().Contain("\"repositoryName\": \"DiffViewer\"");
+        json.Should().NotContain("worktreeName");
+    }
+
+    [Fact]
+    public void Deserialize_ForAFileWrittenBeforeWorktreeLabels_LeavesThemNull()
+    {
+        // A row from an older binary has neither key. It must still load
+        // - the labels are display sugar, not identity.
+        var json = """
+        {
+          "version": 2,
+          "items": [
+            {
+              "repoPath": "C:\\repos\\foo",
+              "left": { "type": "commit", "reference": "main" },
+              "right": { "type": "workingTree" },
+              "lastUsedUtc": "2026-05-14T18:00:00.0000000Z"
+            }
+          ]
+        }
+        """;
+
+        var doc = RecentsJsonSerializer.Deserialize(json);
+
+        doc.Items.Should().ContainSingle();
+        doc.Items[0].RepositoryName.Should().BeNull();
+        doc.Items[0].WorktreeName.Should().BeNull();
+    }
+
+    [Fact]
     public void RoundTrip_PreservesAllFields_ForMixedSides()
     {
         var items = new[]

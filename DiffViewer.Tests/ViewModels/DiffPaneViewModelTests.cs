@@ -2251,7 +2251,7 @@ public class DiffPaneViewModelTests
         public bool RightIsBinaryOverride { get; set; }
         public int ReadCount;
 
-        public RepositoryShape Shape => new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false);
+        public RepositoryShape Shape => new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false, @"C:\repo\.git");
         public IReadOnlyList<FileChange> CurrentChanges { get; } = Array.Empty<FileChange>();
 
         public event EventHandler<ChangeListUpdatedEventArgs>? ChangeListUpdated { add { } remove { } }

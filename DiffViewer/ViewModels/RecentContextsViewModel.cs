@@ -247,17 +247,40 @@ public sealed class RecentContextItem : IEquatable<RecentContextItem>
     public RecentLaunchContext Source { get; }
 
     /// <summary>Primary line. e.g. <c>"DevTools · main → &lt;working-tree&gt;"</c>
-    /// for local rows, <c>"DevTools · PR owner/repo#42"</c> for review-mode rows.</summary>
+    /// for local rows, <c>"DevTools · PR owner/repo#42"</c> for review-mode rows.
+    /// A row pointing at a linked worktree carries the worktree's name in
+    /// brackets — <c>"DiffViewer [feature-x] · HEAD → WT"</c> — because
+    /// otherwise every worktree of a repository renders identically apart
+    /// from a path the dropdown doesn't show.</summary>
     public string Title
     {
         get
         {
-            var name = SafeBaseName(Source.Identity.CanonicalRepoPath);
+            var name = RepositoryLabel;
             if (Source.Review is { } review)
             {
                 return $"{name} · PR {review.Slug}";
             }
             return $"{name} · {ShortLabelFor(Source.LeftDisplay)} → {ShortLabelFor(Source.RightDisplay)}";
+        }
+    }
+
+    /// <summary>
+    /// The repository portion of <see cref="Title"/>. Prefers the
+    /// repository name captured at launch time, falling back to the
+    /// path's leaf for rows written before worktree labelling existed.
+    /// </summary>
+    private string RepositoryLabel
+    {
+        get
+        {
+            var name = string.IsNullOrWhiteSpace(Source.RepositoryName)
+                ? SafeBaseName(Source.Identity.CanonicalRepoPath)
+                : Source.RepositoryName!;
+
+            return string.IsNullOrWhiteSpace(Source.WorktreeName)
+                ? name
+                : $"{name} [{Source.WorktreeName}]";
         }
     }
 

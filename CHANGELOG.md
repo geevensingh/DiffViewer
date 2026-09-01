@@ -12,6 +12,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Changed
+
+- **Worktrees are now identifiable in the UI.** DiffViewer already
+  worked when pointed at a linked worktree, but nothing on screen said
+  so. The recent-contexts dropdown labelled rows with the leaf
+  directory name, which for a worktree is usually the branch name and
+  never mentions the repository — two worktrees of one repo were
+  effectively indistinguishable. Recent rows now render as
+  `DiffViewer [feature-x] · HEAD → WT`, and the window title appends
+  the worktree name after the path. Rows saved by earlier versions keep
+  working and pick up their labels the next time that diff is opened.
+
 ## [1.9.0] - 2026-06-06
 
 ### Added

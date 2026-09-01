@@ -675,7 +675,7 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         DiffPane = new DiffPaneViewModel(_repository, diffService, _isCommitVsCommit, settingsService, imageDecoder);
         DiffPane.SetPullRequestContext(_pullRequestWatcher is not null);
 
-        WindowTitle = $"DiffViewer — {repository.Shape.RepoRoot} ({FormatSideForTitle(left)} ⇢ {FormatSideForTitle(right)})";
+        WindowTitle = BuildWindowTitle(repository.Shape, left, right);
 
         // Recents dropdown is wired only when both the singleton service
         // and a usable repo path are available. Empty-state cold-launch
@@ -765,6 +765,21 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
     /// </summary>
     public void LoadInitialChanges() =>
         LoadInitialChangesAsync().GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Build the window title. A linked worktree gets its name appended
+    /// in brackets after the path, because the path alone is easy to
+    /// misread when several worktrees of one repository are open at once
+    /// and their directory names don't match their branches.
+    /// </summary>
+    internal static string BuildWindowTitle(RepositoryShape shape, DiffSide left, DiffSide right)
+    {
+        var location = shape.IsLinkedWorktree
+            ? $"{shape.RepoRoot} [{shape.WorktreeName}]"
+            : shape.RepoRoot;
+
+        return $"DiffViewer — {location} ({FormatSideForTitle(left)} ⇢ {FormatSideForTitle(right)})";
+    }
 
     /// <summary>
     /// Format a <see cref="DiffSide"/> for inclusion in the window title.

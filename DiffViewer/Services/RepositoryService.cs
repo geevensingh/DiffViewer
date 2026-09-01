@@ -878,15 +878,20 @@ public sealed class RepositoryService : IRepositoryService
         }
         catch (LibGit2SharpException) { }
 
+        var gitDirectory = repo.Info.Path;
+        var commonGitDirectory = GitWorktreeLayout.ResolveCommonDirectory(gitDirectory);
+
         return new RepositoryShape(
             RepoRoot: repo.Info.WorkingDirectory ?? repo.Info.Path,
             WorkingDirectory: repo.Info.WorkingDirectory,
-            GitDir: repo.Info.Path,
+            GitDir: gitDirectory,
             IsBare: repo.Info.IsBare,
             IsHeadUnborn: repo.Info.IsHeadUnborn,
             IsSparseCheckout: sparse,
             IsPartialClone: partialClone,
-            HasInProgressOperation: repo.Info.CurrentOperation != CurrentOperation.None);
+            HasInProgressOperation: repo.Info.CurrentOperation != CurrentOperation.None,
+            CommonGitDirectory: commonGitDirectory,
+            WorktreeName: GitWorktreeLayout.TryGetWorktreeName(gitDirectory));
     }
 
     private static bool IsRepoLossException(Exception ex) => ex is
