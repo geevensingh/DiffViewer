@@ -502,14 +502,16 @@ Use this instead:
 Six surfaces carry that risk. A change that violates any of them is
 breaking no matter how small the diff is:
 
-1. **The CLI argv contract.** Both the positional form
-   (`DiffViewer.exe <repo> <base> <compare>`) and the flag form
-   (`--repo` / `--left` / `--right` / `--file`) — see
-   `Services/CommandLineParser.cs` and the "Command-line launch"
-   section of `README.md`. Users wire these into shell aliases, `git`
-   aliases, and editor integrations that live outside this repo, so
-   changing what a positional slot means, or dropping a flag, breaks
-   setups we can neither see nor migrate.
+1. **The CLI argv contract.** Three launch forms, all documented in
+   `README.md` and dispatched by `Services/CommandLineParser.cs`: the
+   positional form (`DiffViewer.exe <repo> <base> <compare>`), the flag
+   form (`--repo` / `--left` / `--right` / `--file`), and a lone GitHub
+   pull-request URL, which `ParseLaunch` routes to the PR resolver
+   before positional parsing ever runs. Users wire these into shell
+   aliases, `git` aliases, and editor integrations that live outside
+   this repo, so changing what a positional slot means, dropping a
+   flag, or narrowing which URLs parse breaks setups we can neither see
+   nor migrate.
 2. **On-disk state formats.** `settings.json` and `recents.json` under
    `%APPDATA%\DiffViewer`. Both are versioned contracts, and they use
    deliberately *opposite* strategies — a change here must not silently
