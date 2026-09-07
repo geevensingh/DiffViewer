@@ -34,23 +34,7 @@
         <!-- "Working tree vs HEAD" form. -->
         <DataTemplate DataType="{x:Type vm:WorkingTreeVsHeadFormViewModel}">
             <StackPanel>
-                <TextBlock Text="Repository path"
-                           Style="{StaticResource FieldLabel}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0"
-                             Style="{StaticResource FieldInput}"
-                             Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"
-                             Tag="RepoPath"/>
-                    <Button Grid.Column="1"
-                            Content="Browse…"
-                            Margin="6,0,0,0" Padding="10,4"
-                            Click="OnBrowseRepoPathClick"
-                            Tag="RepoPath"/>
-                </Grid>
+                <vw:RepoPathField/>
                 <TextBlock Text="Compares the working tree against the current HEAD commit."
                            Margin="0,10,0,0" Foreground="#888" TextWrapping="Wrap"/>
             </StackPanel>
@@ -59,23 +43,7 @@
         <!-- "Working tree vs commit" form. -->
         <DataTemplate DataType="{x:Type vm:WorkingTreeVsCommitFormViewModel}">
             <StackPanel>
-                <TextBlock Text="Repository path"
-                           Style="{StaticResource FieldLabel}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0"
-                             Style="{StaticResource FieldInput}"
-                             Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"
-                             Tag="RepoPath"/>
-                    <Button Grid.Column="1"
-                            Content="Browse…"
-                            Margin="6,0,0,0" Padding="10,4"
-                            Click="OnBrowseRepoPathClick"
-                            Tag="RepoPath"/>
-                </Grid>
+                <vw:RepoPathField/>
 
                 <TextBlock Text="Commit-ish (e.g. main, HEAD~3, &lt;sha&gt;)"
                            Style="{StaticResource FieldLabel}"/>
@@ -105,23 +73,7 @@
         <!-- "Commit vs commit" form. -->
         <DataTemplate DataType="{x:Type vm:CommitVsCommitFormViewModel}">
             <StackPanel>
-                <TextBlock Text="Repository path"
-                           Style="{StaticResource FieldLabel}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0"
-                             Style="{StaticResource FieldInput}"
-                             Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"
-                             Tag="RepoPath"/>
-                    <Button Grid.Column="1"
-                            Content="Browse…"
-                            Margin="6,0,0,0" Padding="10,4"
-                            Click="OnBrowseRepoPathClick"
-                            Tag="RepoPath"/>
-                </Grid>
+                <vw:RepoPathField/>
 
                 <TextBlock Text="Base commit-ish"
                            Style="{StaticResource FieldLabel}"/>
@@ -170,23 +122,7 @@
              forked from main" review workflow. -->
         <DataTemplate DataType="{x:Type vm:BranchVsMergeBaseFormViewModel}">
             <StackPanel>
-                <TextBlock Text="Repository path"
-                           Style="{StaticResource FieldLabel}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0"
-                             Style="{StaticResource FieldInput}"
-                             Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"
-                             Tag="RepoPath"/>
-                    <Button Grid.Column="1"
-                            Content="Browse…"
-                            Margin="6,0,0,0" Padding="10,4"
-                            Click="OnBrowseRepoPathClick"
-                            Tag="RepoPath"/>
-                </Grid>
+                <vw:RepoPathField/>
 
                 <TextBlock Text="Branch (e.g. feature/x)"
                            Style="{StaticResource FieldLabel}"/>
@@ -250,23 +186,7 @@
         <!-- "View stash" form. -->
         <DataTemplate DataType="{x:Type vm:ViewStashFormViewModel}">
             <StackPanel>
-                <TextBlock Text="Repository path"
-                           Style="{StaticResource FieldLabel}"/>
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBox Grid.Column="0"
-                             Style="{StaticResource FieldInput}"
-                             Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"
-                             Tag="RepoPath"/>
-                    <Button Grid.Column="1"
-                            Content="Browse…"
-                            Margin="6,0,0,0" Padding="10,4"
-                            Click="OnBrowseRepoPathClick"
-                            Tag="RepoPath"/>
-                </Grid>
+                <vw:RepoPathField/>
 
                 <TextBlock Text="Select a stash"
                            Style="{StaticResource FieldLabel}"/>

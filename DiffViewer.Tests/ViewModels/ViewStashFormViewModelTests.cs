@@ -121,7 +121,7 @@ public class ViewStashFormViewModelTests
     {
         var validator = new FakeValidator(repoValid);
         var enumerator = new FakeStashEnumerator(stashes ?? Array.Empty<StashEntry>());
-        var deps = new FormDependencies(validator, enumerator, new NullRecentContextsService(), repoPath);
+        var deps = new FormDependencies(validator, enumerator, new StubWorktreeEnumerator(), new NullRecentContextsService(), repoPath);
         return new ViewStashFormViewModel(deps, enumerateRunner: work => Task.FromResult(work()));
     }
 

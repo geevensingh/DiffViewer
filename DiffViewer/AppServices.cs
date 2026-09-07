@@ -32,7 +32,8 @@ public sealed record AppServices(
     INewDiffDialogHost NewDiffDialogHost,
     IGitHubClient GitHubClient,
     IPullRequestLocalFetcher PullRequestLocalFetcher,
-    IWindowVisibilityProbe WindowVisibilityProbe)
+    IWindowVisibilityProbe WindowVisibilityProbe,
+    IGitWorktreeEnumerator? WorktreeEnumerator = null)
 {
     public IContextSwitcher? ContextSwitcher { get; set; }
 }

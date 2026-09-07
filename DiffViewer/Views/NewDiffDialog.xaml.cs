@@ -1,7 +1,5 @@
 using System;
-using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using DiffViewer.ViewModels;
 
 namespace DiffViewer.Views;
@@ -34,55 +32,5 @@ public partial class NewDiffDialog : Window
         // (bypassing OK/Cancel commands), synthesise a Cancel so the
         // host's `await Completion` never hangs.
         Closed += (_, _) => _vm.ForceCancel();
-    }
-
-    private void OnBrowseRepoPathClick(object sender, RoutedEventArgs e)
-    {
-        // The repo-path TextBox sits next to the Browse button in the
-        // same Grid; find it by its `Tag="RepoPath"`. Going through
-        // Tag rather than a named hard-coded lookup keeps the
-        // code-behind agnostic to which form template raised the click.
-        if (sender is not Button button) return;
-
-        var container = FindAncestor<Grid>(button);
-        if (container is null) return;
-
-        TextBox? textBox = null;
-        foreach (var child in container.Children)
-        {
-            if (child is TextBox tb && tb.Tag is "RepoPath")
-            {
-                textBox = tb;
-                break;
-            }
-        }
-        if (textBox is null) return;
-
-        var picker = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "Pick a repository folder",
-            Multiselect = false,
-        };
-        var initial = textBox.Text;
-        if (!string.IsNullOrWhiteSpace(initial) && Directory.Exists(initial))
-        {
-            picker.InitialDirectory = initial;
-        }
-
-        if (picker.ShowDialog(this) == true)
-        {
-            textBox.Text = picker.FolderName;
-        }
-    }
-
-    private static T? FindAncestor<T>(DependencyObject? start) where T : DependencyObject
-    {
-        var current = start;
-        while (current is not null)
-        {
-            if (current is T match) return match;
-            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
-        }
-        return null;
     }
 }

@@ -25,15 +25,10 @@ namespace DiffViewer.ViewModels;
 /// it fails (orphaned histories or unresolvable refs) the validation
 /// error surfaces in the dialog footer and OK stays disabled.</para>
 /// </summary>
-public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewModelBase
+public sealed partial class BranchVsMergeBaseFormViewModel : LocalRepoFormViewModelBase
 {
     private readonly IGitRefEnumerator _enumerator;
-    private string? _canonicalRepoPath;
-    private string? _repoPathError;
     private string? _resolvedMergeBaseSha;
-
-    [ObservableProperty]
-    private string _repoPath;
 
     [ObservableProperty]
     private string _branch;
@@ -45,10 +40,9 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
     public RefPickerViewModel MergeBasePartnerPicker { get; }
 
     public BranchVsMergeBaseFormViewModel(FormDependencies deps)
-        : base(deps.Validator)
+        : base(deps)
     {
         _enumerator = deps.RefEnumerator;
-        _repoPath = deps.PrefilledRepoPath ?? string.Empty;
         _branch = string.Empty;
         _mergeBasePartner = string.Empty;
         BranchPicker = new RefPickerViewModel(
@@ -57,25 +51,21 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         MergeBasePartnerPicker = new RefPickerViewModel(
             deps.RefEnumerator, deps.RecentContexts,
             writeBack: value => MergeBasePartner = value);
-        // Canonicalize the prefilled repo path BEFORE the first
-        // Validate() so both pickers are enabled on dialog open when
-        // launching with an already-open context. Mirrors the
-        // OnRepoPathChanged ordering.
-        TryUpdateCanonicalRepoPath();
-        SyncPickerRepoPath();
-        Validate();
-        // Seed merge-base partner from origin/HEAD whenever the
-        // prefilled repo path resolves and partner is still empty.
-        // Drives "branch + OK" as the steady state for the PR-review
-        // form. See TrySeedDefaultPartner for the guards.
-        TrySeedDefaultPartner();
+        InitializeRepoPath();
     }
 
-    partial void OnRepoPathChanged(string value)
+    partial void OnBranchChanged(string value) => Validate();
+    partial void OnMergeBasePartnerChanged(string value) => Validate();
+
+    protected override bool HasRequiredLocalInputs =>
+        !string.IsNullOrWhiteSpace(Branch)
+        && !string.IsNullOrWhiteSpace(MergeBasePartner);
+
+    protected override void OnRepoPathResolved()
     {
-        TryUpdateCanonicalRepoPath();
-        SyncPickerRepoPath();
-        Validate();
+        BranchPicker.CanonicalRepoPath = CanonicalRepoPath;
+        MergeBasePartnerPicker.CanonicalRepoPath = CanonicalRepoPath;
+
         // Re-seed on every repo-path change. "Empty partner" is never
         // a positive user choice (HasRequiredInputs requires it
         // non-empty), so re-filling it after a user clears + switches
@@ -84,54 +74,18 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         TrySeedDefaultPartner();
     }
 
-    partial void OnBranchChanged(string value) => Validate();
-    partial void OnMergeBasePartnerChanged(string value) => Validate();
-
-    protected override bool HasRequiredInputs =>
-        !string.IsNullOrWhiteSpace(RepoPath)
-        && !string.IsNullOrWhiteSpace(Branch)
-        && !string.IsNullOrWhiteSpace(MergeBasePartner);
-
-    /// <summary>
-    /// Resolve the user's repo-path input into either a canonical
-    /// repository root (stored in <see cref="_canonicalRepoPath"/>,
-    /// consumed by both pickers for branch enumeration and by
-    /// <see cref="BuildLaunchSource"/>) or a deferred validation
-    /// message (stored in <see cref="_repoPathError"/>, surfaced by
-    /// <see cref="ComputeValidationError"/> once the rest of the form
-    /// is populated). See the WorkingTreeVsCommit form's copy of this
-    /// method for the bug-history rationale behind decoupling
-    /// canonicalization from validation.
-    /// </summary>
-    private void TryUpdateCanonicalRepoPath()
-    {
-        _canonicalRepoPath = null;
-        _repoPathError = null;
-        if (string.IsNullOrWhiteSpace(RepoPath)) return;
-
-        var result = Validator.ValidateRepoPath(RepoPath);
-        if (result is RepoPathValidation.Valid v)
-        {
-            _canonicalRepoPath = v.CanonicalPath;
-        }
-        else
-        {
-            _repoPathError = ((RepoPathValidation.Invalid)result).Message;
-        }
-    }
-
     protected override string? ComputeValidationError()
     {
         _resolvedMergeBaseSha = null;
         if (!HasRequiredInputs) return null;
-        if (_repoPathError is not null) return _repoPathError;
+        if (RepoPathError is not null) return RepoPathError;
 
         // Validate both refs first so the user sees the most
         // diagnostic error (an unresolvable ref) rather than the
         // less-informative "no common ancestor" that would come back
         // if we jumped straight to FindMergeBase.
-        var branchResult = Validator.ValidateCommitIsh(_canonicalRepoPath!, Branch);
-        var partnerResult = Validator.ValidateCommitIsh(_canonicalRepoPath!, MergeBasePartner);
+        var branchResult = Validator.ValidateCommitIsh(CanonicalRepoPath!, Branch);
+        var partnerResult = Validator.ValidateCommitIsh(CanonicalRepoPath!, MergeBasePartner);
 
         var branchError = (branchResult as CommitIshValidation.Invalid)?.Message;
         var partnerError = (partnerResult as CommitIshValidation.Invalid)?.Message;
@@ -139,7 +93,7 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         if (branchError is not null) return branchError;
         if (partnerError is not null) return partnerError;
 
-        var mergeBase = _enumerator.TryComputeMergeBase(_canonicalRepoPath!, Branch, MergeBasePartner);
+        var mergeBase = _enumerator.TryComputeMergeBase(CanonicalRepoPath!, Branch, MergeBasePartner);
         if (mergeBase is null)
         {
             return $"No common ancestor between `{Branch}` and `{MergeBasePartner}`.";
@@ -161,16 +115,10 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
         }
 
         var parsed = new ParsedCommandLine(
-            _canonicalRepoPath ?? RepoPath,
+            CanonicalRepoPath ?? RepoPath,
             new DiffSide.CommitIsh(_resolvedMergeBaseSha),
             new DiffSide.CommitIsh(Branch));
         return new DiffLaunchSource.Local(parsed);
-    }
-
-    private void SyncPickerRepoPath()
-    {
-        BranchPicker.CanonicalRepoPath = _canonicalRepoPath;
-        MergeBasePartnerPicker.CanonicalRepoPath = _canonicalRepoPath;
     }
 
     /// <summary>
@@ -181,15 +129,15 @@ public sealed partial class BranchVsMergeBaseFormViewModel : NewDiffFormViewMode
     /// doesn't resolve, the partner is already non-empty, or the
     /// repo has no <c>origin/HEAD</c> symref (older clones,
     /// manually-configured remotes). Assignment to the partner
-    /// re-triggers <see cref="Validate"/> via the source-generated
-    /// setter.
+    /// re-triggers <see cref="NewDiffFormViewModelBase.Validate"/> via
+    /// the source-generated setter.
     /// </summary>
     private void TrySeedDefaultPartner()
     {
         if (!string.IsNullOrWhiteSpace(MergeBasePartner)) return;
-        if (_canonicalRepoPath is null) return;
+        if (CanonicalRepoPath is null) return;
 
-        var seed = _enumerator.TryGetDefaultRemoteBranch(_canonicalRepoPath);
+        var seed = _enumerator.TryGetDefaultRemoteBranch(CanonicalRepoPath);
         if (string.IsNullOrWhiteSpace(seed)) return;
         MergeBasePartner = seed;
     }

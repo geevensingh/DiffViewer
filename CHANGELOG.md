@@ -12,6 +12,18 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+### Added
+
+- **Worktree switching.** The repository-path row in the "New diff"
+  dialog gained a **Worktree…** button listing every worktree of the
+  repository you typed — main first, each showing its checked-out
+  branch and path — so pointing a diff at a different checkout no
+  longer means remembering where `git worktree add` put it. The
+  context bar gained a matching **Worktree** button that re-opens the
+  comparison you are already looking at, rooted at another worktree,
+  with both sides unchanged. Worktrees whose directory has been
+  deleted are listed as unavailable rather than silently omitted.
+
 ### Changed
 
 - **Worktrees are now identifiable in the UI.** DiffViewer already

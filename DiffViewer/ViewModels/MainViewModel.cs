@@ -638,7 +638,8 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         IClipboardService? clipboardService = null,
         IImageDecoder? imageDecoder = null,
         string? initialFile = null,
-        IPullRequestWatcher? pullRequestWatcher = null)
+        IPullRequestWatcher? pullRequestWatcher = null,
+        IGitWorktreeEnumerator? worktreeEnumerator = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _left = left ?? throw new ArgumentNullException(nameof(left));
@@ -684,7 +685,8 @@ public sealed partial class MainViewModel : ObservableObject, IShellViewModel, I
         if (recentContextsService is not null)
         {
             var identity = ContextIdentityFactory.Create(repository.Shape.RepoRoot, left, right);
-            _recents = new RecentContextsViewModel(recentContextsService, contextSwitcher, identity, newDiffDialogHost);
+            _recents = new RecentContextsViewModel(
+                recentContextsService, contextSwitcher, identity, newDiffDialogHost, worktreeEnumerator);
             _scope.Register(_recents);
         }
 

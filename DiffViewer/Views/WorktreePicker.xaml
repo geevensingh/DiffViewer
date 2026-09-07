@@ -1,0 +1,108 @@
+<UserControl x:Class="DiffViewer.Views.WorktreePicker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:WorktreePickerViewModel}"
+             mc:Ignorable="d"
+             x:Name="Self">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+        <vm:FalseToVisibleConverter x:Key="FalseToVisibility"/>
+
+        <!-- One worktree row. Mirrors RefPicker's row styling so the two
+             popups feel like the same control family. -->
+        <Style TargetType="Button" x:Key="WorktreeRow">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="0,1,0,0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E8F0FE"/>
+                </Trigger>
+                <!-- A pruned worktree is listed so the user understands
+                     what git still knows about, but it cannot be opened. -->
+                <DataTrigger Binding="{Binding IsMissing}" Value="True">
+                    <Setter Property="IsEnabled" Value="False"/>
+                    <Setter Property="Opacity" Value="0.5"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+
+    <Popup x:Name="PickerPopup"
+           IsOpen="{Binding IsOpen, ElementName=Self, Mode=TwoWay}"
+           PlacementTarget="{Binding PlacementTarget, ElementName=Self}"
+           Placement="Bottom"
+           StaysOpen="False"
+           AllowsTransparency="True"
+           PopupAnimation="Fade"
+           Opened="OnPopupOpened">
+        <Border Background="White"
+                BorderBrush="#BBB"
+                BorderThickness="1"
+                Padding="10"
+                MinWidth="360"
+                MaxHeight="360"
+                SnapsToDevicePixels="True">
+            <Border.Effect>
+                <DropShadowEffect ShadowDepth="2" Color="#333" Opacity="0.25" BlurRadius="8"/>
+            </Border.Effect>
+            <StackPanel>
+                <TextBlock Text="Loading…"
+                           Foreground="#888"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}"/>
+
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Worktrees}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource WorktreeRow}"
+                                        Command="{Binding DataContext.PickWorktreeCommand, ElementName=Self}"
+                                        CommandParameter="{Binding}"
+                                        Click="OnWorktreeRowClicked">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="main"
+                                                       Foreground="#666" Margin="8,0,0,0"
+                                                       Visibility="{Binding IsMain, Converter={StaticResource BoolToVisibility}}"/>
+                                            <TextBlock Text="current"
+                                                       Foreground="#1A7F37" Margin="8,0,0,0"
+                                                       Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVisibility}}"/>
+                                            <TextBlock Text="locked"
+                                                       Foreground="#9A6700" Margin="8,0,0,0"
+                                                       Visibility="{Binding IsLocked, Converter={StaticResource BoolToVisibility}}"/>
+                                            <TextBlock Text="missing"
+                                                       Foreground="DarkRed" Margin="8,0,0,0"
+                                                       Visibility="{Binding IsMissing, Converter={StaticResource BoolToVisibility}}"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding HeadFriendlyName}"
+                                                   Foreground="#555" FontSize="11"/>
+                                        <TextBlock Text="{Binding WorkingDirectory}"
+                                                   Foreground="#888" FontSize="11"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Empty state: a repo with no linked worktrees would
+                     otherwise show a single row pointing at where the
+                     user already is, which reads as a bug. -->
+                <TextBlock Margin="0,4,0,0"
+                           Foreground="#999"
+                           FontStyle="Italic"
+                           TextWrapping="Wrap"
+                           Text="This repository has no other worktrees. Create one with `git worktree add`."
+                           Visibility="{Binding HasAlternativeWorktrees, Converter={StaticResource FalseToVisibility}}"/>
+            </StackPanel>
+        </Border>
+    </Popup>
+</UserControl>

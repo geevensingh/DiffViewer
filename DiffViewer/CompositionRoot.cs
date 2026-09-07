@@ -191,7 +191,8 @@ internal static class CompositionRoot
             clipboardService: clipboardService,
             imageDecoder: imageDecoder,
             initialFile: parsed.InitialFile,
-            pullRequestWatcher: pullRequestWatcher);
+            pullRequestWatcher: pullRequestWatcher,
+            worktreeEnumerator: services.WorktreeEnumerator);
 
         await vm.LoadInitialChangesAsync(ct).ConfigureAwait(true);
         return vm;

@@ -55,6 +55,10 @@ public interface IDiffModeProvider
 /// <param name="RefEnumerator">Powers the per-input ref picker
 /// popup. Forms with commit-ish inputs construct one
 /// <see cref="RefPickerViewModel"/> per input from this.</param>
+/// <param name="WorktreeEnumerator">Powers the worktree picker
+/// attached to the repo-path input. Consumed by
+/// <see cref="LocalRepoFormViewModelBase"/> on behalf of every local
+/// form; PR-URL forms ignore it.</param>
 /// <param name="RecentContexts">Source of "Recent refs in this repo"
 /// for the picker (filtered + deduped per repo path; see
 /// <see cref="RefPickerViewModel"/>).</param>
@@ -69,6 +73,7 @@ public interface IDiffModeProvider
 public sealed record FormDependencies(
     IDiffLaunchValidator Validator,
     IGitRefEnumerator RefEnumerator,
+    IGitWorktreeEnumerator WorktreeEnumerator,
     IRecentContextsService RecentContexts,
     string? PrefilledRepoPath = null,
     string? SeedPullRequestUrl = null);

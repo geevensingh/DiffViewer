@@ -1,0 +1,47 @@
+<UserControl x:Class="DiffViewer.Views.RepoPathField"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+             xmlns:vw="clr-namespace:DiffViewer.Views"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             d:DataContext="{d:DesignInstance Type=vm:LocalRepoFormViewModelBase}"
+             mc:Ignorable="d">
+    <StackPanel>
+        <TextBlock Text="Repository path"
+                   Margin="0,8,0,2"
+                   Foreground="#444"/>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBox x:Name="PathBox"
+                     Grid.Column="0"
+                     Padding="4,3"
+                     Text="{Binding RepoPath, UpdateSourceTrigger=PropertyChanged}"/>
+
+            <Button Grid.Column="1"
+                    Content="Browse…"
+                    Margin="6,0,0,0" Padding="10,4"
+                    Click="OnBrowseClick"/>
+
+            <!-- Worktree switcher. Enabled only once the typed path
+                 resolves to a repository, because until then there is
+                 nothing to enumerate. -->
+            <ToggleButton x:Name="WorktreeToggle"
+                          Grid.Column="2"
+                          Content="Worktree…"
+                          Margin="6,0,0,0" Padding="10,4"
+                          MinWidth="80"
+                          IsEnabled="{Binding WorktreePicker.IsEnabled}"
+                          ToolTip="Switch to another worktree of this repository"/>
+            <vw:WorktreePicker Grid.Column="2"
+                               DataContext="{Binding WorktreePicker}"
+                               IsOpen="{Binding IsChecked, ElementName=WorktreeToggle, Mode=TwoWay}"
+                               PlacementTarget="{Binding ElementName=WorktreeToggle}"/>
+        </Grid>
+    </StackPanel>
+</UserControl>
