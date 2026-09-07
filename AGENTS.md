@@ -499,7 +499,7 @@ Use this instead:
 > A breaking change is an upgrade that can disturb an existing
 > install.
 
-Five surfaces carry that risk. A change that violates any of them is
+Six surfaces carry that risk. A change that violates any of them is
 breaking no matter how small the diff is:
 
 1. **The CLI argv contract.** Both the positional form
@@ -518,8 +518,8 @@ breaking no matter how small the diff is:
      `SettingsMigrations.MigrateUpTo` chains registered v(N) → v(N+1)
      steps and throws if one is missing. When the file's
      `schemaVersion` is newer than the binary, `SettingsService`
-     declines to read it, copies it to `settings.json.bak.<unix-time>`,
-     and starts from defaults.
+     declines to read it, moves it aside to
+     `settings.json.bak.<unix-time>`, and starts from defaults.
    - `recents.json` is forgiving instead. `RecentsJsonSerializer`
      reads the stored version and discards it, keeps every row that
      parses, ignores unknown sibling fields, and re-stamps the file at
@@ -550,6 +550,13 @@ breaking no matter how small the diff is:
    output. Change either side and in-field installs stop matching the
    feed. That is maximally breaking: it removes the very mechanism by
    which a subsequent fix would have reached them.
+6. **The platform floor.** `README.md` promises Windows 10 or later on
+   **x64**, and the Release config pins `RuntimeIdentifier win-x64`
+   with `SelfContained` on top of `net8.0-windows`. Raising the OS
+   floor or changing the architecture strands machines that run the app
+   today. This one compounds with surface 5: because updates install
+   themselves, an in-field copy can be upgraded into a build it can no
+   longer run without its owner ever choosing to.
 
 ## 13. Origin
 
