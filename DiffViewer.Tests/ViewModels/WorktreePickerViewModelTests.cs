@@ -137,6 +137,101 @@ public class WorktreePickerViewModelTests
         written.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task EnsureLoadedAsync_WhenTheRepoPathChangesMidFlight_LoadsTheNewPath()
+    {
+        // The IsLoading guard turns away a caller that arrives during a
+        // load, so a stale result must trigger a re-enumeration rather
+        // than being dropped - otherwise an already-open popup sits
+        // empty with nothing left to reload it.
+        var stub = new StubWorktreeEnumerator(MainWorktree(), Linked("feature-a"));
+        WorktreePickerViewModel? picker = null;
+        var repointed = false;
+
+        picker = new WorktreePickerViewModel(
+            stub,
+            writeBack: _ => { },
+            initialCanonicalRepoPath: @"C:\repos\first",
+            enumerateRunner: work =>
+            {
+                var result = work();
+                if (!repointed)
+                {
+                    // Simulate the user re-pointing the field while this
+                    // enumeration was in flight.
+                    repointed = true;
+                    picker!.CanonicalRepoPath = @"C:\repos\second";
+                }
+                return Task.FromResult(result);
+            });
+
+        await picker.EnsureLoadedAsync();
+
+        picker.IsLoaded.Should().BeTrue();
+        picker.IsLoading.Should().BeFalse();
+        picker.Worktrees.Should().HaveCount(2);
+        stub.EnumeratedPaths.Should().Equal(@"C:\repos\first", @"C:\repos\second");
+    }
+
+    [Fact]
+    public async Task HasAlternativeWorktrees_ForABareHubWithOneLinkedWorktree_IsTrue()
+    {
+        // The enumerator omits the main worktree for a bare hub, so a
+        // row count would call this "no alternatives" even though the
+        // listed worktree is somewhere else to go.
+        var picker = MakePicker(out _, out _, Linked("feature-a"));
+        picker.CanonicalRepoPath = @"C:\repos\diffviewer";
+
+        await picker.EnsureLoadedAsync();
+
+        picker.HasAlternativeWorktrees.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task HasAlternativeWorktrees_WhenTheOnlyEntryIsTheCurrentOne_IsFalse()
+    {
+        var picker = MakePicker(out _, out _, MainWorktree());
+        picker.CanonicalRepoPath = @"C:\repos\diffviewer";
+
+        await picker.EnsureLoadedAsync();
+
+        picker.HasAlternativeWorktrees.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShowsEmptyState_BeforeLoadingCompletes_IsFalse()
+    {
+        // Otherwise the popup asserts "no other worktrees" next to the
+        // "Loading..." label, before enumeration has an answer.
+        var picker = MakePicker(out _, out _, MainWorktree(), Linked("feature-a"));
+        picker.CanonicalRepoPath = @"C:\repos\diffviewer";
+
+        picker.IsLoaded.Should().BeFalse();
+        picker.ShowsEmptyState.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ShowsEmptyState_AfterLoadingARepoWithNoAlternatives_IsTrue()
+    {
+        var picker = MakePicker(out _, out _, MainWorktree());
+        picker.CanonicalRepoPath = @"C:\repos\diffviewer";
+
+        await picker.EnsureLoadedAsync();
+
+        picker.ShowsEmptyState.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ShowsEmptyState_AfterLoadingARepoWithAlternatives_IsFalse()
+    {
+        var picker = MakePicker(out _, out _, MainWorktree(), Linked("feature-a"));
+        picker.CanonicalRepoPath = @"C:\repos\diffviewer";
+
+        await picker.EnsureLoadedAsync();
+
+        picker.ShowsEmptyState.Should().BeFalse();
+    }
+
     private static WorktreePickerViewModel MakePicker(
         out StubWorktreeEnumerator enumerator,
         out List<string> written,

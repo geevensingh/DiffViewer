@@ -57,8 +57,7 @@ public sealed partial class WorktreePickerViewModel : ObservableObject
     {
         _worktrees = Array.Empty<WorktreeEntry>();
         IsLoaded = false;
-        OnPropertyChanged(nameof(Worktrees));
-        OnPropertyChanged(nameof(HasAlternativeWorktrees));
+        RaiseListDerivedChanged();
     }
 
     /// <summary>True when the picker has a repo path to work from; the
@@ -69,6 +68,7 @@ public sealed partial class WorktreePickerViewModel : ObservableObject
     private bool _isLoading;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowsEmptyState))]
     private bool _isLoaded;
 
     private IReadOnlyList<WorktreeEntry> _worktrees = Array.Empty<WorktreeEntry>();
@@ -77,11 +77,24 @@ public sealed partial class WorktreePickerViewModel : ObservableObject
     public IReadOnlyList<WorktreeEntry> Worktrees => _worktrees;
 
     /// <summary>
-    /// True once loading found somewhere else to go. Drives the popup's
-    /// empty state: a repository with no linked worktrees should say so
-    /// rather than showing a one-row list of where the user already is.
+    /// True when the enumeration found somewhere other than here to go.
+    ///
+    /// <para>Deliberately "any entry that isn't current" rather than a
+    /// row count. The enumerator omits the main worktree for a bare hub,
+    /// so counting rows would report a single linked worktree as no
+    /// alternative at all. A row that is present but unreachable (a
+    /// pruned worktree) still counts, so the popup never claims there is
+    /// nothing to switch to while visibly listing something.</para>
     /// </summary>
-    public bool HasAlternativeWorktrees => _worktrees.Count > 1;
+    public bool HasAlternativeWorktrees => _worktrees.Any(entry => !entry.IsCurrent);
+
+    /// <summary>
+    /// True when the popup should say the repository has nowhere else to
+    /// go. Gated on <see cref="IsLoaded"/> so the message does not sit
+    /// next to "Loading…" claiming an answer enumeration hasn't produced
+    /// yet.
+    /// </summary>
+    public bool ShowsEmptyState => IsLoaded && !HasAlternativeWorktrees;
 
     /// <summary>
     /// Enumerate worktrees for the current repo path, off the UI thread.
@@ -96,28 +109,45 @@ public sealed partial class WorktreePickerViewModel : ObservableObject
         IsLoading = true;
         try
         {
-            var repoPath = CanonicalRepoPath;
-            var enumerate = () => _enumerator.Enumerate(repoPath!);
-            var result = _enumerateRunner is not null
-                ? await _enumerateRunner(enumerate).ConfigureAwait(true)
-                : await Task.Run(enumerate).ConfigureAwait(true);
-
-            // The user may have re-pointed the picker mid-load. Drop
-            // stale results rather than overwrite the new state.
-            if (!string.Equals(CanonicalRepoPath, repoPath, StringComparison.Ordinal))
+            // Loop rather than bail on a stale result. The picker can be
+            // re-pointed mid-flight, and a caller that arrives during
+            // the load is turned away by the IsLoading guard above — so
+            // simply dropping the stale result would leave an
+            // already-open popup empty with nothing left to trigger a
+            // reload. Re-enumerating here is what that turned-away
+            // caller is relying on.
+            while (true)
             {
+                var repoPath = CanonicalRepoPath;
+                if (string.IsNullOrWhiteSpace(repoPath)) return;
+
+                var enumerate = () => _enumerator.Enumerate(repoPath!);
+                var result = _enumerateRunner is not null
+                    ? await _enumerateRunner(enumerate).ConfigureAwait(true)
+                    : await Task.Run(enumerate).ConfigureAwait(true);
+
+                if (!string.Equals(CanonicalRepoPath, repoPath, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _worktrees = result;
+                IsLoaded = true;
+                RaiseListDerivedChanged();
                 return;
             }
-
-            _worktrees = result;
-            IsLoaded = true;
-            OnPropertyChanged(nameof(Worktrees));
-            OnPropertyChanged(nameof(HasAlternativeWorktrees));
         }
         finally
         {
             IsLoading = false;
         }
+    }
+
+    private void RaiseListDerivedChanged()
+    {
+        OnPropertyChanged(nameof(Worktrees));
+        OnPropertyChanged(nameof(HasAlternativeWorktrees));
+        OnPropertyChanged(nameof(ShowsEmptyState));
     }
 
     /// <summary>

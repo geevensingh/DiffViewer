@@ -9,7 +9,6 @@
              x:Name="Self">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
-        <vm:FalseToVisibleConverter x:Key="FalseToVisibility"/>
 
         <!-- One worktree row. Mirrors RefPicker's row styling so the two
              popups feel like the same control family. -->
@@ -52,12 +51,25 @@
             <Border.Effect>
                 <DropShadowEffect ShadowDepth="2" Color="#333" Opacity="0.25" BlurRadius="8"/>
             </Border.Effect>
-            <StackPanel>
-                <TextBlock Text="Loading…"
+            <!-- Grid, not StackPanel: a StackPanel measures its children
+                 with unbounded height, so the ScrollViewer would report
+                 its full content height, never scroll, and let the
+                 Border's MaxHeight clip the lower rows out of reach. A
+                 star-sized row gives the list a real viewport. Same
+                 layout RefPicker uses. -->
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0"
+                           Text="Loading…"
                            Foreground="#888"
                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibility}}"/>
 
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <ItemsControl ItemsSource="{Binding Worktrees}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -93,16 +105,19 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <!-- Empty state: a repo with no linked worktrees would
+                <!-- Empty state: a repo with no other worktrees would
                      otherwise show a single row pointing at where the
-                     user already is, which reads as a bug. -->
-                <TextBlock Margin="0,4,0,0"
+                     user already is. Bound to ShowsEmptyState, which is
+                     gated on IsLoaded so this never sits next to
+                     "Loading…" asserting an answer we don't have yet. -->
+                <TextBlock Grid.Row="2"
+                           Margin="0,4,0,0"
                            Foreground="#999"
                            FontStyle="Italic"
                            TextWrapping="Wrap"
                            Text="This repository has no other worktrees. Create one with `git worktree add`."
-                           Visibility="{Binding HasAlternativeWorktrees, Converter={StaticResource FalseToVisibility}}"/>
-            </StackPanel>
+                           Visibility="{Binding ShowsEmptyState, Converter={StaticResource BoolToVisibility}}"/>
+            </Grid>
         </Border>
     </Popup>
 </UserControl>
