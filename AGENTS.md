@@ -511,27 +511,45 @@ breaking no matter how small the diff is:
    changing what a positional slot means, or dropping a flag, breaks
    setups we can neither see nor migrate.
 2. **On-disk state formats.** `settings.json` and `recents.json` under
-   `%APPDATA%\DiffViewer`. Both are already explicit versioned
-   contracts: `Services/SettingsMigrations.cs` chains v(N) → v(N+1)
-   migrations, and `Services/RecentsJsonSerializer.cs` documents the
-   downgrade-safety rule that an unknown future version loads as empty
-   rather than throwing. Breaking here means a user loses their
-   configuration on upgrade, or corrupts it on downgrade.
-3. **Install footprint.** `Services/UserPathRegistrar.cs` and
-   `Services/WindowsUserPathStore.cs` put the install directory on the
-   per-user `PATH` from the Velopack install/update hooks. Renaming the
-   executable or changing how that entry is registered orphans it —
-   leaving a stale `PATH` entry and a name that no longer resolves.
+   `%APPDATA%\DiffViewer`. Both are versioned contracts, and they use
+   deliberately *opposite* strategies — a change here must not silently
+   break either:
+   - `settings.json` migrates forward and refuses to go backward.
+     `SettingsMigrations.MigrateUpTo` chains registered v(N) → v(N+1)
+     steps and throws if one is missing. When the file's
+     `schemaVersion` is newer than the binary, `SettingsService`
+     declines to read it, copies it to `settings.json.bak.<unix-time>`,
+     and starts from defaults.
+   - `recents.json` is forgiving instead. `RecentsJsonSerializer`
+     reads the stored version and discards it, keeps every row that
+     parses, ignores unknown sibling fields, and re-stamps the file at
+     `RecentsDoc.CurrentVersion` on the next write — so version drift
+     heals itself.
+
+   Break either and a user loses their setup on upgrade, or has it
+   quietly reset on downgrade.
+3. **Install footprint.** `App.xaml.cs` wires `UserPathRegistrar` into
+   Velopack's after-install / after-update / before-uninstall
+   callbacks, putting `AppContext.BaseDirectory` — the stable Velopack
+   `current` directory — onto the per-user `PATH` through
+   `WindowsUserPathStore`, so `diffviewer` resolves from any new
+   terminal. Two distinct breaks live here: renaming the executable
+   leaves the `PATH` entry valid but stops the old command name from
+   resolving, while changing which directory gets registered strands a
+   stale entry pointing at nothing. These hooks only fire for the
+   Velopack-installed copy — portable and dev launches never register.
 4. **Keyboard shortcuts.** `Models/KeyboardShortcutCatalog.cs`. Adding
    a binding is a feature; repointing an existing binding at a
    different action is a silent behavioural break — muscle memory
    starts doing something the user never asked for, with no error to
    read.
-5. **The update channel.** `Services/VelopackUpdateService.cs` and the
-   `vpk pack --packId DiffViewer` identity in `release.yml`. A change
-   that strands in-field installs so they can no longer self-update is
-   maximally breaking: it removes the very mechanism by which a
-   subsequent fix would have reached them.
+5. **The update channel.** An install finds its upgrades through the
+   identity `VelopackUpdateService.TryCreateForInstalled` resolves
+   against — a `GithubSource` pointed at this repo's Releases — paired
+   with the `vpk pack --packId DiffViewer` that stamps `release.yml`'s
+   output. Change either side and in-field installs stop matching the
+   feed. That is maximally breaking: it removes the very mechanism by
+   which a subsequent fix would have reached them.
 
 ## 13. Origin
 
