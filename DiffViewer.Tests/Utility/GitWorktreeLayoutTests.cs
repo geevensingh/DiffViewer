@@ -53,6 +53,30 @@ public sealed class GitWorktreeLayoutTests : IDisposable
     }
 
     [Fact]
+    public void ResolveCommonDirectory_StripsATrailingSeparator()
+    {
+        // libgit2 reports a main worktree's git directory with a
+        // trailing separator, but the commondir pointer resolves
+        // without one. Both must land on the same string or two
+        // worktrees of a repository compare as unrelated.
+        var gitDir = CreateDirectory(".git");
+        var withSeparator = gitDir + Path.DirectorySeparatorChar;
+
+        GitWorktreeLayout.ResolveCommonDirectory(withSeparator)
+            .Should().Be(GitWorktreeLayout.ResolveCommonDirectory(gitDir));
+    }
+
+    [Fact]
+    public void ResolveCommonDirectory_FromMainAndLinkedWorktrees_ReturnsTheIdenticalString()
+    {
+        var mainGitDir = CreateDirectory(".git") + Path.DirectorySeparatorChar;
+        var linkedGitDir = CreateLinkedWorktreeGitDirectory("feature-a");
+
+        GitWorktreeLayout.ResolveCommonDirectory(linkedGitDir)
+            .Should().Be(GitWorktreeLayout.ResolveCommonDirectory(mainGitDir));
+    }
+
+    [Fact]
     public void ResolveCommonDirectory_FollowsARelativeCommondirPointer()
     {
         var gitDir = CreateLinkedWorktreeGitDirectory("feature-a");

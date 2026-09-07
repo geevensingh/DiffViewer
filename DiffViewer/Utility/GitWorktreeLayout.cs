@@ -39,10 +39,17 @@ public static class GitWorktreeLayout
     }
 
     /// <summary>
-    /// Resolve the repository's common directory. Returns
-    /// <paramref name="gitDirectory"/> unchanged when it is already the
-    /// common directory, or when the <c>commondir</c> pointer is
-    /// unreadable or empty.
+    /// Resolve the repository's common directory, normalized so that
+    /// every worktree of a repository produces the identical string.
+    /// Returns the normalized <paramref name="gitDirectory"/> when it is
+    /// already the common directory, or when the <c>commondir</c>
+    /// pointer is unreadable or empty.
+    ///
+    /// <para>Normalization is not cosmetic: libgit2 reports a main
+    /// worktree's git directory with a trailing separator but the
+    /// <c>commondir</c> pointer resolves without one, so comparing the
+    /// two raw forms would report two worktrees of one repository as
+    /// unrelated.</para>
     /// </summary>
     public static string ResolveCommonDirectory(string gitDirectory)
     {
@@ -51,20 +58,23 @@ public static class GitWorktreeLayout
         try
         {
             var commonDirFile = Path.Combine(gitDirectory, CommonDirFileName);
-            if (!File.Exists(commonDirFile)) return gitDirectory;
+            if (!File.Exists(commonDirFile)) return Normalize(gitDirectory);
 
             var contents = File.ReadAllText(commonDirFile).Trim();
-            if (contents.Length == 0) return gitDirectory;
+            if (contents.Length == 0) return Normalize(gitDirectory);
 
             // The pointer is normally relative to the worktree's git
             // directory; Path.Combine leaves an absolute pointer alone.
-            return Path.GetFullPath(Path.Combine(gitDirectory, contents));
+            return Normalize(Path.Combine(gitDirectory, contents));
         }
         catch (Exception)
         {
             return gitDirectory;
         }
     }
+
+    private static string Normalize(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
 
     /// <summary>
     /// Git's name for the worktree owning <paramref name="gitDirectory"/>,

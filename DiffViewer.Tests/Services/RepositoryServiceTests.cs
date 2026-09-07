@@ -65,10 +65,14 @@ public class RepositoryServiceTests
 
         worktreeSvc.Shape.IsLinkedWorktree.Should().BeTrue();
         worktreeSvc.Shape.WorktreeName.Should().Be("feature-a");
-        // Both worktrees resolve to the same common dir - that is what
-        // makes "same repository, different checkout" recognizable.
-        Normalize(worktreeSvc.Shape.CommonGitDirectory)
-            .Should().Be(Normalize(mainSvc.Shape.CommonGitDirectory));
+        // Compared raw, not normalized: the whole point of
+        // CommonGitDirectory is that two worktrees of one repository
+        // produce the identical string. libgit2 reports a main
+        // worktree's git dir with a trailing separator and the
+        // commondir pointer resolves without one, so this invariant
+        // only holds because the layout helper normalizes both.
+        worktreeSvc.Shape.CommonGitDirectory
+            .Should().Be(mainSvc.Shape.CommonGitDirectory);
         Normalize(worktreeSvc.Shape.GitDir)
             .Should().NotBe(Normalize(worktreeSvc.Shape.CommonGitDirectory));
     }
