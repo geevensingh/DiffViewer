@@ -444,19 +444,30 @@ to touch `CHANGELOG.md`.
 
 ### When to release
 
-Each release is a user-visible Windows `.exe` artifact downloaded from
-GitHub Releases. There is no auto-update channel and no nightly feed
-— releases *are* the distribution. Tag deliberately, not on a fixed
-cadence and not per commit.
+Each release is a user-visible Windows artifact downloaded from GitHub
+Releases — and, for installs that came through the Velopack `Setup.exe`,
+the payload that in-field copies upgrade *themselves* to. There is no
+nightly feed; releases *are* the distribution. Tag deliberately, not on
+a fixed cadence and not per commit.
 
-**Bump rules (pre-1.0 SemVer):**
+**Bump rules (SemVer):**
 
-- User-facing feature added → **minor** bump (e.g., `v0.1.0` →
-  `v0.2.0`).
-- Bug-fix-only batch → **patch** bump (e.g., `v0.1.0` → `v0.1.1`).
-- Pre-1.0 breaking changes ride in minor bumps (standard SemVer
-  carve-out for `0.y.z`). Once the project hits `1.0.0`, breaking
-  changes require a major bump.
+- User-facing feature added → **minor** bump (e.g., `v1.9.0` →
+  `v1.10.0`).
+- Bug-fix-only batch → **patch** bump (e.g., `v1.9.0` → `v1.9.1`).
+- Breaking change → **major** bump (e.g., `v1.9.0` → `v2.0.0`). See
+  "What counts as 'breaking'" below.
+
+The project is past `1.0.0`, so the pre-1.0 carve-out that let
+breaking changes ride in minor bumps no longer applies.
+
+**Major bumps are reserved for compatibility breaks.** Size is not a
+trigger. A large feature, a rewritten pane, or a redesigned UI is
+still a **minor** bump so long as it doesn't disturb an existing
+install. Say "this one is big" in the `CHANGELOG.md` section and the
+release title, not in the version number — a major that only means
+"big" teaches users that majors are safe to take, which is precisely
+backwards on the one occasion the signal matters.
 
 **Skip releases for** doc-only commits, build hygiene, test-only
 changes, and pure refactors that don't change shipped behavior. These
@@ -478,6 +489,49 @@ release work", or "do the obvious cleanup" is **not** authorization
 to tag. Recommending a release in conversation is fine and
 encouraged when a meaningful delta has accumulated; pushing the tag
 without an explicit command is not.
+
+### What counts as "breaking"
+
+DiffViewer publishes no library and has no external API consumers, so
+the usual "a public signature changed" test says nothing useful here.
+Use this instead:
+
+> A breaking change is an upgrade that can disturb an existing
+> install.
+
+Five surfaces carry that risk. A change that violates any of them is
+breaking no matter how small the diff is:
+
+1. **The CLI argv contract.** Both the positional form
+   (`DiffViewer.exe <repo> <base> <compare>`) and the flag form
+   (`--repo` / `--left` / `--right` / `--file`) — see
+   `Services/CommandLineParser.cs` and the "Command-line launch"
+   section of `README.md`. Users wire these into shell aliases, `git`
+   aliases, and editor integrations that live outside this repo, so
+   changing what a positional slot means, or dropping a flag, breaks
+   setups we can neither see nor migrate.
+2. **On-disk state formats.** `settings.json` and `recents.json` under
+   `%APPDATA%\DiffViewer`. Both are already explicit versioned
+   contracts: `Services/SettingsMigrations.cs` chains v(N) → v(N+1)
+   migrations, and `Services/RecentsJsonSerializer.cs` documents the
+   downgrade-safety rule that an unknown future version loads as empty
+   rather than throwing. Breaking here means a user loses their
+   configuration on upgrade, or corrupts it on downgrade.
+3. **Install footprint.** `Services/UserPathRegistrar.cs` and
+   `Services/WindowsUserPathStore.cs` put the install directory on the
+   per-user `PATH` from the Velopack install/update hooks. Renaming the
+   executable or changing how that entry is registered orphans it —
+   leaving a stale `PATH` entry and a name that no longer resolves.
+4. **Keyboard shortcuts.** `Models/KeyboardShortcutCatalog.cs`. Adding
+   a binding is a feature; repointing an existing binding at a
+   different action is a silent behavioural break — muscle memory
+   starts doing something the user never asked for, with no error to
+   read.
+5. **The update channel.** `Services/VelopackUpdateService.cs` and the
+   `vpk pack --packId DiffViewer` identity in `release.yml`. A change
+   that strands in-field installs so they can no longer self-update is
+   maximally breaking: it removes the very mechanism by which a
+   subsequent fix would have reached them.
 
 ## 13. Origin
 
