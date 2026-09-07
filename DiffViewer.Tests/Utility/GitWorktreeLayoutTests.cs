@@ -106,6 +106,31 @@ public sealed class GitWorktreeLayoutTests : IDisposable
     }
 
     [Fact]
+    public void ResolveCommonDirectory_WhenThePathCannotBeExpanded_ReturnsItWithoutThrowing()
+    {
+        // A path the framework refuses to expand takes the failure
+        // branch. It must still come back rather than throwing out of a
+        // helper every caller treats as defensive.
+        var unexpandable = "C:\\repo\0bad";
+
+        var act = () => GitWorktreeLayout.ResolveCommonDirectory(unexpandable);
+
+        act.Should().NotThrow();
+        act().Should().Be(unexpandable);
+    }
+
+    [Fact]
+    public void ResolveCommonDirectory_NeverReturnsATrailingSeparator()
+    {
+        // The invariant the whole helper exists for: every return path,
+        // including the failure branch, hands back a comparable string.
+        var gitDir = CreateDirectory(".git") + Path.DirectorySeparatorChar;
+
+        GitWorktreeLayout.ResolveCommonDirectory(gitDir)
+            .Should().NotEndWith(Path.DirectorySeparatorChar.ToString());
+    }
+
+    [Fact]
     public void TryGetWorktreeName_ForALinkedWorktree_ReturnsTheAdministrativeDirectoryName()
     {
         var gitDir = CreateLinkedWorktreeGitDirectory("feature-a");

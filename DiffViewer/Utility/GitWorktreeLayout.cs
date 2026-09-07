@@ -69,12 +69,33 @@ public static class GitWorktreeLayout
         }
         catch (Exception)
         {
-            return gitDirectory;
+            // Still normalize: returning the raw string here would
+            // reintroduce exactly the trailing-separator mismatch this
+            // method exists to eliminate, so a probing failure would
+            // silently make two worktrees of one repository compare as
+            // unrelated. Normalize is itself best-effort.
+            return Normalize(gitDirectory);
         }
     }
 
-    private static string Normalize(string path) =>
-        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+    /// <summary>
+    /// Canonical form used for every value this helper hands back:
+    /// absolute, with any trailing separator removed. Best-effort — a
+    /// path the framework refuses to expand (invalid characters, too
+    /// long) is returned unchanged rather than throwing, because every
+    /// caller here is documented to degrade rather than fail.
+    /// </summary>
+    private static string Normalize(string path)
+    {
+        try
+        {
+            return Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        }
+        catch (Exception)
+        {
+            return path;
+        }
+    }
 
     /// <summary>
     /// Git's name for the worktree owning <paramref name="gitDirectory"/>,

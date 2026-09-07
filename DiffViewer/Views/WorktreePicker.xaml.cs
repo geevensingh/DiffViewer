@@ -69,10 +69,12 @@ public partial class WorktreePicker : UserControl
         }
         catch
         {
-            // EnsureLoadedAsync swallows enumerator failures internally
-            // (LibGit2GitWorktreeEnumerator returns an empty list on
-            // throw). Belt and suspenders so an unexpected exception
-            // never tears down the dialog.
+            // EnsureLoadedAsync does not catch: it relies on the
+            // enumerator contract, and LibGit2GitWorktreeEnumerator
+            // returns an empty list rather than throwing. This handler
+            // is the actual safety net — an async void event handler is
+            // where an unexpected exception would otherwise tear the
+            // dialog down.
         }
     }
 
