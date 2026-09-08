@@ -17,21 +17,10 @@ namespace DiffViewer.ViewModels;
 /// working-tree commit compared against its parent (HEAD at stash
 /// time).
 /// </summary>
-public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
+public sealed partial class ViewStashFormViewModel : LocalRepoFormViewModelBase
 {
     private readonly IGitRefEnumerator _enumerator;
     private readonly Func<Func<RefEnumerationResult>, Task<RefEnumerationResult>>? _enumerateRunner;
-    private string? _canonicalRepoPath;
-
-    [ObservableProperty]
-    private string _repoPath;
-
-    [ObservableProperty]
-    private bool _isLoading;
-
-    [ObservableProperty]
-    private bool _isLoaded;
-
     private IReadOnlyList<StashEntry> _stashes = Array.Empty<StashEntry>();
 
     /// <summary>The enumerated stash list. Bound to the inline ListBox.</summary>
@@ -46,6 +35,12 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
     /// Drives the inline empty-state hint.</summary>
     public bool IsEmpty => IsLoaded && _stashes.Count == 0;
 
+    [ObservableProperty]
+    private bool _isLoading;
+
+    [ObservableProperty]
+    private bool _isLoaded;
+
     /// <summary>The stash the user clicked. <c>null</c> when nothing is
     /// selected yet.</summary>
     [ObservableProperty]
@@ -54,30 +49,24 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
     public ViewStashFormViewModel(
         FormDependencies deps,
         Func<Func<RefEnumerationResult>, Task<RefEnumerationResult>>? enumerateRunner = null)
-        : base(deps.Validator)
+        : base(deps)
     {
         _enumerator = deps.RefEnumerator ?? throw new ArgumentNullException(nameof(deps));
         _enumerateRunner = enumerateRunner;
-        _repoPath = deps.PrefilledRepoPath ?? string.Empty;
-        Validate();
-        if (!string.IsNullOrWhiteSpace(_repoPath))
-        {
-            _ = EnumerateStashesAsync();
-        }
+        InitializeRepoPath();
     }
 
-    partial void OnRepoPathChanged(string value)
+    protected override void OnRepoPathResolved()
     {
-        // Reset stash state when repo changes.
+        // Reset stash state when the repo changes.
         _stashes = Array.Empty<StashEntry>();
         SelectedStash = null;
         IsLoaded = false;
         OnPropertyChanged(nameof(Stashes));
         OnPropertyChanged(nameof(HasStashes));
         OnPropertyChanged(nameof(IsEmpty));
-        Validate();
 
-        if (!string.IsNullOrWhiteSpace(value))
+        if (!string.IsNullOrWhiteSpace(RepoPath))
         {
             _ = EnumerateStashesAsync();
         }
@@ -85,21 +74,12 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
 
     partial void OnSelectedStashChanged(StashEntry? value) => Validate();
 
-    protected override bool HasRequiredInputs =>
-        !string.IsNullOrWhiteSpace(RepoPath) && SelectedStash is not null;
+    protected override bool HasRequiredLocalInputs => SelectedStash is not null;
 
     protected override string? ComputeValidationError()
     {
-        _canonicalRepoPath = null;
-        if (string.IsNullOrWhiteSpace(RepoPath)) return null;
-
-        var repoResult = Validator.ValidateRepoPath(RepoPath);
-        if (repoResult is not RepoPathValidation.Valid valid)
-        {
-            return ((RepoPathValidation.Invalid)repoResult).Message;
-        }
-
-        _canonicalRepoPath = valid.CanonicalPath;
+        if (RepoPathError is not null) return RepoPathError;
+        if (CanonicalRepoPath is null) return null;
 
         if (IsLoaded && _stashes.Count == 0)
         {
@@ -118,33 +98,44 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
     {
         if (IsLoading) return;
         if (string.IsNullOrWhiteSpace(RepoPath)) return;
+        if (Validator.ValidateRepoPath(RepoPath) is not RepoPathValidation.Valid) return;
 
-        var repoResult = Validator.ValidateRepoPath(RepoPath);
-        if (repoResult is not RepoPathValidation.Valid valid) return;
-
-        var repoPath = valid.CanonicalPath;
         IsLoading = true;
         try
         {
-            var enumerate = () => _enumerator.Enumerate(repoPath);
-            var result = _enumerateRunner is not null
-                ? await _enumerateRunner(enumerate).ConfigureAwait(true)
-                : await Task.Run(enumerate).ConfigureAwait(true);
-
-            // Drop stale results if the repo path changed mid-flight.
-            var currentValidation = Validator.ValidateRepoPath(RepoPath);
-            if (currentValidation is not RepoPathValidation.Valid currentValid
-                || !string.Equals(currentValid.CanonicalPath, repoPath, StringComparison.Ordinal))
+            // Loop rather than drop a stale result. A caller arriving
+            // during a load is turned away by the IsLoading guard above,
+            // so discarding the stale result would leave the newly
+            // selected repo permanently unloaded — nothing else retries.
+            // The worktree picker makes that a one-click path change, so
+            // this is readily reachable. Mirrors
+            // WorktreePickerViewModel.EnsureLoadedAsync.
+            while (true)
             {
+                if (string.IsNullOrWhiteSpace(RepoPath)) return;
+                if (Validator.ValidateRepoPath(RepoPath) is not RepoPathValidation.Valid valid) return;
+
+                var repoPath = valid.CanonicalPath;
+                var enumerate = () => _enumerator.Enumerate(repoPath);
+                var result = _enumerateRunner is not null
+                    ? await _enumerateRunner(enumerate).ConfigureAwait(true)
+                    : await Task.Run(enumerate).ConfigureAwait(true);
+
+                var currentValidation = Validator.ValidateRepoPath(RepoPath);
+                if (currentValidation is not RepoPathValidation.Valid currentValid
+                    || !string.Equals(currentValid.CanonicalPath, repoPath, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _stashes = result.Stashes;
+                IsLoaded = true;
+                OnPropertyChanged(nameof(Stashes));
+                OnPropertyChanged(nameof(HasStashes));
+                OnPropertyChanged(nameof(IsEmpty));
+                Validate();
                 return;
             }
-
-            _stashes = result.Stashes;
-            IsLoaded = true;
-            OnPropertyChanged(nameof(Stashes));
-            OnPropertyChanged(nameof(HasStashes));
-            OnPropertyChanged(nameof(IsEmpty));
-            Validate();
         }
         finally
         {
@@ -161,7 +152,7 @@ public sealed partial class ViewStashFormViewModel : NewDiffFormViewModelBase
         var stash = SelectedStash
             ?? throw new InvalidOperationException("No stash selected.");
         var parsed = new ParsedCommandLine(
-            _canonicalRepoPath ?? RepoPath,
+            CanonicalRepoPath ?? RepoPath,
             new DiffSide.CommitIsh($"{stash.SymbolicName}^1"),
             new DiffSide.CommitIsh(stash.SymbolicName));
         return new DiffLaunchSource.Local(parsed);

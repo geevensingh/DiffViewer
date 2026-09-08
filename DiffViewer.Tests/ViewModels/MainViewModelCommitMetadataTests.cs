@@ -58,7 +58,8 @@ public class MainViewModelCommitMetadataTests : IDisposable
             GitDir: Path.Combine(_repoRoot, ".git"),
             IsBare: false, IsHeadUnborn: false,
             IsSparseCheckout: false, IsPartialClone: false,
-            HasInProgressOperation: false);
+            HasInProgressOperation: false,
+            CommonGitDirectory: Path.Combine(_repoRoot, ".git"));
 
         return new MainViewModel(
             repository: repo,
@@ -186,7 +187,7 @@ public class MainViewModelCommitMetadataTests : IDisposable
 
     private sealed class FakeRepo : IRepositoryService
     {
-        public RepositoryShape Shape_ { get; set; } = new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false);
+        public RepositoryShape Shape_ { get; set; } = new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false, @"C:\repo\.git");
         public RepositoryShape Shape => Shape_;
 
 #pragma warning disable CS0067

@@ -39,6 +39,7 @@ public class NewDiffDialogViewModelTests
             registry,
             validator ?? new FakeValidator(),
             new StubRefEnumerator(),
+            new StubWorktreeEnumerator(),
             new NullRecentContextsService(),
             prefilledRepoPath,
             initialProviderId,

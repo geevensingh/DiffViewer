@@ -114,6 +114,52 @@ public class ViewStashFormViewModelTests
 
     // ---- helpers -------------------------------------------------------
 
+    [Fact]
+    public async Task SwitchingWorktreeMidEnumeration_StillLoadsTheNewCheckoutsStashes()
+    {
+        // The worktree picker rewrites RepoPath in one click. If that
+        // lands while the first enumeration is in flight, the second
+        // request is turned away by the IsLoading guard and the first
+        // drops its result as stale - leaving the new checkout
+        // permanently unloaded unless the load loops.
+        var stashes = new[] { MakeStash(0, "WIP on feature-x") };
+        var enumerator = new FakeStashEnumerator(stashes);
+        var validator = new FakeValidator(repoValid: true);
+        var deps = new FormDependencies(
+            validator, enumerator, new StubWorktreeEnumerator(),
+            new NullRecentContextsService(), PrefilledRepoPath: null);
+
+        ViewStashFormViewModel? form = null;
+        var repointed = false;
+        form = new ViewStashFormViewModel(deps, enumerateRunner: work =>
+        {
+            var result = work();
+            if (!repointed)
+            {
+                repointed = true;
+                form!.RepoPath = @"C:\worktrees\second";
+            }
+            return Task.FromResult(result);
+        });
+
+        // Set the path after construction so the form reference exists
+        // when the runner re-points it mid-flight.
+        form.RepoPath = @"C:\repos\first";
+
+        form.IsLoaded.Should().BeTrue("the loop must re-enumerate the new path");
+        form.Stashes.Should().HaveCount(1);
+        form.HasStashes.Should().BeTrue();
+        enumerator.EnumeratedPaths.Should().Equal(@"C:\repos\first", @"C:\worktrees\second");
+    }
+
+    private static StashEntry MakeStash(int index, string subject) => new(
+        Index: index,
+        SymbolicName: $"stash@{{{index}}}",
+        Subject: subject,
+        CreatedAt: DateTimeOffset.UtcNow,
+        TipSha: new string('a', 40),
+        TipShortSha: "aaaaaaa");
+
     private static ViewStashFormViewModel CreateForm(
         bool repoValid = true,
         string repoPath = "",
@@ -121,7 +167,7 @@ public class ViewStashFormViewModelTests
     {
         var validator = new FakeValidator(repoValid);
         var enumerator = new FakeStashEnumerator(stashes ?? Array.Empty<StashEntry>());
-        var deps = new FormDependencies(validator, enumerator, new NullRecentContextsService(), repoPath);
+        var deps = new FormDependencies(validator, enumerator, new StubWorktreeEnumerator(), new NullRecentContextsService(), repoPath);
         return new ViewStashFormViewModel(deps, enumerateRunner: work => Task.FromResult(work()));
     }
 
@@ -149,12 +195,18 @@ public class ViewStashFormViewModelTests
 
         public FakeStashEnumerator(IReadOnlyList<StashEntry> stashes) => _stashes = stashes;
 
-        public RefEnumerationResult Enumerate(string canonicalRepoPath) =>
-            new RefEnumerationResult(
+        /// <summary>Paths this fake was asked about, in call order.</summary>
+        public List<string> EnumeratedPaths { get; } = new();
+
+        public RefEnumerationResult Enumerate(string canonicalRepoPath)
+        {
+            EnumeratedPaths.Add(canonicalRepoPath);
+            return new RefEnumerationResult(
                 Array.Empty<RefEntry>(),
                 Array.Empty<RefEntry>(),
                 Array.Empty<RefEntry>(),
                 _stashes);
+        }
 
         public string? TryComputeMergeBase(string canonicalRepoPath, string refA, string refB) => null;
         public string? TryGetDefaultRemoteBranch(string canonicalRepoPath) => null;

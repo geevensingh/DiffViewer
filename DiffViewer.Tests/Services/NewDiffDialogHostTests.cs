@@ -270,6 +270,7 @@ public class NewDiffDialogHostTests
             DiffModeRegistry.BuildDefault(),
             new NoOpValidator(),
             new NoOpRefEnumerator(),
+            new StubWorktreeEnumerator(),
             new FakeRecents(),
             new FakeClipboard(),
             () => null);

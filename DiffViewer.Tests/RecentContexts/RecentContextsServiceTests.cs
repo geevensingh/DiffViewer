@@ -23,7 +23,184 @@ public class RecentContextsServiceTests : IDisposable
     public void Dispose()
     {
         try { if (File.Exists(_path)) File.Delete(_path); } catch { /* best-effort */ }
+        foreach (var directory in _scratchDirectories)
+        {
+            try { Directory.Delete(directory, recursive: true); } catch { /* best-effort */ }
+        }
     }
+
+    private readonly List<string> _scratchDirectories = new();
+
+    /// <summary>Build a synthetic checkout on disk: a working directory
+    /// whose <c>.git</c> is either a real directory (main worktree) or a
+    /// pointer file into a shared repo's administrative directory
+    /// (linked worktree). Enough for the label capture on the recents
+    /// write path, which reads files rather than opening libgit2.</summary>
+    private string CreateSyntheticCheckout(string repositoryName, string? worktreeName = null)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"recents-repo-{Guid.NewGuid():N}");
+        _scratchDirectories.Add(root);
+
+        var repository = Path.Combine(root, repositoryName);
+        var commonGitDir = Path.Combine(repository, ".git");
+        Directory.CreateDirectory(commonGitDir);
+
+        if (worktreeName is null) return repository;
+
+        var administrative = Path.Combine(commonGitDir, "worktrees", worktreeName);
+        Directory.CreateDirectory(administrative);
+        File.WriteAllText(Path.Combine(administrative, "commondir"), "../..\n");
+
+        // The worktree directory name deliberately differs from the
+        // worktree's git name, which is the case that makes the path
+        // leaf useless as a label.
+        var worktreeDirectory = Path.Combine(root, "checkouts", $"wt-{worktreeName}");
+        Directory.CreateDirectory(worktreeDirectory);
+        File.WriteAllText(Path.Combine(worktreeDirectory, ".git"), $"gitdir: {administrative}\n");
+        return worktreeDirectory;
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_ForAMainWorktree_StampsTheRepositoryNameAndNoWorktreeName()
+    {
+        var repoPath = CreateSyntheticCheckout("DiffViewer");
+        var svc = new RecentContextsService(_path);
+
+        await svc.RecordLaunchAsync(
+            ContextIdentityFactory.Create(repoPath, Left, Right), Left, Right);
+
+        svc.Current.Should().ContainSingle();
+        svc.Current[0].RepositoryName.Should().Be("DiffViewer");
+        svc.Current[0].WorktreeName.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_ForALinkedWorktree_StampsBothLabels()
+    {
+        var worktreePath = CreateSyntheticCheckout("DiffViewer", worktreeName: "feature-x");
+        var svc = new RecentContextsService(_path);
+
+        await svc.RecordLaunchAsync(
+            ContextIdentityFactory.Create(worktreePath, Left, Right), Left, Right);
+
+        svc.Current[0].RepositoryName.Should().Be("DiffViewer");
+        svc.Current[0].WorktreeName.Should().Be("feature-x");
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_PersistsTheLabelsToDisk()
+    {
+        var worktreePath = CreateSyntheticCheckout("DiffViewer", worktreeName: "feature-x");
+        var svc = new RecentContextsService(_path);
+
+        await svc.RecordLaunchAsync(
+            ContextIdentityFactory.Create(worktreePath, Left, Right), Left, Right);
+
+        var reloaded = new RecentContextsService(_path);
+        await reloaded.LoadAsync();
+
+        reloaded.Current[0].RepositoryName.Should().Be("DiffViewer");
+        reloaded.Current[0].WorktreeName.Should().Be("feature-x");
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_ReRecordingAnUnlabeledRow_HealsItInPlace()
+    {
+        // A row written before worktree labelling existed carries none.
+        // Re-launching the same diff must fill them in rather than
+        // leaving a permanently unlabeled duplicate-looking entry.
+        var worktreePath = CreateSyntheticCheckout("DiffViewer", worktreeName: "feature-x");
+        var identity = ContextIdentityFactory.Create(worktreePath, Left, Right);
+
+        await RecentsStore.ReadAndMutateAsync(_path, _ => RecentsDoc.From(new[]
+        {
+            new RecentLaunchContext(identity, Left, Right, DateTimeOffset.UtcNow.AddDays(-1)),
+        }));
+
+        var svc = new RecentContextsService(_path);
+        await svc.LoadAsync();
+        svc.Current.Should().ContainSingle();
+        svc.Current[0].RepositoryName.Should().BeNull("precondition: the legacy row is unlabeled");
+
+        await svc.RecordLaunchAsync(identity, Left, Right);
+
+        svc.Current.Should().ContainSingle("re-recording bumps the existing row rather than adding one");
+        svc.Current[0].RepositoryName.Should().Be("DiffViewer");
+        svc.Current[0].WorktreeName.Should().Be("feature-x");
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_RunsTheLabelProbeOffTheCallingThread()
+    {
+        // The coordinator awaits this from the UI thread during a context
+        // swap, and the gate completes synchronously when uncontended, so
+        // a synchronous probe would stat the repo path on the dispatcher.
+        // A repo on an offline share would then freeze the window.
+        var repoPath = CreateSyntheticCheckout("DiffViewer", worktreeName: "feature-x");
+        var callingThreadId = Environment.CurrentManagedThreadId;
+        var probeThreadId = callingThreadId;
+
+        var svc = new RecentContextsService(_path, labelRunner: probe => Task.Run(() =>
+        {
+            probeThreadId = Environment.CurrentManagedThreadId;
+            return probe();
+        }));
+
+        await svc.RecordLaunchAsync(
+            ContextIdentityFactory.Create(repoPath, Left, Right), Left, Right);
+
+        probeThreadId.Should().NotBe(callingThreadId);
+        // ...and the labels still land, so the move didn't cost behaviour.
+        svc.Current[0].RepositoryName.Should().Be("DiffViewer");
+        svc.Current[0].WorktreeName.Should().Be("feature-x");
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_YieldsBeforeProbingTheFileSystem()
+    {
+        // Guards the specific trap: `_gate.WaitAsync` completes
+        // synchronously when uncontended, so anything before the first
+        // real await stays on the caller's thread. Gated on a TCS rather
+        // than Task.Yield so the assertion is deterministic — the probe
+        // provably cannot have run when we check.
+        var repoPath = CreateSyntheticCheckout("DiffViewer");
+        var release = new TaskCompletionSource();
+        var probed = false;
+
+        var svc = new RecentContextsService(_path, labelRunner: async probe =>
+        {
+            await release.Task;
+            probed = true;
+            return probe();
+        });
+
+        var pending = svc.RecordLaunchAsync(
+            ContextIdentityFactory.Create(repoPath, Left, Right), Left, Right);
+
+        probed.Should().BeFalse("the probe must not have run synchronously on the caller");
+        release.SetResult();
+        await pending;
+        probed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_ForAPathThatIsNotARepository_LeavesTheLabelsNull()
+    {
+        // The label lookup is best-effort; an unreadable path must not
+        // fail the launch record.
+        var svc = new RecentContextsService(_path);
+        var identity = ContextIdentityFactory.Create(
+            Path.Combine(Path.GetTempPath(), $"not-a-repo-{Guid.NewGuid():N}"), Left, Right);
+
+        await svc.RecordLaunchAsync(identity, Left, Right);
+
+        svc.Current.Should().ContainSingle();
+        svc.Current[0].RepositoryName.Should().BeNull();
+        svc.Current[0].WorktreeName.Should().BeNull();
+    }
+
+    private static readonly DiffSide Left = new DiffSide.CommitIsh("HEAD");
+    private static readonly DiffSide Right = new DiffSide.WorkingTree();
 
     [Fact]
     public void Current_BeforeLoad_IsEmpty()

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DiffViewer.Models;
+using DiffViewer.Utility;
 
 namespace DiffViewer.Services;
 
@@ -35,6 +36,7 @@ public sealed class RecentContextsService : IRecentContextsService
     public const int MaxEntries = 10;
 
     private readonly string _filePath;
+    private readonly Func<Func<WorktreeLabels>, Task<WorktreeLabels>>? _labelRunner;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private IReadOnlyList<RecentLaunchContext> _current = Array.Empty<RecentLaunchContext>();
 
@@ -51,8 +53,22 @@ public sealed class RecentContextsService : IRecentContextsService
     public RecentContextsService() : this(DefaultFilePath) { }
 
     public RecentContextsService(string filePath)
+        : this(filePath, labelRunner: null)
+    {
+    }
+
+    /// <param name="labelRunner">Seam controlling how the worktree-label
+    /// probe is dispatched. Production leaves this null and gets
+    /// <see cref="Task.Run{TResult}(Func{TResult})"/>; tests substitute a
+    /// runner so they can observe which thread the probe lands on.
+    /// Mirrors <see cref="IRootScanRunner"/> in
+    /// <see cref="LocalRepoLocator"/>.</param>
+    internal RecentContextsService(
+        string filePath,
+        Func<Func<WorktreeLabels>, Task<WorktreeLabels>>? labelRunner)
     {
         _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
+        _labelRunner = labelRunner;
     }
 
     /// <summary>
@@ -81,11 +97,32 @@ public sealed class RecentContextsService : IRecentContextsService
         ArgumentNullException.ThrowIfNull(leftDisplay);
         ArgumentNullException.ThrowIfNull(rightDisplay);
 
+        // Probe off the calling thread, and before taking the gate.
+        //
+        // The coordinator awaits this from the UI thread during a context
+        // swap. `_gate.WaitAsync` completes synchronously when
+        // uncontended — which is the normal case — so everything up to
+        // the first real suspension runs on the dispatcher. Describe()
+        // stats the repo path, and a repo on an offline or slow network
+        // share blocks that stat until SMB times out, freezing the
+        // window mid-launch. Awaiting a runner here guarantees the method
+        // yields before touching the file system, per AGENTS.md §9.
+        var repoPath = identity.CanonicalRepoPath;
+        var probe = () => GitWorktreeLayout.Describe(repoPath);
+        var labels = _labelRunner is not null
+            ? await _labelRunner(probe).ConfigureAwait(false)
+            : await Task.Run(probe, ct).ConfigureAwait(false);
+
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            // Labels are captured per launch rather than persisted by the
+            // caller because this is the moment the row is minted, and
+            // MergeAndCap replaces any existing row wholesale — so rows
+            // written by older binaries heal on next launch.
             var fresh = new RecentLaunchContext(
-                identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow, review);
+                identity, leftDisplay, rightDisplay, DateTimeOffset.UtcNow, review,
+                labels.RepositoryName, labels.WorktreeName);
 
             var doc = await RecentsStore.ReadAndMutateAsync(
                 _filePath,

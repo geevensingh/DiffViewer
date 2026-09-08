@@ -39,6 +39,48 @@ public class RepositoryServiceTests
     }
 
     [Fact]
+    public void Shape_ForAMainWorktree_ReportsNoWorktreeName()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "alpha\n");
+        t.InitialCommit();
+        using var svc = new RepositoryService(t.Path);
+
+        svc.Shape.IsLinkedWorktree.Should().BeFalse();
+        svc.Shape.WorktreeName.Should().BeNull();
+        // For a main worktree the git dir *is* the common dir.
+        Normalize(svc.Shape.CommonGitDirectory).Should().Be(Normalize(svc.Shape.GitDir));
+    }
+
+    [Fact]
+    public void Shape_ForALinkedWorktree_ReportsItsNameAndTheSharedCommonDirectory()
+    {
+        using var t = new TempRepo();
+        t.WriteFile("a.txt", "alpha\n");
+        t.InitialCommit();
+        var worktreePath = t.AddWorktree("feature-a");
+
+        using var mainSvc = new RepositoryService(t.Path);
+        using var worktreeSvc = new RepositoryService(worktreePath);
+
+        worktreeSvc.Shape.IsLinkedWorktree.Should().BeTrue();
+        worktreeSvc.Shape.WorktreeName.Should().Be("feature-a");
+        // Compared raw, not normalized: the whole point of
+        // CommonGitDirectory is that two worktrees of one repository
+        // produce the identical string. libgit2 reports a main
+        // worktree's git dir with a trailing separator and the
+        // commondir pointer resolves without one, so this invariant
+        // only holds because the layout helper normalizes both.
+        worktreeSvc.Shape.CommonGitDirectory
+            .Should().Be(mainSvc.Shape.CommonGitDirectory);
+        Normalize(worktreeSvc.Shape.GitDir)
+            .Should().NotBe(Normalize(worktreeSvc.Shape.CommonGitDirectory));
+    }
+
+    private static string Normalize(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path)).ToLowerInvariant();
+
+    [Fact]
     public void EnumerateChanges_CommitVsCommit_ReturnsAddedDeletedModified()
     {
         using var t = new TempRepo();

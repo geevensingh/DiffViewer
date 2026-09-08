@@ -41,6 +41,7 @@ public sealed class NewDiffDialogHost : INewDiffDialogHost
     private readonly DiffModeRegistry _registry;
     private readonly IDiffLaunchValidator _validator;
     private readonly IGitRefEnumerator _refEnumerator;
+    private readonly IGitWorktreeEnumerator _worktreeEnumerator;
     private readonly IRecentContextsService _recentContexts;
     private readonly IClipboardService _clipboard;
     private readonly Func<Window?> _ownerLookup;
@@ -50,6 +51,7 @@ public sealed class NewDiffDialogHost : INewDiffDialogHost
         DiffModeRegistry registry,
         IDiffLaunchValidator validator,
         IGitRefEnumerator refEnumerator,
+        IGitWorktreeEnumerator worktreeEnumerator,
         IRecentContextsService recentContexts,
         IClipboardService clipboard,
         Func<Window?> ownerLookup)
@@ -57,6 +59,7 @@ public sealed class NewDiffDialogHost : INewDiffDialogHost
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _validator = validator ?? throw new ArgumentNullException(nameof(validator));
         _refEnumerator = refEnumerator ?? throw new ArgumentNullException(nameof(refEnumerator));
+        _worktreeEnumerator = worktreeEnumerator ?? throw new ArgumentNullException(nameof(worktreeEnumerator));
         _recentContexts = recentContexts ?? throw new ArgumentNullException(nameof(recentContexts));
         _clipboard = clipboard ?? throw new ArgumentNullException(nameof(clipboard));
         _ownerLookup = ownerLookup ?? throw new ArgumentNullException(nameof(ownerLookup));
@@ -69,7 +72,7 @@ public sealed class NewDiffDialogHost : INewDiffDialogHost
 
         var owner = _ownerLookup();
         var vm = new NewDiffDialogViewModel(
-            _registry, _validator, _refEnumerator, _recentContexts,
+            _registry, _validator, _refEnumerator, _worktreeEnumerator, _recentContexts,
             effectiveRepoPath,
             initialProviderIdOverride ?? _lastProviderId,
             clipboardPrUrl);

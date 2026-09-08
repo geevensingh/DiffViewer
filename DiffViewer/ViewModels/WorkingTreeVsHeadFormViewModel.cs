@@ -1,4 +1,3 @@
-using CommunityToolkit.Mvvm.ComponentModel;
 using DiffViewer.Models;
 using DiffViewer.Services;
 
@@ -9,46 +8,26 @@ namespace DiffViewer.ViewModels;
 /// On submit, builds the same <see cref="ParsedCommandLine"/> the CLI
 /// produces for an argv of <c>[repoPath]</c>:
 /// <c>left = CommitIsh("HEAD"), right = WorkingTree</c>.
+///
+/// <para>Which worktree the path points at is not incidental here:
+/// <c>HEAD</c> is per-worktree, so this form compares against a
+/// different commit depending on the checkout chosen in the worktree
+/// picker.</para>
 /// </summary>
-public sealed partial class WorkingTreeVsHeadFormViewModel : NewDiffFormViewModelBase
+public sealed partial class WorkingTreeVsHeadFormViewModel : LocalRepoFormViewModelBase
 {
-    /// <summary>The validated repo root, populated by
-    /// <see cref="NewDiffFormViewModelBase.ComputeValidationError"/>.
-    /// Reset to null on every input change.</summary>
-    private string? _canonicalRepoPath;
-
-    [ObservableProperty]
-    private string _repoPath;
-
     public WorkingTreeVsHeadFormViewModel(FormDependencies deps)
-        : base(deps.Validator)
+        : base(deps)
     {
-        _repoPath = deps.PrefilledRepoPath ?? string.Empty;
-        Validate();
+        InitializeRepoPath();
     }
 
-    partial void OnRepoPathChanged(string value) => Validate();
-
-    protected override bool HasRequiredInputs => !string.IsNullOrWhiteSpace(RepoPath);
-
-    protected override string? ComputeValidationError()
-    {
-        _canonicalRepoPath = null;
-        if (string.IsNullOrWhiteSpace(RepoPath)) return null;
-
-        var result = Validator.ValidateRepoPath(RepoPath);
-        if (result is RepoPathValidation.Valid v)
-        {
-            _canonicalRepoPath = v.CanonicalPath;
-            return null;
-        }
-        return ((RepoPathValidation.Invalid)result).Message;
-    }
+    protected override string? ComputeValidationError() => RepoPathError;
 
     public override DiffLaunchSource BuildLaunchSource()
     {
         var parsed = new ParsedCommandLine(
-            _canonicalRepoPath ?? RepoPath,
+            CanonicalRepoPath ?? RepoPath,
             new DiffSide.CommitIsh("HEAD"),
             new DiffSide.WorkingTree());
         return new DiffLaunchSource.Local(parsed);

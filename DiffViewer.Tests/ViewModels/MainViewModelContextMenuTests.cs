@@ -615,7 +615,8 @@ public class MainViewModelContextMenuTests : IDisposable
                 IsHeadUnborn: false,
                 IsSparseCheckout: false,
                 IsPartialClone: false,
-                HasInProgressOperation: false);
+                HasInProgressOperation: false,
+                CommonGitDirectory: System.IO.Path.Combine(repoRoot, ".git"));
 
         public RepositoryShape Shape { get; }
 

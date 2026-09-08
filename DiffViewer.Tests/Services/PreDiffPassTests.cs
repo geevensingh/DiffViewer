@@ -375,7 +375,7 @@ public sealed class PreDiffPassTests
 
     private sealed class FakeRepo : IRepositoryService
     {
-        public RepositoryShape Shape => new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false);
+        public RepositoryShape Shape => new(@"C:\repo", @"C:\repo", @"C:\repo\.git", false, false, false, false, false, @"C:\repo\.git");
         public IReadOnlyList<FileChange> CurrentChanges { get; } = Array.Empty<FileChange>();
         public event EventHandler<ChangeListUpdatedEventArgs>? ChangeListUpdated { add { } remove { } }
         public event EventHandler<RepositoryLostEventArgs>? RepositoryLost { add { } remove { } }

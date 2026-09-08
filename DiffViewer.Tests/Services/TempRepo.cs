@@ -13,6 +13,7 @@ internal sealed class TempRepo : IDisposable
 {
     private readonly string _tempPath;
     private readonly Signature _author = new("Test", "test@example.com", DateTimeOffset.UtcNow);
+    private readonly List<string> _worktreePaths = new();
 
     public string Path => _tempPath;
     public Signature Author => _author;
@@ -158,8 +159,43 @@ internal sealed class TempRepo : IDisposable
         return stash.WorkTree;
     }
 
+    /// <summary>Create a linked worktree (<c>git worktree add</c>) in its
+    /// own temp directory outside this repo, and return its path. Requires
+    /// at least one commit on HEAD. When <paramref name="committish"/> is
+    /// null, git creates a new branch named <paramref name="name"/> and
+    /// checks it out; otherwise the given committish is checked out.
+    /// The directory is cleaned up by <see cref="Dispose"/>.</summary>
+    public string AddWorktree(string name, string? committish = null)
+    {
+        var path = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(),
+            "diffviewer-test-wt-" + Guid.NewGuid().ToString("N"));
+        _worktreePaths.Add(path);
+
+        using var repo = new Repository(_tempPath);
+        if (committish is null)
+        {
+            repo.Worktrees.Add(name, path, isLocked: false);
+        }
+        else
+        {
+            repo.Worktrees.Add(committish, name, path, isLocked: false);
+        }
+        return path;
+    }
+
+    /// <summary>Delete a worktree's directory from disk without telling
+    /// git — the state <c>git worktree list</c> reports as "prunable".
+    /// Used to exercise the missing-worktree path.</summary>
+    public static void DeleteDirectory(string path) => ForceDelete(path);
+
     public void Dispose()
     {
+        foreach (var worktreePath in _worktreePaths)
+        {
+            ForceDelete(worktreePath);
+        }
+
         try
         {
             // LibGit2Sharp marks .git internals read-only on Windows; clear before delete.
@@ -171,6 +207,26 @@ internal sealed class TempRepo : IDisposable
                 }
                 Directory.Delete(_tempPath, recursive: true);
             }
+        }
+        catch
+        {
+            // Best-effort cleanup - don't fail the test on temp-dir leak.
+        }
+    }
+
+    /// <summary>Best-effort recursive delete that first clears the
+    /// read-only attribute LibGit2Sharp sets on git internals — plain
+    /// <see cref="Directory.Delete(string, bool)"/> throws on those.</summary>
+    private static void ForceDelete(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path)) return;
+            foreach (var f in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            {
+                try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+            }
+            Directory.Delete(path, recursive: true);
         }
         catch
         {

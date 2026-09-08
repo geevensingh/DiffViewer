@@ -39,6 +39,13 @@ namespace DiffViewer.ViewModels;
 /// wired only when both a <see cref="IContextSwitcher"/> and a
 /// <see cref="INewDiffDialogHost"/> are provided; tests that don't
 /// exercise that path leave them null and the button hides.</para>
+///
+/// <para><b>WorktreePicker</b> re-points the <em>current</em> diff at
+/// another worktree of the same repository, keeping both sides
+/// untouched. It reuses <see cref="WorktreePickerViewModel"/> — the
+/// same VM the "New diff" dialog binds — with a write-back that runs
+/// an in-place context switch instead of editing a text box. Wired
+/// only when a switcher and a worktree enumerator are supplied.</para>
 /// </summary>
 public sealed class RecentContextsViewModel : ObservableObject, IDisposable
 {
@@ -52,7 +59,8 @@ public sealed class RecentContextsViewModel : ObservableObject, IDisposable
         IRecentContextsService service,
         IContextSwitcher? switcher,
         ContextIdentity? currentIdentity,
-        INewDiffDialogHost? newDiffDialogHost = null)
+        INewDiffDialogHost? newDiffDialogHost = null,
+        IGitWorktreeEnumerator? worktreeEnumerator = null)
     {
         _service = service ?? throw new ArgumentNullException(nameof(service));
         _switcher = switcher;
@@ -66,6 +74,61 @@ public sealed class RecentContextsViewModel : ObservableObject, IDisposable
         }
 
         NewDiffCommand = new AsyncRelayCommand(OpenNewDiffAsync, () => IsNewDiffEnabled);
+
+        IsWorktreeSwitchEnabled = worktreeEnumerator is not null
+            && _switcher is not null
+            && _currentIdentity is not null;
+        WorktreePicker = IsWorktreeSwitchEnabled
+            ? new WorktreePickerViewModel(
+                worktreeEnumerator!,
+                writeBack: path => _ = SwitchToWorktreeAsync(path),
+                initialCanonicalRepoPath: _currentIdentity!.Value.CanonicalRepoPath)
+            : null;
+    }
+
+    /// <summary>
+    /// Picker listing the worktrees of the active repository, or
+    /// <c>null</c> when worktree switching isn't wired (cold-launch
+    /// empty state, tests). The view hides its trigger when null.
+    /// </summary>
+    public WorktreePickerViewModel? WorktreePicker { get; }
+
+    /// <summary>True when the worktree switcher should be shown.</summary>
+    public bool IsWorktreeSwitchEnabled { get; }
+
+    /// <summary>
+    /// Re-open the current comparison rooted at another worktree.
+    /// Both sides are carried over verbatim: the point is to ask the
+    /// same question of a different checkout. Note that a ref like
+    /// <c>HEAD</c> is per-worktree, so the answer legitimately differs.
+    /// </summary>
+    private async Task SwitchToWorktreeAsync(string workingDirectory)
+    {
+        if (_switcher is null || _currentIdentity is null) return;
+        if (string.IsNullOrWhiteSpace(workingDirectory)) return;
+        if (ContextIdentityFactory.RepoPathsEqual(
+                workingDirectory, _currentIdentity.Value.CanonicalRepoPath))
+        {
+            // Already here; a switch would tear down and rebuild the
+            // whole context for no change.
+            return;
+        }
+
+        var parsed = new ParsedCommandLine(
+            workingDirectory,
+            _currentIdentity.Value.Left,
+            _currentIdentity.Value.Right);
+
+        try
+        {
+            await _switcher.SwitchToAsync(
+                new DiffLaunchSource.Local(parsed), CancellationToken.None).ConfigureAwait(true);
+        }
+        catch
+        {
+            // The switcher surfaces its own errors to the user; a
+            // failed switch must not take the shell down with it.
+        }
     }
 
     /// <summary>MRU-ordered snapshot from the singleton service.</summary>
@@ -247,17 +310,40 @@ public sealed class RecentContextItem : IEquatable<RecentContextItem>
     public RecentLaunchContext Source { get; }
 
     /// <summary>Primary line. e.g. <c>"DevTools · main → &lt;working-tree&gt;"</c>
-    /// for local rows, <c>"DevTools · PR owner/repo#42"</c> for review-mode rows.</summary>
+    /// for local rows, <c>"DevTools · PR owner/repo#42"</c> for review-mode rows.
+    /// A row pointing at a linked worktree carries the worktree's name in
+    /// brackets — <c>"DiffViewer [feature-x] · HEAD → WT"</c> — because
+    /// otherwise every worktree of a repository renders identically apart
+    /// from a path the dropdown doesn't show.</summary>
     public string Title
     {
         get
         {
-            var name = SafeBaseName(Source.Identity.CanonicalRepoPath);
+            var name = RepositoryLabel;
             if (Source.Review is { } review)
             {
                 return $"{name} · PR {review.Slug}";
             }
             return $"{name} · {ShortLabelFor(Source.LeftDisplay)} → {ShortLabelFor(Source.RightDisplay)}";
+        }
+    }
+
+    /// <summary>
+    /// The repository portion of <see cref="Title"/>. Prefers the
+    /// repository name captured at launch time, falling back to the
+    /// path's leaf for rows written before worktree labelling existed.
+    /// </summary>
+    private string RepositoryLabel
+    {
+        get
+        {
+            var name = string.IsNullOrWhiteSpace(Source.RepositoryName)
+                ? SafeBaseName(Source.Identity.CanonicalRepoPath)
+                : Source.RepositoryName!;
+
+            return string.IsNullOrWhiteSpace(Source.WorktreeName)
+                ? name
+                : $"{name} [{Source.WorktreeName}]";
         }
     }
 

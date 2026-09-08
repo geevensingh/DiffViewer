@@ -148,11 +148,13 @@ public partial class App : Application
         var diffLaunchValidator = new DiffLaunchValidator(new ProcessCommandLineEnvironment());
         var diffModeRegistry = DiffModeRegistry.BuildDefault();
         var refEnumerator = new LibGit2GitRefEnumerator();
+        var worktreeEnumerator = new LibGit2GitWorktreeEnumerator();
         var clipboardService = new WpfClipboardService();
         var newDiffDialogHost = new NewDiffDialogHost(
             diffModeRegistry,
             diffLaunchValidator,
             refEnumerator,
+            worktreeEnumerator,
             recents,
             clipboardService,
             ownerLookup: () => Application.Current?.MainWindow);
@@ -162,7 +164,8 @@ public partial class App : Application
             prResolver, missingClonePromptHost, newDiffDialogHost,
             GitHubClient: githubClient,
             PullRequestLocalFetcher: fetcher,
-            WindowVisibilityProbe: new WpfWindowVisibilityProbe());
+            WindowVisibilityProbe: new WpfWindowVisibilityProbe(),
+            WorktreeEnumerator: worktreeEnumerator);
 
         _coordinator = new MainWindowCoordinator(
             services,

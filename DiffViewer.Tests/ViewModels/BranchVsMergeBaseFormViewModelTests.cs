@@ -62,7 +62,7 @@ public class BranchVsMergeBaseFormViewModelTests
         FakeValidator validator,
         FakeEnumerator enumerator,
         string? prefilledRepoPath = null)
-        => new(validator, enumerator, new NullRecentContextsService(), prefilledRepoPath);
+        => new(validator, enumerator, new StubWorktreeEnumerator(), new NullRecentContextsService(), prefilledRepoPath);
 
     [Fact]
     public void Empty_NotValid_NoError()

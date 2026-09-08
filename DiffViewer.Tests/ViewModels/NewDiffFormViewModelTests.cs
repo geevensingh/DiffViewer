@@ -55,7 +55,7 @@ public class NewDiffFormViewModelTests
         IDiffLaunchValidator validator,
         string? prefilledRepoPath = null,
         string? seedPullRequestUrl = null)
-        => new(validator, new StubRefEnumerator(), new NullRecentContextsService(),
+        => new(validator, new StubRefEnumerator(), new StubWorktreeEnumerator(), new NullRecentContextsService(),
                prefilledRepoPath, seedPullRequestUrl);
 
     // === WorkingTreeVsHeadFormViewModel ===

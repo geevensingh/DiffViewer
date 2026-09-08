@@ -103,6 +103,17 @@ internal static class RecentsJsonSerializer
             // deserialises correctly (missing provider = "github").
             row["pullRequest"] = SerializeReview(review);
         }
+        // Worktree labels are additive display metadata: omitted when
+        // unknown, and ignored by binaries that predate them. Both
+        // directions of version drift stay readable.
+        if (item.RepositoryName is { } repositoryName)
+        {
+            row["repositoryName"] = repositoryName;
+        }
+        if (item.WorktreeName is { } worktreeName)
+        {
+            row["worktreeName"] = worktreeName;
+        }
         return row;
     }
 
@@ -153,7 +164,10 @@ internal static class RecentsJsonSerializer
 
         var pullRequest = TryDeserializeReview(obj["pullRequest"]);
         var identity = ContextIdentityFactory.Create(repoPath, left, right);
-        return new RecentLaunchContext(identity, left, right, lastUsed, pullRequest);
+        return new RecentLaunchContext(
+            identity, left, right, lastUsed, pullRequest,
+            TryString(obj, "repositoryName"),
+            TryString(obj, "worktreeName"));
     }
 
     private static IReviewRef? TryDeserializeReview(JsonNode? node)

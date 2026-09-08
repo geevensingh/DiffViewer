@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:DiffViewer.ViewModels"
+             xmlns:vw="clr-namespace:DiffViewer.Views"
              d:DataContext="{d:DesignInstance Type=vm:RecentContextsViewModel}"
              mc:Ignorable="d">
     <UserControl.Resources>
@@ -17,6 +18,7 @@
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
@@ -41,12 +43,31 @@
                 </ComboBox.ItemTemplate>
             </ComboBox>
 
+            <!-- Worktree switcher: re-opens the same comparison rooted
+                 at another worktree of the same repository. Hidden when
+                 no enumerator/switcher is wired (cold-launch empty
+                 state, tests). -->
+            <ToggleButton x:Name="WorktreeToggle"
+                          Grid.Column="1"
+                          Margin="6,0,0,0"
+                          Padding="10,2"
+                          MinWidth="80"
+                          Content="Worktree"
+                          IsEnabled="{Binding IsEnabled}"
+                          Visibility="{Binding IsWorktreeSwitchEnabled, Converter={StaticResource BoolToVis}}"
+                          AutomationProperties.Name="Switch worktree"
+                          ToolTip="Show this same diff in another worktree of this repository"/>
+            <vw:WorktreePicker Grid.Column="1"
+                               DataContext="{Binding WorktreePicker}"
+                               IsOpen="{Binding IsChecked, ElementName=WorktreeToggle, Mode=TwoWay}"
+                               PlacementTarget="{Binding ElementName=WorktreeToggle}"/>
+
             <!-- "+ New diff" opens the mode-picker dialog (commit vs
                  commit, working tree vs HEAD/commit, GitHub PR, etc.).
                  Hidden when no dialog host or switcher is wired (tests,
                  degenerate startup paths) so we never present a
                  non-functional button. -->
-            <Button Grid.Column="1"
+            <Button Grid.Column="2"
                     Margin="6,0,0,0"
                     Padding="10,2"
                     MinWidth="90"

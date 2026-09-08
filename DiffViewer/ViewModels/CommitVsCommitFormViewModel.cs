@@ -14,14 +14,8 @@ namespace DiffViewer.ViewModels;
 /// they share the form's canonical repo path so both target the same
 /// repository's branches / tags / recent refs.</para>
 /// </summary>
-public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBase
+public sealed partial class CommitVsCommitFormViewModel : LocalRepoFormViewModelBase
 {
-    private string? _canonicalRepoPath;
-    private string? _repoPathError;
-
-    [ObservableProperty]
-    private string _repoPath;
-
     [ObservableProperty]
     private string _baseCommit;
 
@@ -32,9 +26,8 @@ public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBa
     public RefPickerViewModel CompareCommitPicker { get; }
 
     public CommitVsCommitFormViewModel(FormDependencies deps)
-        : base(deps.Validator)
+        : base(deps)
     {
-        _repoPath = deps.PrefilledRepoPath ?? string.Empty;
         _baseCommit = string.Empty;
         _compareCommit = string.Empty;
         BaseCommitPicker = new RefPickerViewModel(
@@ -43,62 +36,26 @@ public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBa
         CompareCommitPicker = new RefPickerViewModel(
             deps.RefEnumerator, deps.RecentContexts,
             writeBack: value => CompareCommit = value);
-        // Canonicalize the prefilled repo path BEFORE the first
-        // Validate() so both pickers are enabled on dialog open when
-        // launching with an already-open context. Mirrors the
-        // OnRepoPathChanged ordering.
-        TryUpdateCanonicalRepoPath();
-        SyncPickerRepoPath();
-        Validate();
-    }
-
-    partial void OnRepoPathChanged(string value)
-    {
-        TryUpdateCanonicalRepoPath();
-        SyncPickerRepoPath();
-        Validate();
+        InitializeRepoPath();
     }
 
     partial void OnBaseCommitChanged(string value) => Validate();
     partial void OnCompareCommitChanged(string value) => Validate();
 
-    protected override bool HasRequiredInputs =>
-        !string.IsNullOrWhiteSpace(RepoPath)
-        && !string.IsNullOrWhiteSpace(BaseCommit)
+    protected override bool HasRequiredLocalInputs =>
+        !string.IsNullOrWhiteSpace(BaseCommit)
         && !string.IsNullOrWhiteSpace(CompareCommit);
 
-    /// <summary>
-    /// Resolve the user's repo-path input into either a canonical
-    /// repository root (stored in <see cref="_canonicalRepoPath"/>,
-    /// consumed by both pickers for branch enumeration and by
-    /// <see cref="BuildLaunchSource"/>) or a deferred validation
-    /// message (stored in <see cref="_repoPathError"/>, surfaced by
-    /// <see cref="ComputeValidationError"/> once the rest of the form
-    /// is populated). See the WorkingTreeVsCommit form's copy of this
-    /// method for the bug-history rationale behind decoupling
-    /// canonicalization from validation.
-    /// </summary>
-    private void TryUpdateCanonicalRepoPath()
+    protected override void OnRepoPathResolved()
     {
-        _canonicalRepoPath = null;
-        _repoPathError = null;
-        if (string.IsNullOrWhiteSpace(RepoPath)) return;
-
-        var result = Validator.ValidateRepoPath(RepoPath);
-        if (result is RepoPathValidation.Valid v)
-        {
-            _canonicalRepoPath = v.CanonicalPath;
-        }
-        else
-        {
-            _repoPathError = ((RepoPathValidation.Invalid)result).Message;
-        }
+        BaseCommitPicker.CanonicalRepoPath = CanonicalRepoPath;
+        CompareCommitPicker.CanonicalRepoPath = CanonicalRepoPath;
     }
 
     protected override string? ComputeValidationError()
     {
         if (!HasRequiredInputs) return null;
-        if (_repoPathError is not null) return _repoPathError;
+        if (RepoPathError is not null) return RepoPathError;
 
         // Validate BOTH commit-ish fields against the canonical repo
         // path and surface every error at once. Stopping at the first
@@ -106,8 +63,8 @@ public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBa
         // which is the opposite of helpful when the user mistyped both
         // (or, more commonly, used a default-branch name like `main`
         // for a repo whose default branch is `master`).
-        var baseResult = Validator.ValidateCommitIsh(_canonicalRepoPath!, BaseCommit);
-        var compareResult = Validator.ValidateCommitIsh(_canonicalRepoPath!, CompareCommit);
+        var baseResult = Validator.ValidateCommitIsh(CanonicalRepoPath!, BaseCommit);
+        var compareResult = Validator.ValidateCommitIsh(CanonicalRepoPath!, CompareCommit);
 
         var baseError = (baseResult as CommitIshValidation.Invalid)?.Message;
         var compareError = (compareResult as CommitIshValidation.Invalid)?.Message;
@@ -123,15 +80,9 @@ public sealed partial class CommitVsCommitFormViewModel : NewDiffFormViewModelBa
     public override DiffLaunchSource BuildLaunchSource()
     {
         var parsed = new ParsedCommandLine(
-            _canonicalRepoPath ?? RepoPath,
+            CanonicalRepoPath ?? RepoPath,
             new DiffSide.CommitIsh(BaseCommit),
             new DiffSide.CommitIsh(CompareCommit));
         return new DiffLaunchSource.Local(parsed);
-    }
-
-    private void SyncPickerRepoPath()
-    {
-        BaseCommitPicker.CanonicalRepoPath = _canonicalRepoPath;
-        CompareCommitPicker.CanonicalRepoPath = _canonicalRepoPath;
     }
 }
