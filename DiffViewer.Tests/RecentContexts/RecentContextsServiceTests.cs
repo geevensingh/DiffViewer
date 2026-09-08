@@ -160,13 +160,16 @@ public class RecentContextsServiceTests : IDisposable
     {
         // Guards the specific trap: `_gate.WaitAsync` completes
         // synchronously when uncontended, so anything before the first
-        // real await stays on the caller's thread.
+        // real await stays on the caller's thread. Gated on a TCS rather
+        // than Task.Yield so the assertion is deterministic — the probe
+        // provably cannot have run when we check.
         var repoPath = CreateSyntheticCheckout("DiffViewer");
+        var release = new TaskCompletionSource();
         var probed = false;
 
         var svc = new RecentContextsService(_path, labelRunner: async probe =>
         {
-            await Task.Yield();
+            await release.Task;
             probed = true;
             return probe();
         });
@@ -175,6 +178,7 @@ public class RecentContextsServiceTests : IDisposable
             ContextIdentityFactory.Create(repoPath, Left, Right), Left, Right);
 
         probed.Should().BeFalse("the probe must not have run synchronously on the caller");
+        release.SetResult();
         await pending;
         probed.Should().BeTrue();
     }

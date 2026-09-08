@@ -98,33 +98,44 @@ public sealed partial class ViewStashFormViewModel : LocalRepoFormViewModelBase
     {
         if (IsLoading) return;
         if (string.IsNullOrWhiteSpace(RepoPath)) return;
+        if (Validator.ValidateRepoPath(RepoPath) is not RepoPathValidation.Valid) return;
 
-        var repoResult = Validator.ValidateRepoPath(RepoPath);
-        if (repoResult is not RepoPathValidation.Valid valid) return;
-
-        var repoPath = valid.CanonicalPath;
         IsLoading = true;
         try
         {
-            var enumerate = () => _enumerator.Enumerate(repoPath);
-            var result = _enumerateRunner is not null
-                ? await _enumerateRunner(enumerate).ConfigureAwait(true)
-                : await Task.Run(enumerate).ConfigureAwait(true);
-
-            // Drop stale results if the repo path changed mid-flight.
-            var currentValidation = Validator.ValidateRepoPath(RepoPath);
-            if (currentValidation is not RepoPathValidation.Valid currentValid
-                || !string.Equals(currentValid.CanonicalPath, repoPath, StringComparison.Ordinal))
+            // Loop rather than drop a stale result. A caller arriving
+            // during a load is turned away by the IsLoading guard above,
+            // so discarding the stale result would leave the newly
+            // selected repo permanently unloaded — nothing else retries.
+            // The worktree picker makes that a one-click path change, so
+            // this is readily reachable. Mirrors
+            // WorktreePickerViewModel.EnsureLoadedAsync.
+            while (true)
             {
+                if (string.IsNullOrWhiteSpace(RepoPath)) return;
+                if (Validator.ValidateRepoPath(RepoPath) is not RepoPathValidation.Valid valid) return;
+
+                var repoPath = valid.CanonicalPath;
+                var enumerate = () => _enumerator.Enumerate(repoPath);
+                var result = _enumerateRunner is not null
+                    ? await _enumerateRunner(enumerate).ConfigureAwait(true)
+                    : await Task.Run(enumerate).ConfigureAwait(true);
+
+                var currentValidation = Validator.ValidateRepoPath(RepoPath);
+                if (currentValidation is not RepoPathValidation.Valid currentValid
+                    || !string.Equals(currentValid.CanonicalPath, repoPath, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _stashes = result.Stashes;
+                IsLoaded = true;
+                OnPropertyChanged(nameof(Stashes));
+                OnPropertyChanged(nameof(HasStashes));
+                OnPropertyChanged(nameof(IsEmpty));
+                Validate();
                 return;
             }
-
-            _stashes = result.Stashes;
-            IsLoaded = true;
-            OnPropertyChanged(nameof(Stashes));
-            OnPropertyChanged(nameof(HasStashes));
-            OnPropertyChanged(nameof(IsEmpty));
-            Validate();
         }
         finally
         {
