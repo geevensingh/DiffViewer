@@ -3,8 +3,9 @@
 All notable changes to DiffViewer are documented in this file.
 
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-(with the pre-1.0 carve-out: breaking changes ride in minor bumps until v1.0.0).
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Major bumps are reserved for changes that can disturb an existing install;
+see "What counts as 'breaking'" in `AGENTS.md` §12 for the specifics.
 
 `.github/workflows/release.yml` reads the section matching the pushed tag
 (e.g. `## [0.2.0]` for `v0.2.0`) verbatim and uses it as the GitHub Release

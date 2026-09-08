@@ -444,19 +444,30 @@ to touch `CHANGELOG.md`.
 
 ### When to release
 
-Each release is a user-visible Windows `.exe` artifact downloaded from
-GitHub Releases. There is no auto-update channel and no nightly feed
-— releases *are* the distribution. Tag deliberately, not on a fixed
-cadence and not per commit.
+Each release is a user-visible Windows artifact downloaded from GitHub
+Releases — and, for installs that came through the Velopack `Setup.exe`,
+the payload that in-field copies upgrade *themselves* to. There is no
+nightly feed; releases *are* the distribution. Tag deliberately, not on
+a fixed cadence and not per commit.
 
-**Bump rules (pre-1.0 SemVer):**
+**Bump rules (SemVer):**
 
-- User-facing feature added → **minor** bump (e.g., `v0.1.0` →
-  `v0.2.0`).
-- Bug-fix-only batch → **patch** bump (e.g., `v0.1.0` → `v0.1.1`).
-- Pre-1.0 breaking changes ride in minor bumps (standard SemVer
-  carve-out for `0.y.z`). Once the project hits `1.0.0`, breaking
-  changes require a major bump.
+- User-facing feature added → **minor** bump (e.g., `v1.9.0` →
+  `v1.10.0`).
+- Bug-fix-only batch → **patch** bump (e.g., `v1.9.0` → `v1.9.1`).
+- Breaking change → **major** bump (e.g., `v1.9.0` → `v2.0.0`). See
+  "What counts as 'breaking'" below.
+
+The project is past `1.0.0`, so the pre-1.0 carve-out that let
+breaking changes ride in minor bumps no longer applies.
+
+**Major bumps are reserved for compatibility breaks.** Size is not a
+trigger. A large feature, a rewritten pane, or a redesigned UI is
+still a **minor** bump so long as it doesn't disturb an existing
+install. Say "this one is big" in the `CHANGELOG.md` section and the
+release title, not in the version number — a major that only means
+"big" teaches users that majors are safe to take, which is precisely
+backwards on the one occasion the signal matters.
 
 **Skip releases for** doc-only commits, build hygiene, test-only
 changes, and pure refactors that don't change shipped behavior. These
@@ -478,6 +489,76 @@ release work", or "do the obvious cleanup" is **not** authorization
 to tag. Recommending a release in conversation is fine and
 encouraged when a meaningful delta has accumulated; pushing the tag
 without an explicit command is not.
+
+### What counts as "breaking"
+
+DiffViewer publishes no library and has no external API consumers, so
+the usual "a public signature changed" test says nothing useful here.
+Use this instead:
+
+> A breaking change is an upgrade that can disturb an existing
+> install.
+
+Six surfaces carry that risk. A change that violates any of them is
+breaking no matter how small the diff is:
+
+1. **The CLI argv contract.** Three launch forms, all documented in
+   `README.md` and dispatched by `Services/CommandLineParser.cs`: the
+   positional form (`DiffViewer.exe <repo> <base> <compare>`), the flag
+   form (`--repo` / `--left` / `--right` / `--file`), and a lone GitHub
+   pull-request URL, which `ParseLaunch` routes to the PR resolver
+   before positional parsing ever runs. Users wire these into shell
+   aliases, `git` aliases, and editor integrations that live outside
+   this repo, so changing what a positional slot means, dropping a
+   flag, or narrowing which URLs parse breaks setups we can neither see
+   nor migrate.
+2. **On-disk state formats.** `settings.json` and `recents.json` under
+   `%APPDATA%\DiffViewer`. Both are versioned contracts, and they use
+   deliberately *opposite* strategies — a change here must not silently
+   break either:
+   - `settings.json` migrates forward and refuses to go backward.
+     `SettingsMigrations.MigrateUpTo` chains registered v(N) → v(N+1)
+     steps and throws if one is missing. When the file's
+     `schemaVersion` is newer than the binary, `SettingsService`
+     declines to read it, moves it aside to
+     `settings.json.bak.<unix-time>`, and starts from defaults.
+   - `recents.json` is forgiving instead. `RecentsJsonSerializer`
+     reads the stored version and discards it, keeps every row that
+     parses, ignores unknown sibling fields, and re-stamps the file at
+     `RecentsDoc.CurrentVersion` on the next write — so version drift
+     heals itself.
+
+   Break either and a user loses their setup on upgrade, or has it
+   quietly reset on downgrade.
+3. **Install footprint.** `App.xaml.cs` wires `UserPathRegistrar` into
+   Velopack's after-install / after-update / before-uninstall
+   callbacks, putting `AppContext.BaseDirectory` — the stable Velopack
+   `current` directory — onto the per-user `PATH` through
+   `WindowsUserPathStore`, so `diffviewer` resolves from any new
+   terminal. Two distinct breaks live here: renaming the executable
+   leaves the `PATH` entry valid but stops the old command name from
+   resolving, while changing which directory gets registered strands a
+   stale entry pointing at nothing. These hooks only fire for the
+   Velopack-installed copy — portable and dev launches never register.
+4. **Keyboard shortcuts.** `Models/KeyboardShortcutCatalog.cs`. Adding
+   a binding is a feature; repointing an existing binding at a
+   different action is a silent behavioural break — muscle memory
+   starts doing something the user never asked for, with no error to
+   read.
+5. **The update channel.** An install finds its upgrades through the
+   identity `VelopackUpdateService.TryCreateForInstalled` resolves
+   against — a `GithubSource` pointed at this repo's Releases — paired
+   with the `vpk pack --packId DiffViewer` that stamps `release.yml`'s
+   output. Change either side and in-field installs stop matching the
+   feed. That is maximally breaking: it removes the very mechanism by
+   which a subsequent fix would have reached them.
+6. **The platform floor.** `README.md` promises Windows 10 or later on
+   **x64**, and the Release config pins `RuntimeIdentifier win-x64`
+   with `SelfContained` on top of `net8.0-windows`. Raising the OS
+   floor or changing the architecture strands machines that run the app
+   today. This one compounds with surface 5: because updates install
+   themselves, an in-field copy can be upgraded into a build it can no
+   longer run without its owner ever choosing to.
 
 ## 13. Origin
 
