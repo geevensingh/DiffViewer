@@ -130,6 +130,56 @@ public class RecentContextsServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RecordLaunchAsync_RunsTheLabelProbeOffTheCallingThread()
+    {
+        // The coordinator awaits this from the UI thread during a context
+        // swap, and the gate completes synchronously when uncontended, so
+        // a synchronous probe would stat the repo path on the dispatcher.
+        // A repo on an offline share would then freeze the window.
+        var repoPath = CreateSyntheticCheckout("DiffViewer", worktreeName: "feature-x");
+        var callingThreadId = Environment.CurrentManagedThreadId;
+        var probeThreadId = callingThreadId;
+
+        var svc = new RecentContextsService(_path, labelRunner: probe => Task.Run(() =>
+        {
+            probeThreadId = Environment.CurrentManagedThreadId;
+            return probe();
+        }));
+
+        await svc.RecordLaunchAsync(
+            ContextIdentityFactory.Create(repoPath, Left, Right), Left, Right);
+
+        probeThreadId.Should().NotBe(callingThreadId);
+        // ...and the labels still land, so the move didn't cost behaviour.
+        svc.Current[0].RepositoryName.Should().Be("DiffViewer");
+        svc.Current[0].WorktreeName.Should().Be("feature-x");
+    }
+
+    [Fact]
+    public async Task RecordLaunchAsync_YieldsBeforeProbingTheFileSystem()
+    {
+        // Guards the specific trap: `_gate.WaitAsync` completes
+        // synchronously when uncontended, so anything before the first
+        // real await stays on the caller's thread.
+        var repoPath = CreateSyntheticCheckout("DiffViewer");
+        var probed = false;
+
+        var svc = new RecentContextsService(_path, labelRunner: async probe =>
+        {
+            await Task.Yield();
+            probed = true;
+            return probe();
+        });
+
+        var pending = svc.RecordLaunchAsync(
+            ContextIdentityFactory.Create(repoPath, Left, Right), Left, Right);
+
+        probed.Should().BeFalse("the probe must not have run synchronously on the caller");
+        await pending;
+        probed.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task RecordLaunchAsync_ForAPathThatIsNotARepository_LeavesTheLabelsNull()
     {
         // The label lookup is best-effort; an unreadable path must not
