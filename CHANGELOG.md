@@ -13,6 +13,8 @@ body. Keep section headings exact and write notes in Markdown.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-09-07
+
 ### Added
 
 - **Worktree switching.** The repository-path row in the "New diff"
@@ -36,6 +38,16 @@ body. Keep section headings exact and write notes in Markdown.
   `DiffViewer [feature-x] · HEAD → WT`, and the window title appends
   the worktree name after the path. Rows saved by earlier versions keep
   working and pick up their labels the next time that diff is opened.
+
+### Fixed
+
+- **"View stash" no longer goes blank after re-pointing the repository
+  path.** Changing the repository while the stash list was still
+  loading left the form empty — the second load was turned away, and
+  the first discarded its own result on arriving to find the path had
+  moved. Editing the path again was the only way out. The form now
+  re-enumerates against the latest path instead of dropping the
+  result.
 
 ## [1.9.0] - 2026-06-06
 
